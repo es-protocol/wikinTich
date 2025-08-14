@@ -1,79 +1,79 @@
-# Next Development Plan: User Sign-In System
+# Next Development Plan: Communication System Implementation
 
 ## Overview
-After discussing testing strategies for the scheduling and matching workflow, we've decided to implement a proper user sign-in system instead of creating test accounts. This will allow us to test with real user data and provide a foundation for the production app.
+After successfully implementing and fixing the complete authentication system, we're now ready to move forward with the communication system. This will enable users to communicate with each other, which is essential for coordinating tutoring sessions and managing institutional requests.
 
 ## Current Situation
 - ✅ Parents/Student Dashboard built with request creation and session management
 - ✅ Tutor Dashboard built with bidirectional scheduling and profile management
 - ✅ Super Admin Dashboard built with matching capabilities
-- ❌ No way to sign in as existing users to test the complete workflow
-- ❌ No password-based authentication system
+- ✅ School Admin Dashboard with institution management
+- ✅ Complete authentication system with password-based login
+- ✅ Fixed all authentication flow issues
+- ✅ Integrated auth context across all dashboards
+- ✅ Added logout functionality to all dashboards
+- ❌ No in-app communication system between users
 
 ## Decision Made
-**Implement User Sign-In Capabilities** - This is the smarter approach because:
-1. **Real-world testing** with actual user data and scenarios
-2. **Development efficiency** - no need for separate test accounts
-3. **Future-proof** - needed for production app anyway
-4. **Professional** - proper authentication system
+**Implement Communication System** - This is the logical next step because:
+1. **Essential functionality** for coordinating between users
+2. **Improves user experience** significantly
+3. **Enables real coordination** between parents, tutors, and institutions
+4. **Foundation for notifications** and alerts
 
 ## Next Steps to Implement
 
-### Phase 1: Database Schema Updates
-1. **Add password field to profiles table**
-   - Add `password_hash` column to store hashed passwords
-   - Ensure secure password storage
+### Phase 1: Database Schema Review
+1. **Verify existing message tables**
+   - Check `messages` table structure
+   - Ensure proper foreign key relationships
+   - Verify notification tables exist
 
-### Phase 2: Password Creation Flow
-1. **Post-email verification password setup**
-   - After user verifies email → prompt to create password
-   - Store password securely in database
-   - Update user's authentication status
+### Phase 2: Message Interface Design
+1. **Create message components**
+   - Message list component
+   - Message composition component
+   - Message thread view
+   - Notification indicators
 
-### Phase 3: User Login System
-1. **Create login pages**
-   - Parent/Student login page
-   - Tutor login page
-   - Unified login with role-based redirects
+### Phase 3: Real-time Communication
+1. **Implement chat functionality**
+   - Real-time message updates
+   - Message status (sent, delivered, read)
+   - Typing indicators
+   - Message threading
 
-2. **Authentication logic**
-   - Email + password verification
-   - Role-based dashboard routing
-   - Session management
+### Phase 4: Notification System
+1. **Build notification infrastructure**
+   - In-app notifications
+   - Email notifications for important messages
+   - Push notifications (future enhancement)
 
-### Phase 4: Session Management
-1. **Login state management**
-   - Store authentication state in localStorage/session
-   - Logout functionality
-   - Session expiration handling
-
-2. **Dashboard updates**
-   - Update existing dashboards to use proper authentication
-   - Remove temporary hardcoded access methods
-
-### Phase 5: Testing & Integration
-1. **Test complete workflow**
-   - Parent creates request → Super Admin matches → Tutor proposes sessions → Parent approves
-   - Verify all functionality works with real user accounts
+### Phase 5: Integration & Testing
+1. **Integrate with existing dashboards**
+   - Add messaging to parent dashboard
+   - Add messaging to tutor dashboard
+   - Add messaging to school admin dashboard
+   - Test complete communication workflow
 
 ## Benefits After Implementation
-- ✅ Test with real user data and scenarios
-- ✅ Identify real-world edge cases and bugs
-- ✅ Foundation for production app
-- ✅ Professional authentication system
-- ✅ Users can access their accounts during development
+- ✅ Users can coordinate tutoring sessions effectively
+- ✅ Institutions can communicate with tutors
+- ✅ Parents can discuss requirements with tutors
+- ✅ Improved platform usability and professionalism
+- ✅ Foundation for future notification systems
 
 ## Files to Create/Modify
-- `app/login/page.tsx` - Main login page
-- `app/parent-login/page.tsx` - Parent-specific login
-- `app/tutor-login/page.tsx` - Tutor-specific login
-- Update `app/page.tsx` - Add login links
-- Update existing dashboards - Remove hardcoded access
-- Database schema - Add password field
+- `app/components/MessageList.tsx` - Message list component
+- `app/components/MessageComposer.tsx` - Message composition
+- `app/components/MessageThread.tsx` - Individual conversation view
+- Update existing dashboards - Add messaging tabs
+- Database - Verify message table structure
 
 ## Priority
-**High Priority** - This is blocking our ability to properly test the scheduling and matching workflow between dashboards.
+**High Priority** - This is essential for the platform to function as a real coordination tool between users.
 
 ---
-*Document created: [Current Date]*
-*Next session: Start with Phase 1 - Database Schema Updates* 
+
+*Document updated: [Current Date]*  
+*Next session: Start with Phase 1 - Database Schema Review* 

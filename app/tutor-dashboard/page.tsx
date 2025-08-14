@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { useAuth } from '@/lib/auth-context'
 import { 
   AcademicCapIcon, 
   UserIcon, 
@@ -25,11 +26,11 @@ interface TutorProfile {
   email: string
   phone: string
   role: string
-  email_verified: boolean
 }
 
 interface TutorData {
   id: string
+  profile_id: string
   bio: string
   subjects: string[]
   availability: any
@@ -61,7 +62,7 @@ interface InstitutionSession {
 
 interface HomeTutoringSession {
   id: string
-  request_id: string
+  request_id: string | null  // Make nullable to distinguish between parent and tutor created sessions
   tutor_id: string
   session_date: string
   start_time: string
@@ -106,33 +107,55 @@ interface Notification {
   created_at: string
 }
 
+interface Session {
+  id: string
+  request_id: string | null
+  tutor_id: string
+  student_id: string
+  session_date: string
+  start_time: string
+  end_time: string
+  duration_hours: number
+  amount: number
+  status: 'scheduled' | 'approved' | 'completed' | 'cancelled' | 'no_show'  // Added 'approved' status
+  notes: string | null
+  created_at: string
+  updated_at: string | null
+}
+
 export default function TutorDashboard() {
-  const [userProfile, setUserProfile] = useState<TutorProfile | null>(null)
+  const [activeSection, setActiveSection] = useState('overview')
+  const [isLoading, setIsLoading] = useState(true)
+  const [userProfile, setUserProfile] = useState<any>(null)
   const [tutorData, setTutorData] = useState<TutorData | null>(null)
   const [qualifications, setQualifications] = useState<Qualification[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState('')
-
-  // New state variables for enhanced features
-  const [activeSection, setActiveSection] = useState('overview')
   const [institutionSessions, setInstitutionSessions] = useState<InstitutionSession[]>([])
   const [homeTutoringSessions, setHomeTutoringSessions] = useState<HomeTutoringSession[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [performance, setPerformance] = useState<Performance | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const [isLoadingSessions, setIsLoadingSessions] = useState(true)
+  const [matchedStudents, setMatchedStudents] = useState<any[]>([])
+  const [error, setError] = useState('')
+  const [showProfileModal, setShowProfileModal] = useState(false)
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false)
+  const [profileFormData, setProfileFormData] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    bio: '',
+    subjects: '',
+    availability: ''
+  })
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false)
+  const [lastUpdate, setLastUpdate] = useState(Date.now()) // Force re-render trigger
+
+  // Loading states for different sections
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false)
   const [isLoadingPayments, setIsLoadingPayments] = useState(true)
   const [isLoadingPerformance, setIsLoadingPerformance] = useState(true)
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true)
 
   // Session proposal states
-  const [matchedStudents, setMatchedStudents] = useState<Array<{
-    student_id: string
-    student_name: string
-    parent_id: string
-    parent_name: string
-    subjects: string
-  }>>([])
   const [selectedStudent, setSelectedStudent] = useState<string>('')
   const [showProposeSessionModal, setShowProposeSessionModal] = useState(false)
   const [proposeSessionForm, setProposeSessionForm] = useState({
@@ -143,34 +166,22 @@ export default function TutorDashboard() {
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Profile management states
-  const [showProfileDropdown, setShowProfileDropdown] = useState(false)
-  const [showProfileModal, setShowProfileModal] = useState(false)
-  const [profileForm, setProfileForm] = useState({
-    full_name: '',
-    email: '',
-    phone: '',
-    bio: '',
-    subjects: '',
-    availability: ''
-  })
-  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false)
-  const [lastUpdate, setLastUpdate] = useState(Date.now()) // Force re-render trigger
+  const { user, isLoading: authLoading, logout } = useAuth()
 
   useEffect(() => {
-    checkVerificationStatus()
-  }, [])
-
-    useEffect(() => {
-    if (tutorData) {
-      fetchSessions()
-      fetchPayments()
-      fetchPerformance()
-      fetchNotifications()
-      fetchMatchedStudents()
-      loadProfileData()
+    console.log('Debug: useEffect triggered')
+    console.log('Debug: authLoading =', authLoading)
+    console.log('Debug: user =', user)
+    console.log('Debug: user?.role =', user?.role)
+    
+    // Load dashboard data when user is authenticated and has correct role
+    if (!authLoading && user && user.role === 'tutor') {
+      console.log('Debug: Conditions met, calling loadDashboardData()')
+      loadDashboardData()
+    } else {
+      console.log('Debug: Conditions not met, not calling loadDashboardData()')
     }
-  }, [tutorData])
+  }, [user, authLoading])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -189,60 +200,69 @@ export default function TutorDashboard() {
     }
   }, [showProfileDropdown])
 
-  // Debug: Log when userProfile changes
-  useEffect(() => {
-    console.log('userProfile state changed:', userProfile)
-  }, [userProfile])
 
-  const checkVerificationStatus = async () => {
+
+  const loadDashboardData = async () => {
     try {
-      const email = localStorage.getItem('pendingVerificationEmail')
-      if (!email) {
-        window.location.href = '/verify-email'
+      setIsLoading(true)
+      setError('')
+      console.log('Debug: loadDashboardData started')
+      console.log('Debug: user =', user)
+      console.log('Debug: user?.id =', user?.id)
+      
+      if (!user) {
+        console.log('Debug: No user found, returning early')
         return
       }
+
+      console.log('Debug: Fetching profile for user ID:', user.id)
 
       // Get user profile
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('email', email)
-        .eq('role', 'tutor')
+        .eq('id', user?.id)
         .single()
+
+      console.log('Debug: Profile query result:', { profile, profileError })
 
       if (profileError || !profile) {
         console.error('Profile error:', profileError)
-        window.location.href = '/verify-email'
+        setError('Failed to load profile data')
         return
       }
 
-      if (!profile.email_verified) {
-        window.location.href = '/verify-email'
-        return
-      }
-
+      console.log('Debug: Profile loaded successfully:', profile)
       setUserProfile(profile)
 
       // Get tutor data
+      console.log('Debug: Fetching tutor data for profile_id:', profile.id)
       const { data: tutor, error: tutorError } = await supabase
         .from('tutors')
         .select('*')
         .eq('profile_id', profile.id)
         .single()
 
+      console.log('Debug: Tutor query result:', { tutor, tutorError })
+
       if (tutorError) {
         console.error('Tutor data error:', tutorError)
         setError('Failed to load tutor data')
-      } else {
-        setTutorData(tutor)
+        return
       }
+
+      console.log('Debug: Tutor data loaded successfully:', tutor)
+      setTutorData(tutor)
 
       // Get qualifications
       if (tutor) {
+        console.log('Debug: Fetching qualifications for tutor_id:', tutor.id)
         const { data: quals, error: qualsError } = await supabase
           .from('tutor_qualifications')
           .select('*')
           .eq('tutor_id', tutor.id)
+
+        console.log('Debug: Qualifications query result:', { quals, qualsError })
 
         if (qualsError) {
           console.error('Qualifications error:', qualsError)
@@ -251,19 +271,58 @@ export default function TutorDashboard() {
         }
       }
 
+      // IMPORTANT: Pass tutor data directly to functions instead of relying on state
+      console.log('Debug: About to call fetchSessions()')
+      // Fetch sessions - pass tutor data directly
+      await fetchSessions(tutor)
+      console.log('Debug: fetchSessions() completed')
+      
+      console.log('Debug: About to call fetchPayments()')
+      await fetchPayments(tutor)
+      console.log('Debug: fetchPayments() completed')
+      
+      console.log('Debug: About to call fetchPerformance()')
+      await fetchPerformance(tutor)
+      console.log('Debug: fetchPerformance() completed')
+      
+      console.log('Debug: About to call fetchNotifications()')
+      await fetchNotifications(tutor)
+      console.log('Debug: fetchNotifications() completed')
+      
+      console.log('Debug: About to call fetchMatchedStudents()')
+      await fetchMatchedStudents(tutor)
+      console.log('Debug: fetchMatchedStudents() completed')
+
+      // Load profile data into form for editing
+      const formData = {
+        fullName: profile.full_name,
+        email: profile.email,
+        phone: profile.phone,
+        bio: tutor?.bio || '',
+        subjects: tutor?.subjects ? Array.isArray(tutor.subjects) ? tutor.subjects.join(', ') : String(tutor.subjects) : '',
+        availability: tutor?.availability ? JSON.stringify(tutor.availability) : ''
+      }
+      setProfileFormData(formData)
+      console.log('Debug: loadDashboardData completed successfully')
+
     } catch (err) {
-      console.error('Error checking verification status:', err)
+      console.error('Error loading dashboard data:', err)
       setError('Failed to load dashboard data')
     } finally {
       setIsLoading(false)
     }
   }
 
-  const fetchSessions = async () => {
+
+
+  const fetchSessions = async (tutor: TutorData) => {
     try {
       setIsLoadingSessions(true)
       
-      if (!tutorData) return
+      if (!tutor) return
+
+      console.log('Debug: fetchSessions - tutorData.id =', tutor.id)
+      console.log('Debug: fetchSessions - tutorData.profile_id =', tutor.profile_id)
 
       // Fetch institution sessions
       const { data: instSessions, error: instError } = await supabase
@@ -272,12 +331,13 @@ export default function TutorDashboard() {
           *,
           schools!inner(name)
         `)
-        .eq('tutor_id', tutorData.id)
+        .eq('tutor_id', tutor.id)
         .order('session_date', { ascending: false })
 
       if (instError) {
         console.error('Error fetching institution sessions:', instError)
       } else {
+        console.log('Debug: Institution sessions found:', instSessions)
         setInstitutionSessions(instSessions || [])
       }
 
@@ -288,14 +348,35 @@ export default function TutorDashboard() {
           *,
           home_tutoring_requests!inner(student_name)
         `)
-        .eq('tutor_id', tutorData.id)
+        .eq('tutor_id', tutor.id)
         .order('session_date', { ascending: false })
 
       if (homeError) {
         console.error('Error fetching home tutoring sessions:', homeError)
       } else {
+        console.log('Debug: Home tutoring sessions found:', homeSessions)
+        console.log('Debug: Number of home tutoring sessions:', homeSessions?.length || 0)
         setHomeTutoringSessions(homeSessions || [])
       }
+
+      // Debug: Let's also check what sessions exist for any tutor
+      const { data: allSessions, error: allSessionsError } = await supabase
+        .from('home_tutoring_sessions')
+        .select('*')
+        .limit(10)
+
+      if (allSessionsError) {
+        console.error('Error fetching all sessions:', allSessionsError)
+      } else {
+        console.log('Debug: All sessions in database:', allSessions)
+        console.log('Debug: Number of all sessions:', allSessions?.length || 0)
+        
+        // Check if any of these sessions have the right tutor_id
+        const sessionsForThisTutor = allSessions?.filter(s => s.tutor_id === tutor.id) || []
+        console.log('Debug: Sessions for this tutor (from all sessions):', sessionsForThisTutor)
+        console.log('Debug: Number of sessions for this tutor:', sessionsForThisTutor.length)
+      }
+
     } catch (error) {
       console.error('Error fetching sessions:', error)
     } finally {
@@ -303,16 +384,16 @@ export default function TutorDashboard() {
     }
   }
 
-  const fetchPayments = async () => {
+  const fetchPayments = async (tutor: TutorData) => {
     try {
       setIsLoadingPayments(true)
       
-      if (!tutorData) return
+      if (!tutor) return
 
       const { data: paymentData, error } = await supabase
         .from('tutor_payments')
         .select('*')
-        .eq('tutor_id', tutorData.id)
+        .eq('tutor_id', tutor.id)
         .order('payment_date', { ascending: false })
 
       if (error) {
@@ -327,16 +408,16 @@ export default function TutorDashboard() {
     }
   }
 
-  const fetchPerformance = async () => {
+  const fetchPerformance = async (tutor: TutorData) => {
     try {
       setIsLoadingPerformance(true)
       
-      if (!tutorData) return
+      if (!tutor) return
 
       const { data: perfData, error } = await supabase
         .from('tutor_performance')
         .select('*')
-        .eq('tutor_id', tutorData.id)
+        .eq('tutor_id', tutor.id)
         .single()
 
       if (error) {
@@ -351,16 +432,16 @@ export default function TutorDashboard() {
     }
   }
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = async (tutor: TutorData) => {
     try {
       setIsLoadingNotifications(true)
       
-      if (!tutorData) return
+      if (!tutor) return
 
       const { data: notifData, error } = await supabase
         .from('tutor_notifications')
         .select('*')
-        .eq('tutor_id', tutorData.id)
+        .eq('tutor_id', tutor.id)
         .order('created_at', { ascending: false })
 
       if (error) {
@@ -375,11 +456,15 @@ export default function TutorDashboard() {
     }
   }
 
-  const fetchMatchedStudents = async () => {
+  const fetchMatchedStudents = async (tutor: TutorData) => {
     try {
-      if (!tutorData) return
+      console.log('Debug: fetchMatchedStudents started')
+      console.log('Debug: tutor.id =', tutor.id)
+      
+      if (!tutor) return
 
       // Get accepted tutor proposals to find matched students
+      console.log('Debug: Fetching accepted tutor proposals for tutor_id:', tutor.id)
       const { data: acceptedProposals, error: proposalsError } = await supabase
         .from('tutor_proposals')
         .select(`
@@ -387,8 +472,10 @@ export default function TutorDashboard() {
           students!inner(name, parent_id),
           profiles!inner(full_name)
         `)
-        .eq('tutor_id', tutorData.id)
+        .eq('tutor_id', tutor.id)
         .eq('status', 'accepted')
+
+      console.log('Debug: Accepted proposals query result:', { acceptedProposals, proposalsError })
 
       if (proposalsError) {
         console.error('Error fetching matched students:', proposalsError)
@@ -396,17 +483,38 @@ export default function TutorDashboard() {
       }
 
       // Get home tutoring requests for additional context
+      console.log('Debug: Fetching home tutoring requests with matched_tutor_id:', tutor.id)
       const { data: requests, error: requestsError } = await supabase
         .from('home_tutoring_requests')
-        .select('student_id, subjects')
-        .eq('matched_tutor_id', tutorData.id)
+        .select('student_id, subjects, matched_tutor_id, status')
+        .eq('matched_tutor_id', tutor.id)
+
+      console.log('Debug: Home tutoring requests query result:', { requests, requestsError })
 
       if (requestsError) {
         console.error('Error fetching requests:', requestsError)
       }
 
+      // Let's also check ALL tutor proposals for this tutor to see what exists
+      console.log('Debug: Fetching ALL tutor proposals for tutor_id:', tutor.id)
+      const { data: allProposals, error: allProposalsError } = await supabase
+        .from('tutor_proposals')
+        .select('student_id, status, created_at')
+        .eq('tutor_id', tutor.id)
+
+      console.log('Debug: All proposals query result:', { allProposals, allProposalsError })
+
+      // Let's also check ALL home tutoring requests to see if any have this tutor as matched
+      console.log('Debug: Fetching ALL home tutoring requests to check for matches')
+      const { data: allRequests, error: allRequestsError } = await supabase
+        .from('home_tutoring_requests')
+        .select('id, student_id, matched_tutor_id, status')
+        .limit(20)
+
+      console.log('Debug: All requests query result:', { allRequests, allRequestsError })
+
       // Combine data to create matched students list
-      const students = acceptedProposals?.map(proposal => {
+      let students = acceptedProposals?.map(proposal => {
         const request = requests?.find(r => r.student_id === proposal.student_id)
         return {
           student_id: proposal.student_id,
@@ -417,11 +525,52 @@ export default function TutorDashboard() {
         }
       }) || []
 
+      // If no students found through proposals, try to find them through home tutoring requests
+      if (students.length === 0 && requests && requests.length > 0) {
+        console.log('Debug: No students found through proposals, trying to find through requests')
+        
+        // Get student details for the requests that have this tutor as matched_tutor_id
+        const studentIds = requests.map(r => r.student_id)
+        console.log('Debug: Student IDs from requests:', studentIds)
+        
+        if (studentIds.length > 0) {
+          const { data: studentDetails, error: studentDetailsError } = await supabase
+            .from('students')
+            .select(`
+              id,
+              name,
+              parent_id,
+              profiles!inner(full_name)
+            `)
+            .in('id', studentIds)
+
+          console.log('Debug: Student details query result:', { studentDetails, studentDetailsError })
+
+          if (studentDetails && !studentDetailsError) {
+            students = studentDetails.map(student => {
+              const request = requests.find(r => r.student_id === student.id)
+              return {
+                student_id: student.id,
+                student_name: student.name,
+                parent_id: student.parent_id,
+                parent_name: (student.profiles as any).full_name,
+                subjects: request?.subjects || 'General'
+              }
+            })
+            console.log('Debug: Students found through requests:', students)
+          }
+        }
+      }
+
+      console.log('Debug: Final matched students list:', students)
+      console.log('Debug: Number of matched students:', students.length)
+
       setMatchedStudents(students)
       
       // Auto-select first student if available
       if (students.length > 0 && !selectedStudent) {
         setSelectedStudent(students[0].student_id)
+        console.log('Debug: Auto-selected first student:', students[0].student_id)
       }
     } catch (error) {
       console.error('Error fetching matched students:', error)
@@ -436,7 +585,7 @@ export default function TutorDashboard() {
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', tutorData.id)
+        .eq('id', tutorData.profile_id)
         .single()
 
       if (profileError) {
@@ -456,7 +605,7 @@ export default function TutorDashboard() {
 
       // Populate form with existing data
       const formData = {
-        full_name: profile?.full_name || userProfile?.full_name || '',
+        fullName: profile?.full_name || userProfile?.full_name || '',
         email: profile?.email || userProfile?.email || '',
         phone: profile?.phone || '',
         bio: tutorProfile?.bio || tutorData?.bio || '',
@@ -482,7 +631,7 @@ export default function TutorDashboard() {
         })()
       }
 
-      setProfileForm(formData)
+      setProfileFormData(formData)
     } catch (error) {
       console.error('Error loading profile data:', error)
     }
@@ -495,28 +644,28 @@ export default function TutorDashboard() {
     try {
       setIsUpdatingProfile(true)
 
-      console.log('Updating profile with data:', profileForm)
+      console.log('Updating profile with data:', profileFormData)
       console.log('Tutor ID:', tutorData.id)
 
       // Validate required fields
-      if (!profileForm.full_name.trim()) {
+      if (!profileFormData.fullName.trim()) {
         alert('Full name is required')
         return
       }
 
       // Update profiles table
       console.log('Updating profiles table with:', {
-        full_name: profileForm.full_name.trim(),
-        phone: profileForm.phone.trim() || null
+        full_name: profileFormData.fullName.trim(),
+        phone: profileFormData.phone.trim() || null
       })
       
       const { data: profileUpdateData, error: profileError } = await supabase
         .from('profiles')
         .update({
-          full_name: profileForm.full_name.trim(),
-          phone: profileForm.phone.trim() || null
+          full_name: profileFormData.fullName.trim(),
+          phone: profileFormData.phone.trim() || null
         })
-        .eq('id', tutorData.id)
+        .eq('id', tutorData.profile_id)
         .select() // This returns the updated data
 
       if (profileError) {
@@ -527,21 +676,21 @@ export default function TutorDashboard() {
       console.log('Profile update successful:', profileUpdateData)
 
       // Prepare tutor data - ensure subjects is an array
-      const subjectsArray = Array.isArray(profileForm.subjects) 
-        ? profileForm.subjects 
-        : profileForm.subjects.split(',').map(s => s.trim()).filter(s => s.length > 0)
+      const subjectsArray = Array.isArray(profileFormData.subjects) 
+        ? profileFormData.subjects 
+        : profileFormData.subjects.split(',').map(s => s.trim()).filter(s => s.length > 0)
 
       // Prepare availability - ensure it's a string
-      const availabilityString = typeof profileForm.availability === 'object' 
-        ? JSON.stringify(profileForm.availability)
-        : profileForm.availability || ''
+      const availabilityString = typeof profileFormData.availability === 'object' 
+        ? JSON.stringify(profileFormData.availability)
+        : profileFormData.availability || ''
 
       console.log('Subjects array:', subjectsArray)
       console.log('Availability string:', availabilityString)
 
       // Update tutors table
       console.log('Updating tutors table with:', {
-        bio: profileForm.bio.trim() || null,
+        bio: profileFormData.bio.trim() || null,
         subjects: subjectsArray,
         availability: availabilityString.trim() || null
       })
@@ -549,7 +698,7 @@ export default function TutorDashboard() {
       const { data: tutorUpdateData, error: tutorError } = await supabase
         .from('tutors')
         .update({
-          bio: profileForm.bio.trim() || null,
+          bio: profileFormData.bio.trim() || null,
           subjects: subjectsArray.length > 0 ? subjectsArray : null,
           availability: availabilityString.trim() || null
         })
@@ -566,13 +715,13 @@ export default function TutorDashboard() {
       // Immediately update the UI state with the form data we just submitted
       const updatedUserProfile: TutorProfile = {
         ...userProfile!,
-        full_name: profileForm.full_name.trim(),
-        phone: profileForm.phone.trim() || ''
+        full_name: profileFormData.fullName.trim(),
+        phone: profileFormData.phone.trim() || ''
       }
       
       const updatedTutorProfile: TutorData = {
         ...tutorData,
-        bio: profileForm.bio.trim() || '',
+        bio: profileFormData.bio.trim() || '',
         subjects: subjectsArray,
         availability: availabilityString.trim() || ''
       }
@@ -599,7 +748,7 @@ export default function TutorDashboard() {
         const { data: verifyProfile } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', tutorData.id)
+          .eq('id', tutorData.profile_id)
           .single()
           
         const { data: verifyTutor } = await supabase
@@ -629,7 +778,7 @@ export default function TutorDashboard() {
     }
   }
 
-  const proposeSession = async (e: React.FormEvent) => {
+  const scheduleSession = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedStudent || !tutorData) return
 
@@ -664,7 +813,8 @@ export default function TutorDashboard() {
           start_time: proposeSessionForm.start_time,
           end_time: proposeSessionForm.end_time,
           duration_hours: durationHours,
-          status: 'proposed',
+          amount: 70000, // Add default amount in Sierra Leone Leones (SLL)
+          status: 'scheduled', // Use 'scheduled' instead of 'proposed' to match database constraint
           notes: proposeSessionForm.notes
         })
 
@@ -679,8 +829,8 @@ export default function TutorDashboard() {
           .from('parent_notifications')
           .insert({
             parent_id: student.parent_id,
-            title: 'New Session Proposal',
-            message: `Tutor has proposed a new session for ${student.student_name} on ${formatDate(proposeSessionForm.session_date)}`,
+            title: 'New Session Scheduled',
+            message: `Tutor has scheduled a new session for ${student.student_name} on ${formatDate(proposeSessionForm.session_date)}`,
             notification_type: 'session'
           })
       }
@@ -695,53 +845,63 @@ export default function TutorDashboard() {
       setShowProposeSessionModal(false)
       
       // Refresh sessions
-      await fetchSessions()
+      if (tutorData) {
+        await fetchSessions(tutorData)
+      }
       
-      alert('Session proposed successfully!')
+      alert('Session scheduled successfully!')
     } catch (error) {
-      console.error('Error proposing session:', error)
-      alert('Failed to propose session. Please try again.')
+      console.error('Error scheduling session:', error)
+      alert('Failed to schedule session. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
   }
 
+  const handleEditSession = (session: HomeTutoringSession) => {
+    // TODO: Implement session editing functionality
+    console.log('Edit session:', session)
+    alert('Session editing functionality coming soon!')
+  }
+
   const handleSessionAction = async (sessionId: string, action: 'approve' | 'reject') => {
     try {
-      const newStatus = action === 'approve' ? 'scheduled' : 'rejected'
+      setIsSubmitting(true)
       
-      const { error } = await supabase
+      // Use status values that are actually allowed by the database constraint
+      // According to the schema: ['scheduled', 'completed', 'cancelled', 'no_show']
+      const newStatus = action === 'approve' ? 'completed' : 'cancelled'
+      
+      console.log(`Debug: Updating session ${sessionId} to status: ${newStatus}`)
+      
+      const { data, error } = await supabase
         .from('home_tutoring_sessions')
-        .update({ status: newStatus })
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', sessionId)
+        .select()
 
       if (error) {
-        throw error
+        console.error(`Error ${action}ing session:`, error)
+        alert(`Error ${action}ing session: ${error.message}`)
+        return
       }
 
-      // Create notification for parent
-      const session = homeTutoringSessions.find(s => s.id === sessionId)
-      if (session) {
-        const student = matchedStudents.find(s => s.student_id === session.student_id)
-        if (student) {
-          await supabase
-            .from('parent_notifications')
-            .insert({
-              parent_id: student.parent_id,
-              title: `Session ${action === 'approve' ? 'Approved' : 'Rejected'}`,
-              message: `Tutor has ${action === 'approve' ? 'approved' : 'rejected'} the session for ${student.student_name}`,
-              notification_type: 'session'
-            })
-        }
-      }
-
-      // Refresh sessions
-      await fetchSessions()
+      console.log(`Session ${action}d successfully:`, data)
       
-      alert(`Session ${action === 'approve' ? 'approved' : 'rejected'} successfully!`)
+      // Show success message
+      alert(`Session ${action}d successfully!`)
+      
+      // Refresh the dashboard data to show updated status
+      await loadDashboardData()
+      
     } catch (error) {
       console.error(`Error ${action}ing session:`, error)
-      alert(`Failed to ${action} session. Please try again.`)
+      alert(`Error ${action}ing session: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -774,6 +934,8 @@ export default function TutorDashboard() {
       case 'pending':
       case 'scheduled':
         return 'bg-yellow-100 text-yellow-800'
+      case 'approved':
+        return 'bg-blue-100 text-blue-800'
       case 'cancelled':
       case 'failed':
         return 'bg-red-100 text-red-800'
@@ -802,16 +964,30 @@ export default function TutorDashboard() {
   }
 
   const getFilteredSessions = () => {
-    if (!selectedStudent) return []
+    if (!selectedStudent) return homeTutoringSessions // Show all sessions when no student is selected
     return homeTutoringSessions.filter(session => session.student_id === selectedStudent)
   }
 
-  const getProposedSessions = () => {
-    return getFilteredSessions().filter(session => session.status === 'proposed')
-  }
-
   const getScheduledSessions = () => {
-    return getFilteredSessions().filter(session => session.status === 'scheduled')
+    console.log('Debug: getScheduledSessions called')
+    console.log('Debug: selectedStudent =', selectedStudent)
+    console.log('Debug: homeTutoringSessions =', homeTutoringSessions)
+    console.log('Debug: Number of homeTutoringSessions:', homeTutoringSessions?.length || 0)
+    
+    const filteredSessions = getFilteredSessions()
+    console.log('Debug: filteredSessions =', filteredSessions)
+    console.log('Debug: Number of filteredSessions:', filteredSessions?.length || 0)
+    
+    // Show sessions that need approval (scheduled), are approved, or completed
+    // According to updated schema: ['scheduled', 'approved', 'completed', 'cancelled', 'no_show']
+    const scheduledSessions = filteredSessions.filter(session => 
+      session.status === 'scheduled' || session.status === 'approved' || session.status === 'completed'
+    )
+    
+    console.log('Debug: scheduledSessions =', scheduledSessions)
+    console.log('Debug: Number of scheduledSessions:', scheduledSessions?.length || 0)
+    
+    return scheduledSessions
   }
 
   const getCompletedSessions = () => {
@@ -819,7 +995,8 @@ export default function TutorDashboard() {
   }
 
   const getSelectedStudentName = () => {
-    return matchedStudents.find(s => s.student_id === selectedStudent)?.student_name || 'Select Student'
+    const student = matchedStudents.find(s => s.student_id === selectedStudent)
+    return student ? student.student_name : 'Unknown Student'
   }
 
   const renderSectionContent = () => {
@@ -1016,15 +1193,15 @@ export default function TutorDashboard() {
                       onClick={() => setShowProposeSessionModal(true)}
                       className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700"
                     >
-                      Propose Session
+                      Schedule Session
                     </button>
                   </div>
 
                   {/* Session Stats */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div className="bg-yellow-50 p-4 rounded-lg">
-                      <p className="text-sm text-gray-600">Proposed</p>
-                      <p className="text-2xl font-bold text-yellow-600">{getProposedSessions().length}</p>
+                                      <p className="text-sm text-gray-600">Scheduled</p>
+                <p className="text-2xl font-bold text-yellow-600">{getScheduledSessions().length}</p>
                     </div>
                     <div className="bg-blue-50 p-4 rounded-lg">
                       <p className="text-sm text-gray-600">Scheduled</p>
@@ -1036,12 +1213,14 @@ export default function TutorDashboard() {
                     </div>
                   </div>
 
-                  {/* Proposed Sessions */}
-                  {getProposedSessions().length > 0 && (
+                  {/* Scheduled Sessions */}
+                  {getScheduledSessions().length > 0 && (
                     <div className="mb-6">
-                      <h4 className="text-md font-semibold text-gray-900 mb-3">Pending Approval</h4>
+                      <h4 className="text-md font-semibold text-gray-900 mb-3">
+                        Sessions ({getScheduledSessions().length}) - {getScheduledSessions().filter(s => s.status === 'scheduled' && s.request_id).length} parent requests, {getScheduledSessions().filter(s => s.status === 'scheduled' && !s.request_id).length} my sessions
+                      </h4>
                       <div className="space-y-3">
-                        {getProposedSessions().map((session) => (
+                        {getScheduledSessions().map((session) => (
                           <div key={session.id} className="border border-yellow-200 bg-yellow-50 rounded-lg p-4">
                             <div className="flex items-center justify-between">
                               <div>
@@ -1056,18 +1235,57 @@ export default function TutorDashboard() {
                                 )}
                               </div>
                               <div className="flex space-x-2">
-                                <button
-                                  onClick={() => handleSessionAction(session.id, 'approve')}
-                                  className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
-                                >
-                                  Approve
-                                </button>
-                                <button
-                                  onClick={() => handleSessionAction(session.id, 'reject')}
-                                  className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-                                >
-                                  Reject
-                                </button>
+                                {/* Session Actions - Show different actions based on who created the session */}
+                                {session.status === 'scheduled' && session.request_id && (
+                                  <div className="flex space-x-2 mt-3">
+                                    <button
+                                      onClick={() => handleSessionAction(session.id, 'approve')}
+                                      disabled={isSubmitting}
+                                      className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50"
+                                    >
+                                      {isSubmitting ? 'Processing...' : 'Approve'}
+                                    </button>
+                                    <button
+                                      onClick={() => handleSessionAction(session.id, 'reject')}
+                                      disabled={isSubmitting}
+                                      className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
+                                    >
+                                      {isSubmitting ? 'Processing...' : 'Reject'}
+                                    </button>
+                                  </div>
+                                )}
+                                {session.status === 'scheduled' && !session.request_id && (
+                                  <div className="flex space-x-2 mt-3">
+                                    <button
+                                      onClick={() => handleEditSession(session)}
+                                      disabled={isSubmitting}
+                                      className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleSessionAction(session.id, 'reject')}
+                                      disabled={isSubmitting}
+                                      className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
+                                    >
+                                      {isSubmitting ? 'Processing...' : 'Cancel'}
+                                    </button>
+                                  </div>
+                                )}
+                                
+                                {/* Show status badge for non-scheduled sessions */}
+                                {session.status !== 'scheduled' && (
+                                  <div className="mt-3">
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                      session.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                      session.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                      session.status === 'no_show' ? 'bg-orange-100 text-orange-800' :
+                                      'bg-gray-100 text-gray-800'
+                                    }`}>
+                                      {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1087,7 +1305,12 @@ export default function TutorDashboard() {
                     ) : (
                       <div className="space-y-4">
                         {getFilteredSessions().length === 0 ? (
-                          <p className="text-gray-500">No sessions found for this student.</p>
+                          <p className="text-gray-500">
+                            {selectedStudent 
+                              ? `No sessions found for ${getSelectedStudentName()}.` 
+                              : 'No sessions found.'
+                            }
+                          </p>
                         ) : (
                           getFilteredSessions()
                             .sort((a, b) => new Date(b.session_date).getTime() - new Date(a.session_date).getTime())
@@ -1123,9 +1346,72 @@ export default function TutorDashboard() {
             )}
 
             {!selectedStudent && matchedStudents.length > 0 && (
-              <div className="bg-white rounded-2xl shadow-lg p-6 text-center">
-                <p className="text-gray-500">Please select a student to view their sessions.</p>
-              </div>
+              <>
+                <div className="bg-white rounded-2xl shadow-lg p-6 text-center mb-6">
+                  <p className="text-gray-500">Select a student above to view their specific sessions, or view all sessions below.</p>
+                </div>
+                
+                {/* Show All Sessions When No Student Selected */}
+                <div className="bg-white rounded-2xl shadow-lg p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">All Sessions</h3>
+                  {isLoadingSessions ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+                      <p className="mt-2 text-gray-600">Loading sessions...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {getFilteredSessions().length === 0 ? (
+                        <p className="text-gray-500">No sessions found.</p>
+                      ) : (
+                        getFilteredSessions()
+                          .sort((a, b) => new Date(b.session_date).getTime() - new Date(a.session_date).getTime())
+                          .map((session) => (
+                            <div key={session.id} className="border border-gray-200 rounded-lg p-4">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium text-gray-900">
+                                    Session on {formatDate(session.session_date)}
+                                  </p>
+                                  <p className="text-sm text-gray-600">
+                                    {session.start_time} - {session.end_time}
+                                  </p>
+                                  <p className="text-sm text-gray-500">
+                                    Duration: {session.duration_hours} hours
+                                  </p>
+                                  {session.notes && (
+                                    <p className="text-sm text-gray-500 mt-1">Notes: {session.notes}</p>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
+                                    {session.status}
+                                  </span>
+                                  {session.status === 'proposed' && (
+                                    <div className="flex space-x-2 mt-2">
+                                      <button
+                                        onClick={() => handleSessionAction(session.id, 'approve')}
+                                        className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        onClick={() => handleSessionAction(session.id, 'reject')}
+                                        className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             {matchedStudents.length === 0 && (
@@ -1252,6 +1538,42 @@ export default function TutorDashboard() {
     }
   }
 
+  // Show loading while auth is initializing
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            Loading Dashboard...
+          </h2>
+          <p className="text-gray-600">
+            Please wait while we verify your authentication.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Check if user is authenticated and has the right role
+  if (!user) {
+    // Redirect to login if not authenticated
+    window.location.href = '/login'
+    return null
+  }
+  
+  if (user.role !== 'tutor') {
+    // Redirect to appropriate dashboard based on role
+    if (user.role === 'parent') {
+      window.location.href = '/dashboard-with-children'
+    } else if (user.role === 'school_admin') {
+      window.location.href = '/school-admin-dashboard'
+    } else {
+      window.location.href = '/login'
+    }
+    return null
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-leone-50 to-leone-100 flex items-center justify-center">
@@ -1323,8 +1645,7 @@ export default function TutorDashboard() {
                       <hr className="my-1" />
                       <button
                         onClick={() => {
-                          localStorage.removeItem('currentUser')
-                          localStorage.removeItem('pendingVerificationEmail')
+                          logout()
                           window.location.href = '/'
                         }}
                         className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
@@ -1406,8 +1727,8 @@ export default function TutorDashboard() {
                       <input
                         type="text"
                         required
-                        value={profileForm.full_name}
-                        onChange={(e) => setProfileForm({...profileForm, full_name: e.target.value})}
+                        value={profileFormData.fullName}
+                        onChange={(e) => setProfileFormData({...profileFormData, fullName: e.target.value})}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       />
                     </div>
@@ -1417,7 +1738,7 @@ export default function TutorDashboard() {
                       </label>
                       <input
                         type="email"
-                        value={profileForm.email}
+                        value={profileFormData.email}
                         disabled
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
                       />
@@ -1429,8 +1750,8 @@ export default function TutorDashboard() {
                       </label>
                       <input
                         type="tel"
-                        value={profileForm.phone}
-                        onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})}
+                        value={profileFormData.phone}
+                        onChange={(e) => setProfileFormData({...profileFormData, phone: e.target.value})}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                         placeholder="+232 XX XXX XXXX"
                       />
@@ -1447,8 +1768,8 @@ export default function TutorDashboard() {
                         Bio
                       </label>
                       <textarea
-                        value={profileForm.bio}
-                        onChange={(e) => setProfileForm({...profileForm, bio: e.target.value})}
+                        value={profileFormData.bio}
+                        onChange={(e) => setProfileFormData({...profileFormData, bio: e.target.value})}
                         rows={4}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                         placeholder="Tell students and parents about your teaching experience, qualifications, and approach..."
@@ -1460,8 +1781,8 @@ export default function TutorDashboard() {
                       </label>
                       <input
                         type="text"
-                        value={profileForm.subjects}
-                        onChange={(e) => setProfileForm({...profileForm, subjects: e.target.value})}
+                        value={profileFormData.subjects}
+                        onChange={(e) => setProfileFormData({...profileFormData, subjects: e.target.value})}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                         placeholder="Mathematics, Physics, Chemistry (comma-separated)"
                       />
@@ -1478,8 +1799,8 @@ export default function TutorDashboard() {
                       Available Days and Times
                     </label>
                     <textarea
-                      value={profileForm.availability}
-                      onChange={(e) => setProfileForm({...profileForm, availability: e.target.value})}
+                      value={profileFormData.availability}
+                      onChange={(e) => setProfileFormData({...profileFormData, availability: e.target.value})}
                       rows={3}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       placeholder="Monday-Friday: 3:00 PM - 8:00 PM, Saturday: 9:00 AM - 5:00 PM"
@@ -1523,7 +1844,7 @@ export default function TutorDashboard() {
             className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4"
           >
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-lg font-medium text-gray-900">Propose Session</h3>
+              <h3 className="text-lg font-medium text-gray-900">Schedule Session</h3>
               <button
                 onClick={() => {
                   setShowProposeSessionModal(false)
@@ -1539,7 +1860,7 @@ export default function TutorDashboard() {
                 <XMarkIcon className="w-6 h-6" />
               </button>
             </div>
-            <form onSubmit={proposeSession} className="px-6 py-4">
+            <form onSubmit={scheduleSession} className="px-6 py-4">
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1621,7 +1942,7 @@ export default function TutorDashboard() {
                   disabled={isSubmitting}
                   className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Proposing...' : 'Propose Session'}
+                  {isSubmitting ? 'Scheduling...' : 'Schedule Session'}
                 </button>
               </div>
             </form>

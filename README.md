@@ -14,30 +14,34 @@ WikinTich is a multi-dashboard educational platform designed to bridge the gap b
   - Parent/Student Dashboard with child management and session scheduling
   - Tutor Dashboard with bidirectional scheduling and profile management
   - Super Admin Dashboard with matching capabilities
-  - School Admin Dashboard (structure ready)
+  - School Admin Dashboard with institution management
 - **Core Functionality**: 
   - Bidirectional session scheduling (parent-tutor approval system)
   - Student progress tracking and reporting
   - Profile management for all user roles
   - Real-time UI updates and notifications
+- **Authentication System**: 
+  - Complete user registration and email verification
+  - Password-based login system
+  - Role-based access control
+  - Session management with proper logout
 
 ### 🔄 **In Progress**
-- User authentication system (password-based login)
-- Complete workflow testing and integration
-- Bug fixes and performance optimization
-
-### 📋 **Planned Features**
 - Communication system (in-app messaging)
 - Payment integration
 - Advanced analytics and reporting
+
+### 📋 **Planned Features**
 - Mobile app development
+- Advanced search and filtering
+- Location-based matching
 
 ## 🛠 Tech Stack
 
 - **Frontend**: Next.js 14 with TypeScript
 - **Styling**: Tailwind CSS + Framer Motion
 - **Backend**: Supabase (PostgreSQL)
-- **Authentication**: Email verification + password system (in development)
+- **Authentication**: Email verification + password-based login system
 - **Icons**: Heroicons
 - **Font**: Inter
 

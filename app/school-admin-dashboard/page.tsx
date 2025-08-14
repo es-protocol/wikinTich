@@ -3,13 +3,15 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
 import { 
   BuildingOffice2Icon, 
   UserGroupIcon, 
   ClipboardDocumentListIcon,
   ChatBubbleLeftRightIcon,
   BellIcon,
-  ChartBarIcon
+  ChartBarIcon,
+  ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline'
 
 interface InstitutionData {
@@ -31,6 +33,7 @@ interface RequestData {
 }
 
 export default function SchoolAdminDashboard() {
+  const { user, isLoading: authLoading } = useAuth()
   const [activeTab, setActiveTab] = useState('overview')
   const [institution, setInstitution] = useState<InstitutionData | null>(null)
   const [requests, setRequests] = useState<RequestData[]>([])
@@ -38,18 +41,39 @@ export default function SchoolAdminDashboard() {
   const [userProfile, setUserProfile] = useState<any>(null)
 
   useEffect(() => {
-    loadDashboardData()
-  }, [])
+    // Check if user is authenticated and has the right role
+    if (!authLoading) {
+      if (!user) {
+        // Redirect to login if not authenticated
+        window.location.href = '/login'
+        return
+      }
+      
+      if (user.role !== 'school_admin') {
+        // Redirect to appropriate dashboard based on role
+        if (user.role === 'parent') {
+          window.location.href = '/dashboard-with-children'
+        } else if (user.role === 'tutor') {
+          window.location.href = '/tutor-dashboard'
+        } else {
+          window.location.href = '/login'
+        }
+        return
+      }
+      
+      // User is authenticated and has correct role, load dashboard data
+      loadDashboardData()
+    }
+  }, [user, authLoading])
 
   const loadDashboardData = async () => {
     try {
-      // Get user email from localStorage (set during verification)
-      const email = localStorage.getItem('pendingVerificationEmail')
-      if (!email) {
-        // Redirect to verification if no email found
-        window.location.href = '/verify-email'
+      if (!user) {
+        console.error('No authenticated user found')
         return
       }
+
+      const email = user.email
 
       // Get user profile
       const { data: profile, error: profileError } = await supabase
@@ -61,11 +85,8 @@ export default function SchoolAdminDashboard() {
       if (profileError) throw profileError
       setUserProfile(profile)
 
-      // Check if email is verified
-      if (!profile.email_verified) {
-        window.location.href = '/verify-email'
-        return
-      }
+      // Email verification is handled by Supabase Auth - if user can log in, email is verified
+      // No need to check email_verified field
 
       // Get institution data
       const { data: institutionData, error: institutionError } = await supabase
@@ -117,6 +138,24 @@ export default function SchoolAdminDashboard() {
     })
   }
 
+  // Show loading while auth is initializing
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            Loading Dashboard...
+          </h2>
+          <p className="text-gray-600">
+            Please wait while we verify your authentication.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show loading while dashboard data is loading
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center">
@@ -150,6 +189,18 @@ export default function SchoolAdminDashboard() {
               <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center text-white font-semibold">
                 {userProfile?.full_name?.charAt(0)?.toUpperCase()}
               </div>
+              <button 
+                onClick={() => {
+                  // Clear user data and redirect to login
+                  localStorage.removeItem('wikinTichUser')
+                  localStorage.removeItem('wikinTichUserRole')
+                  window.location.href = '/login'
+                }}
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <ArrowRightOnRectangleIcon className="w-4 h-4" />
+                <span className="text-sm font-medium">Logout</span>
+              </button>
             </div>
           </div>
         </div>

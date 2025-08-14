@@ -1,12 +1,13 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import { AuthProvider } from '@/lib/auth-context'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Tutor Link - Connecting Education in Sierra Leone',
-  description: 'A platform connecting institutions and students with qualified teachers and tutors in Sierra Leone.',
+  title: 'WikinTich - Educational Platform for Sierra Leone',
+  description: 'A comprehensive educational platform connecting institutions and students with qualified teachers and tutors in Sierra Leone.',
 }
 
 export default function RootLayout({
@@ -16,7 +17,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   )
 } 

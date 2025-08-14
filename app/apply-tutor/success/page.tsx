@@ -1,10 +1,22 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { AcademicCapIcon, CheckCircleIcon, ArrowRightIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 
 export default function TutorApplicationSuccessPage() {
+  const [email, setEmail] = useState('')
+
+  useEffect(() => {
+    // Get email from pending tutor data
+    const pendingData = localStorage.getItem('pendingTutorData')
+    if (pendingData) {
+      const data = JSON.parse(pendingData)
+      setEmail(data.email)
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center">
       <motion.div
@@ -21,29 +33,34 @@ export default function TutorApplicationSuccessPage() {
 
           {/* Success Message */}
           <h1 className="text-2xl font-bold text-gray-900 mb-4">
-            Application Submitted Successfully!
+            Application Submitted Successfully! 🎉
           </h1>
           
           <p className="text-gray-600 mb-6">
-            Thank you for applying to be a tutor with Tutor Link. We've received your application and will review it shortly.
+            We've sent a verification link to <strong>{email}</strong>
+          </p>
+
+          <p className="text-gray-500 mb-6">
+            Please check your email and click the verification link to complete your registration.
           </p>
 
           {/* Next Steps */}
           <div className="bg-primary-50 rounded-lg p-4 mb-6">
             <h3 className="font-semibold text-gray-900 mb-2">Next Steps:</h3>
             <ul className="text-sm text-gray-600 space-y-1">
-              <li>• Check your email for verification</li>
-              <li>• Our team will review your application</li>
-              <li>• You'll receive an email with next steps</li>
+              <li>• Check your email for verification link</li>
+              <li>• Click the verification link</li>
+              <li>• Set your password</li>
+              <li>• Access your tutor dashboard</li>
             </ul>
           </div>
 
           {/* Action Buttons */}
           <div className="space-y-3">
-            <Link href="/verify-email" className="block">
+            <Link href={`/verify-email?email=${email}`} className="block">
               <button className="w-full bg-primary-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-primary-700 transition-colors duration-300 flex items-center justify-center">
                 <AcademicCapIcon className="w-5 h-5 mr-2" />
-                Verify Email & Access Dashboard
+                Go to Verification Page
                 <ArrowRightIcon className="w-5 h-5 ml-2" />
               </button>
             </Link>

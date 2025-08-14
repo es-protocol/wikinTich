@@ -4,10 +4,12 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { CheckCircleIcon } from '@heroicons/react/24/outline'
 
 export default function InstitutionRegistration() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSubmitted, setIsSubmitted] = useState(false)
   const [formData, setFormData] = useState({
     // Institution Information
     schoolName: '',
@@ -44,84 +46,44 @@ export default function InstitutionRegistration() {
     setIsSubmitting(true)
 
     try {
-      // 1. Check if school admin profile already exists
-      const { data: existingProfile, error: checkError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', formData.contactEmail)
-        .single()
+      // 1. Store the institution data immediately for after verification
+      localStorage.setItem('pendingInstitutionData', JSON.stringify({
+        // Institution Information
+        schoolName: formData.schoolName,
+        schoolType: formData.schoolType,
+        schoolAddress: formData.schoolAddress,
+        schoolPhone: formData.schoolPhone,
+        schoolEmail: formData.schoolEmail,
+        
+        // Contact Person Information
+        contactName: formData.contactName,
+        contactPhone: formData.contactPhone,
+        contactEmail: formData.contactEmail,
+        contactPosition: formData.contactPosition,
+        
+        // Teacher Requirements
+        subjects: formData.subjects,
+        experienceLevel: formData.experienceLevel,
+        duration: formData.duration,
+        teacherCount: formData.teacherCount,
+        studentCount: formData.studentCount,
+        additionalRequirements: formData.additionalRequirements
+      }))
 
-      if (checkError && checkError.code !== 'PGRST116') {
-        throw checkError
-      }
-
-      let adminId = existingProfile?.id
-
-      if (!adminId) {
-        // 2. Create school admin profile
-        const { data: newProfile, error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            full_name: formData.contactName,
-            phone: formData.contactPhone,
-            email: formData.contactEmail,
-            role: 'school_admin'
-          })
-          .select('id')
-          .single()
-
-        if (profileError) {
-          throw profileError
+      // 2. Send verification email using Supabase Auth
+      const { error } = await supabase.auth.signInWithOtp({
+        email: formData.contactEmail,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`
         }
+      })
 
-        adminId = newProfile.id
+      if (error) {
+        throw error
       }
 
-      // 3. Create institution record
-      const { data: institution, error: institutionError } = await supabase
-        .from('schools')
-        .insert({
-          name: formData.schoolName,
-          type: formData.schoolType,
-          address: formData.schoolAddress,
-          phone: formData.schoolPhone,
-          email: formData.schoolEmail,
-          admin_id: adminId
-        })
-        .select('id')
-        .single()
-
-      if (institutionError) {
-        throw institutionError
-      }
-
-      // 4. Create teacher request
-      const { error: requestError } = await supabase
-        .from('institution_requests')
-        .insert({
-          school_id: institution.id,
-          admin_id: adminId,
-          institution_name: formData.schoolName,
-          institution_type: formData.schoolType,
-          contact_person: formData.contactName,
-          email: formData.contactEmail,
-          phone: formData.contactPhone,
-          address: formData.schoolAddress,
-          subjects: formData.subjects,
-          experience_level: formData.experienceLevel,
-          duration: formData.duration,
-          teacher_count: parseInt(formData.teacherCount),
-          student_count: parseInt(formData.studentCount),
-          additional_requirements: formData.additionalRequirements
-        })
-
-      if (requestError) {
-        throw requestError
-      }
-
-      // 5. Store email for verification and redirect
-      localStorage.setItem('pendingVerificationEmail', formData.contactEmail)
-      router.push(`/verify-email?email=${formData.contactEmail}`)
+      // 3. Show success message instead of redirecting immediately
+      setIsSubmitted(true)
 
     } catch (error) {
       console.error('Error submitting institution request:', error)
@@ -129,6 +91,57 @@ export default function InstitutionRegistration() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  // Show success message after form submission
+  if (isSubmitted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 py-12">
+        <div className="max-w-4xl mx-auto px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="text-center"
+          >
+            <div className="mx-auto w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-6">
+              <CheckCircleIcon className="w-12 h-12 text-green-600" />
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">
+              Institution Request Submitted! 🎉
+            </h1>
+            <p className="text-xl text-gray-600 mb-6">
+              We've sent a verification link to <strong>{formData.contactEmail}</strong>
+            </p>
+            <p className="text-gray-500 mb-8">
+              Please check your email and click the verification link to complete your registration.
+            </p>
+            <div className="space-y-4">
+              <button
+                onClick={() => setIsSubmitted(false)}
+                className="bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors"
+              >
+                Submit Another Request
+              </button>
+              <button
+                onClick={() => router.push(`/verify-email?email=${formData.contactEmail}`)}
+                className="bg-secondary-600 text-white px-6 py-3 rounded-lg hover:bg-secondary-700 transition-colors"
+              >
+                Go to Verification Page
+              </button>
+              <div>
+                <a
+                  href="/"
+                  className="text-primary-600 hover:text-primary-700 font-medium"
+                >
+                  ← Back to Home
+                </a>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+    )
   }
 
   return (

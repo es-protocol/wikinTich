@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { useAuth } from '@/lib/auth-context'
 import { 
   UserIcon, 
   AcademicCapIcon, 
@@ -22,7 +23,8 @@ import {
   UsersIcon,
   CalendarDaysIcon,
   UserGroupIcon,
-  UserPlusIcon
+  UserPlusIcon,
+  ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
 
@@ -56,17 +58,18 @@ interface TutoringRequest {
 
 interface Session {
   id: string
-  request_id: string
+  request_id: string | null
   tutor_id: string
+  student_id: string
   session_date: string
   start_time: string
   end_time: string
   duration_hours: number
   amount: number
-  status: 'proposed' | 'approved' | 'rejected' | 'completed' | 'cancelled' | 'in_progress' | 'scheduled'
-  notes: string
+  status: 'scheduled' | 'approved' | 'completed' | 'cancelled' | 'no_show'  // Added 'approved' status
+  notes: string | null
   created_at: string
-  student_id: string | null
+  updated_at: string | null
 }
 
 interface NewChildForm {
@@ -158,6 +161,7 @@ interface SessionReport {
 }
 
 export default function DashboardWithChildren() {
+  const { user, isLoading: authLoading } = useAuth()
   const [activeSection, setActiveSection] = useState('overview')
   const [isLoading, setIsLoading] = useState(true)
   const [userProfile, setUserProfile] = useState<any>(null)
@@ -199,6 +203,7 @@ export default function DashboardWithChildren() {
   const [proposalResponse, setProposalResponse] = useState({ action: '', notes: '' })
   const [selectedRequest, setSelectedRequest] = useState<TutoringRequest | null>(null)
   const [selectedSession, setSelectedSession] = useState<Session | null>(null)
+  const [selectedStudentForSession, setSelectedStudentForSession] = useState<string>('')
   
   // Student Progress and Session Reports states
   const [studentProgress, setStudentProgress] = useState<StudentProgress[]>([])
@@ -258,13 +263,8 @@ export default function DashboardWithChildren() {
 
   const fetchUserProfile = async () => {
     try {
-      // Get email from localStorage (set during registration/verification)
-      const email = localStorage.getItem('pendingVerificationEmail')
-      
-      if (!email) {
-        console.error('No email found in localStorage')
-        // Redirect to home tutoring form if no email
-        window.location.href = '/home-tutoring'
+      if (!user) {
+        console.error('No authenticated user found')
         return
       }
 
@@ -272,45 +272,33 @@ export default function DashboardWithChildren() {
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('email', email)
+        .eq('email', user.email)
         .eq('role', 'parent')
         .single()
 
       if (error) {
         console.error('Error fetching profile:', error)
-        // Redirect to home tutoring form if profile not found
-        window.location.href = '/home-tutoring'
         return
       }
 
       if (!profile) {
         console.error('Profile not found')
-        window.location.href = '/home-tutoring'
-        return
-      }
-
-      // Check if email is verified
-      if (!profile.email_verified) {
-        // Redirect to email verification
-        window.location.href = `/verify-email?email=${email}`
         return
       }
 
       setUserProfile(profile)
       setIsLoading(false)
       
-      // Clear the pending verification email from localStorage after successful load
-      localStorage.removeItem('pendingVerificationEmail')
-      
     } catch (error) {
       console.error('Error in fetchUserProfile:', error)
-      window.location.href = '/home-tutoring'
     }
   }
 
   useEffect(() => {
-    fetchUserProfile()
-  }, [])
+    if (!authLoading && user) {
+      fetchUserProfile()
+    }
+  }, [user, authLoading])
 
   useEffect(() => {
     if (userProfile) {
@@ -330,7 +318,7 @@ export default function DashboardWithChildren() {
 
   // Check for pending session approvals
   useEffect(() => {
-    const pendingSessions = sessions.filter(s => s.status === 'proposed')
+    const pendingSessions = sessions.filter(s => s.status === 'scheduled')
     if (pendingSessions.length > 0) {
       const newNotifications = pendingSessions.map(session => ({
         id: session.id,
@@ -424,6 +412,12 @@ export default function DashboardWithChildren() {
       if (error) {
         console.error('Error fetching sessions:', error)
         return
+      }
+
+      console.log('Debug: fetchSessions returned data:', sessionsData)
+      console.log('Debug: Number of sessions:', sessionsData?.length || 0)
+      if (sessionsData && sessionsData.length > 0) {
+        console.log('Debug: First session status:', sessionsData[0].status)
       }
 
       setSessions(sessionsData || [])
@@ -581,7 +575,7 @@ export default function DashboardWithChildren() {
           end_time: newSessionForm.end_time,
           duration_hours: durationHours,
           amount: 70000, // Default amount
-          status: 'scheduled', // Parent schedules, tutor can approve/reject
+          status: 'scheduled', // Use 'scheduled' status for new sessions
           notes: newSessionForm.notes
         }])
         .select()
@@ -597,11 +591,27 @@ export default function DashboardWithChildren() {
           end_time: newSessionForm.end_time,
           duration_hours: durationHours,
           amount: 70000,
-          status: 'scheduled',
+          status: 'proposed',
           notes: newSessionForm.notes
         })
         alert(`Failed to create session: ${error.message}`)
         return
+      }
+
+      // Create notification for tutor
+      try {
+        await supabase
+          .from('tutor_notifications')
+          .insert({
+            tutor_id: tutorId,
+            title: 'New Session Proposal',
+            message: `Parent has created a new session for ${selectedStudentForSession.name} on ${new Date(newSessionForm.session_date).toLocaleDateString()}`,
+            notification_type: 'home_tutoring',
+            category: 'home_tutoring'
+          })
+      } catch (notifError) {
+        console.error('Error creating tutor notification:', notifError)
+        // Don't fail the session creation if notification fails
       }
 
       setNewSessionForm({
@@ -614,7 +624,7 @@ export default function DashboardWithChildren() {
       })
       setShowNewSessionModal(false)
       await fetchSessions()
-      alert('Session scheduled successfully! The tutor will be notified and can approve or suggest changes.')
+              alert('Session created successfully! The tutor will be notified and can approve or reject.')
     } catch (error) {
       console.error('Error creating session:', error)
       alert('Failed to create session. Please try again.')
@@ -625,15 +635,21 @@ export default function DashboardWithChildren() {
 
   const handleSessionAction = async (sessionId: string, action: 'approve' | 'reject' | 'complete') => {
     try {
-      let newStatus = 'proposed'
-      if (action === 'approve') newStatus = 'approved'
-      else if (action === 'reject') newStatus = 'rejected'
-      else if (action === 'complete') newStatus = 'completed'
+      // Use status values that are actually allowed by the database constraint
+      // According to the updated schema: ['scheduled', 'approved', 'completed', 'cancelled', 'no_show']
+      let newStatus = 'scheduled'
+      if (action === 'approve') newStatus = 'approved'  // Use 'approved' status for approval
+      else if (action === 'reject') newStatus = 'cancelled'  // Use 'cancelled' status for rejection
+      else if (action === 'complete') newStatus = 'completed'  // Use 'completed' for completion
       
-      const { error } = await supabase
+      console.log(`Debug: handleSessionAction called with action: ${action}`)
+      console.log(`Debug: Updating session ${sessionId} to status: ${newStatus}`)
+      
+      const { data, error } = await supabase
         .from('home_tutoring_sessions')
         .update({ status: newStatus })
         .eq('id', sessionId)
+        .select()
 
       if (error) {
         console.error('Error updating session:', error)
@@ -641,6 +657,9 @@ export default function DashboardWithChildren() {
         return
       }
 
+      console.log('Debug: Session update successful, returned data:', data)
+      console.log('Debug: New session status:', data?.[0]?.status)
+      
       await fetchSessions()
       setShowSessionDetailsModal(false)
       setSelectedSession(null)
@@ -733,6 +752,49 @@ export default function DashboardWithChildren() {
     }
   }
 
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!confirm('Are you sure you want to delete this session? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('home_tutoring_sessions')
+        .delete()
+        .eq('id', sessionId)
+
+      if (error) {
+        console.error('Error deleting session:', error)
+        alert('Failed to delete session. Please try again.')
+        return
+      }
+
+      await fetchSessions()
+      alert('Session deleted successfully!')
+    } catch (error) {
+      console.error('Error deleting session:', error)
+      alert('Failed to delete session. Please try again.')
+    }
+  }
+
+  const handleEditSession = (session: Session) => {
+    // Populate the new session form with existing session data
+    setNewSessionForm({
+      student_id: session.student_id || '',
+      request_id: session.request_id || '',
+      session_date: session.session_date,
+      start_time: session.start_time,
+      end_time: session.end_time,
+      notes: session.notes || ''
+    })
+    
+    // Show the new session modal (which will now act as edit modal)
+    setShowNewSessionModal(true)
+    
+    // Store the session being edited
+    setSelectedSession(session)
+  }
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -791,15 +853,57 @@ export default function DashboardWithChildren() {
         setTutorProposals(proposals || [])
       }
 
-      // Fetch tutor display info
+      // Fetch tutor display info from tutors table with profile data
       const { data: displayInfo, error: displayError } = await supabase
-        .from('tutor_display_info')
-        .select('*')
+        .from('tutors')
+        .select(`
+          id,
+          profile_id,
+          bio,
+          subjects,
+          availability,
+          is_verified,
+          verification_date,
+          profiles!inner(
+            full_name,
+            email,
+            phone
+          )
+        `)
+        .returns<{
+          id: string
+          profile_id: string
+          bio: string | null
+          subjects: string[] | null
+          availability: any
+          is_verified: boolean
+          verification_date: string | null
+          profiles: {
+            full_name: string
+            email: string
+            phone: string | null
+          }
+        }[]>()
 
       if (displayError) {
         console.error('Error fetching tutor display info:', displayError)
       } else {
-        setTutorDisplayInfo(displayInfo || [])
+        const transformedInfo = displayInfo?.map(tutor => ({
+          id: tutor.id,
+          tutor_id: tutor.id,
+          display_name: tutor.profiles.full_name,
+          subjects_taught: Array.isArray(tutor.subjects) ? tutor.subjects.filter(s => s !== null && s !== undefined) : (tutor.subjects ? [tutor.subjects] : []),
+          experience_years: 0, // Default value
+          education_level: 'Not specified', // Default value
+          bio_summary: tutor.bio || 'No bio available',
+          availability_summary: tutor.availability ? JSON.stringify(tutor.availability) : 'Not specified',
+          rating: 0, // Default value
+          total_reviews: 0, // Default value
+          is_featured: false, // Default value
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })) || []
+        setTutorDisplayInfo(transformedInfo)
       }
 
       // Fetch tutor reviews
@@ -947,19 +1051,16 @@ export default function DashboardWithChildren() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending':
-      case 'proposed':
+      case 'scheduled':
         return 'bg-yellow-100 text-yellow-800'
-      case 'matched':
       case 'approved':
-        return 'bg-green-100 text-green-800'
-      case 'in_progress':
         return 'bg-blue-100 text-blue-800'
       case 'completed':
-        return 'bg-gray-100 text-gray-800'
+        return 'bg-green-100 text-green-800'
       case 'cancelled':
-      case 'rejected':
         return 'bg-red-100 text-red-800'
+      case 'no_show':
+        return 'bg-orange-100 text-orange-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -967,18 +1068,15 @@ export default function DashboardWithChildren() {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'pending':
-      case 'proposed':
+      case 'scheduled':
         return <ClockIcon className="w-4 h-4" />
-      case 'matched':
       case 'approved':
         return <CheckCircleIcon className="w-4 h-4" />
-      case 'in_progress':
-        return <AcademicCapIcon className="w-4 h-4" />
       case 'completed':
         return <CheckCircleIcon className="w-4 h-4" />
       case 'cancelled':
-      case 'rejected':
+        return <ExclamationTriangleIcon className="w-4 h-4" />
+      case 'no_show':
         return <ExclamationTriangleIcon className="w-4 h-4" />
       default:
         return <ClockIcon className="w-4 h-4" />
@@ -1021,7 +1119,7 @@ export default function DashboardWithChildren() {
       
       return (
         sessionDate >= today && 
-        (s.status === 'approved' || s.status === 'scheduled' || s.status === 'in_progress')
+        (s.status === 'completed' || s.status === 'scheduled')
       )
     }).sort((a, b) => new Date(a.session_date).getTime() - new Date(b.session_date).getTime())
   }
@@ -1304,7 +1402,7 @@ export default function DashboardWithChildren() {
                           onClick={() => setShowNewSessionModal(true)}
                           className="mt-4 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700"
                         >
-                          Schedule Session
+                          Propose Session
                         </button>
                       </div>
                     ) : (
@@ -1543,7 +1641,7 @@ export default function DashboardWithChildren() {
                   className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center"
                 >
                   <PlusIcon className="w-4 h-4 mr-2" />
-                  Schedule Session
+                  Propose Session
                 </button>
               </div>
               
@@ -1551,7 +1649,7 @@ export default function DashboardWithChildren() {
               <div className="flex space-x-4 border-b border-gray-200">
                 {[
                   { id: 'all', name: 'All', count: sessions.length },
-                  { id: 'proposed', name: 'Proposed', count: sessions.filter(s => s.status === 'proposed').length },
+                  { id: 'scheduled', name: 'Scheduled', count: sessions.filter(s => s.status === 'scheduled').length },
                   { id: 'approved', name: 'Approved', count: sessions.filter(s => s.status === 'approved').length },
                   { id: 'completed', name: 'Completed', count: sessions.filter(s => s.status === 'completed').length },
                   { id: 'cancelled', name: 'Cancelled', count: sessions.filter(s => s.status === 'cancelled').length }
@@ -1580,7 +1678,7 @@ export default function DashboardWithChildren() {
                 <div className="text-center py-8">
                   <CalendarIcon className="w-12 h-12 text-gray-400 mx-auto" />
                   <p className="mt-2 text-gray-600">No sessions found</p>
-                  <p className="text-sm text-gray-500">Schedule sessions once tutors are matched</p>
+                  <p className="text-sm text-gray-500">Propose sessions once tutors are matched</p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1613,15 +1711,51 @@ export default function DashboardWithChildren() {
                           <p className="text-sm text-gray-500">
                             Created: {formatDate(session.created_at)}
                           </p>
-                          <button
-                            onClick={() => {
-                              setSelectedSession(session)
-                              setShowSessionDetailsModal(true)
-                            }}
-                            className="mt-2 text-primary-600 hover:text-primary-700 text-sm font-medium"
-                          >
-                            View Details
-                          </button>
+                          <div className="flex space-x-2 mt-2">
+                            <button
+                              onClick={() => {
+                                setSelectedSession(session)
+                                setShowSessionDetailsModal(true)
+                              }}
+                              className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                            >
+                              View Details
+                            </button>
+                            {/* Show Edit/Cancel buttons only for scheduled sessions created by parent (has request_id) */}
+                            {session.status === 'scheduled' && session.request_id && (
+                              <>
+                                <button
+                                  onClick={() => handleEditSession(session)}
+                                  className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                                >
+                                  Edit Session
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteSession(session.id)}
+                                  className="text-red-600 hover:text-red-700 text-sm font-medium"
+                                >
+                                  Cancel Session
+                                </button>
+                              </>
+                            )}
+                            {/* Show Approve/Reject buttons only for scheduled sessions created by tutor (no request_id) */}
+                            {session.status === 'scheduled' && !session.request_id && (
+                              <>
+                                <button
+                                  onClick={() => handleSessionAction(session.id, 'approve')}
+                                  className="text-green-600 hover:text-green-700 text-sm font-medium"
+                                >
+                                  Approve Session
+                                </button>
+                                <button
+                                  onClick={() => handleSessionAction(session.id, 'reject')}
+                                  className="text-red-600 hover:text-red-700 text-sm font-medium"
+                                >
+                                  Reject Session
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </motion.div>
@@ -1965,6 +2099,37 @@ export default function DashboardWithChildren() {
     }
   }
 
+  // Show loading while auth is initializing
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading authentication...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Check if user is authenticated and has the right role
+  if (!user) {
+    // Redirect to login if not authenticated
+    window.location.href = '/login'
+    return null
+  }
+  
+  if (user.role !== 'parent') {
+    // Redirect to appropriate dashboard based on role
+    if (user.role === 'school_admin') {
+      window.location.href = '/school-admin-dashboard'
+    } else if (user.role === 'tutor') {
+      window.location.href = '/tutor-dashboard'
+    } else {
+      window.location.href = '/login'
+    }
+    return null
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -2022,6 +2187,18 @@ export default function DashboardWithChildren() {
                 className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700"
               >
                 <PlusIcon className="w-4 h-4" />
+              </button>
+              
+              {/* Logout Button */}
+              <button 
+                onClick={() => {
+                  localStorage.clear()
+                  window.location.href = '/login'
+                }}
+                className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                <ArrowRightOnRectangleIcon className="w-5 h-5" />
+                <span>Logout</span>
               </button>
             </div>
           </div>
@@ -2385,7 +2562,7 @@ export default function DashboardWithChildren() {
                   disabled={isSubmitting}
                   className="flex-1 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Scheduling...' : 'Schedule Session'}
+                  {isSubmitting ? 'Proposing...' : 'Propose Session'}
                 </button>
               </div>
             </form>
@@ -2548,7 +2725,26 @@ export default function DashboardWithChildren() {
                 <p className="text-sm text-gray-600">Notes: {selectedSession.notes}</p>
                 <p className="text-sm text-gray-600">Created At: {formatDate(selectedSession.created_at)}</p>
               </div>
-              {selectedSession.status === 'proposed' && (
+              
+              {/* Session Management Buttons - Show different actions based on who created the session */}
+              {selectedSession.status === 'scheduled' && selectedSession.request_id && (
+                <div className="flex space-x-3 mb-4">
+                  <button
+                    onClick={() => handleEditSession(selectedSession)}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Edit Session
+                  </button>
+                  <button
+                    onClick={() => handleDeleteSession(selectedSession.id)}
+                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    Cancel Session
+                  </button>
+                </div>
+              )}
+              
+              {selectedSession.status === 'scheduled' && !selectedSession.request_id && (
                 <div className="flex space-x-3">
                   <button
                     onClick={() => handleSessionAction(selectedSession.id, 'approve')}
@@ -2576,39 +2772,7 @@ export default function DashboardWithChildren() {
                     onClick={() => handleSessionAction(selectedSession.id, 'reject')}
                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                   >
-                    Reject Session
-                  </button>
-                </div>
-              )}
-              {selectedSession.status === 'in_progress' && (
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'complete')}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Mark as Completed
-                  </button>
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'reject')}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                  >
-                    Reject Session
-                  </button>
-                </div>
-              )}
-              {selectedSession.status === 'rejected' && (
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'approve')}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                  >
-                    Approve Session
-                  </button>
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'complete')}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Mark as Completed
+                    Cancel Session
                   </button>
                 </div>
               )}
@@ -2618,7 +2782,17 @@ export default function DashboardWithChildren() {
                     onClick={() => handleSessionAction(selectedSession.id, 'reject')}
                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                   >
-                    Reject Session
+                    Cancel Session
+                  </button>
+                </div>
+              )}
+              {selectedSession.status === 'cancelled' && (
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => handleSessionAction(selectedSession.id, 'approve')}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  >
+                    Reschedule Session
                   </button>
                 </div>
               )}

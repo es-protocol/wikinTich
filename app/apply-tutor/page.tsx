@@ -96,62 +96,40 @@ export default function ApplyTutorPage() {
     setError('')
 
     try {
-      // Create profile first
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          full_name: formData.fullName,
-          email: formData.email,
-          phone: formData.phone,
-          role: 'tutor'
-        })
-        .select()
-        .single()
+      // 1. Store the tutor data immediately for after verification
+      localStorage.setItem('pendingTutorData', JSON.stringify({
+        // Profile information
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        
+        // Tutor information
+        bio: formData.bio,
+        subjects: formData.subjects,
+        
+        // Qualifications
+        qualificationType: formData.qualificationType,
+        qualificationTitle: formData.qualificationTitle,
+        institution: formData.institution,
+        yearObtained: formData.yearObtained,
+        
+        // Availability
+        availability: formData.availability
+      }))
 
-      if (profileError) {
-        console.error('Profile creation error:', profileError)
-        throw new Error('Failed to create profile')
+      // 2. Send verification email using Supabase Auth
+      const { error } = await supabase.auth.signInWithOtp({
+        email: formData.email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        }
+      })
+
+      if (error) {
+        throw error
       }
 
-             // Create tutor record
-       const { data: tutorData, error: tutorError } = await supabase
-         .from('tutors')
-         .insert({
-           profile_id: profileData.id,
-           bio: formData.bio,
-           subjects: formData.subjects,
-           availability: formData.availability,
-           phone: formData.phone,
-           email: formData.email
-         })
-         .select()
-         .single()
-
-      if (tutorError) {
-        console.error('Tutor creation error:', tutorError)
-        throw new Error('Failed to create tutor profile')
-      }
-
-             // Create qualification record
-       const { error: qualificationError } = await supabase
-         .from('tutor_qualifications')
-         .insert({
-           tutor_id: tutorData.id,
-           qualification_type: formData.qualificationType,
-           title: formData.qualificationTitle,
-           institution: formData.institution,
-           year_obtained: parseInt(formData.yearObtained)
-         })
-
-      if (qualificationError) {
-        console.error('Qualification creation error:', qualificationError)
-        throw new Error('Failed to create qualification record')
-      }
-
-      // Store email for verification
-      localStorage.setItem('pendingVerificationEmail', formData.email)
-      
-      // Redirect to success page
+      // 3. Redirect to success page
       window.location.href = '/apply-tutor/success'
 
     } catch (err: any) {

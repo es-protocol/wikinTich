@@ -1,258 +1,235 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { EnvelopeIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { CheckCircleIcon, XCircleIcon, ClockIcon } from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
 
-export default function VerifyEmail() {
-  const [isVerifying, setIsVerifying] = useState(false)
-  const [verificationStatus, setVerificationStatus] = useState<'pending' | 'success' | 'error'>('pending')
+export default function VerifyEmailPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [verificationStatus, setVerificationStatus] = useState<'verifying' | 'success' | 'error' | 'expired'>('verifying')
   const [errorMessage, setErrorMessage] = useState('')
   const [email, setEmail] = useState('')
-  const [verificationCode, setVerificationCode] = useState('')
-  const [showCodeInput, setShowCodeInput] = useState(false)
-  
-  const searchParams = useSearchParams()
-  const router = useRouter()
 
   useEffect(() => {
     // Get email from URL params or localStorage
     const emailParam = searchParams.get('email')
-    const storedEmail = localStorage.getItem('pendingVerificationEmail')
+    const storedParentEmail = localStorage.getItem('pendingParentData') ? JSON.parse(localStorage.getItem('pendingParentData')!).parentEmail : null
+    const storedInstitutionEmail = localStorage.getItem('pendingInstitutionData') ? JSON.parse(localStorage.getItem('pendingInstitutionData')!).contactEmail : null
+    const storedTutorEmail = localStorage.getItem('pendingTutorData') ? JSON.parse(localStorage.getItem('pendingTutorData')!).email : null
+    const currentEmail = emailParam || storedParentEmail || storedInstitutionEmail || storedTutorEmail || ''
     
-    if (emailParam) {
-      setEmail(emailParam)
-      localStorage.setItem('pendingVerificationEmail', emailParam)
-    } else if (storedEmail) {
-      setEmail(storedEmail)
-    }
-  }, [searchParams])
-
-  const sendVerificationEmail = async () => {
-    if (!email) {
-      setErrorMessage('Please enter your email address')
-      return
+    if (currentEmail) {
+      setEmail(currentEmail)
     }
 
-    setIsVerifying(true)
-    setErrorMessage('')
-
-    try {
-      // For MVP, we'll simulate email sending
-      // In production, this would integrate with a real email service
-      console.log('Sending verification email to:', email)
-      
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      setShowCodeInput(true)
-      setVerificationStatus('pending')
-      
-    } catch (error) {
-      console.error('Error sending verification email:', error)
-      setErrorMessage('Failed to send verification email. Please try again.')
-      setVerificationStatus('error')
-    } finally {
-      setIsVerifying(false)
-    }
-  }
-
-  const verifyCode = async () => {
-    if (!verificationCode) {
-      setErrorMessage('Please enter the verification code')
-      return
-    }
-
-    setIsVerifying(true)
-    setErrorMessage('')
-
-    try {
-      // For MVP, we'll accept any 6-digit code
-      // In production, this would verify against the actual code sent
-      if (verificationCode.length === 6) {
-        // Update profile verification status in database
-        const { error } = await supabase
-          .from('profiles')
-          .update({ 
-            email_verified: true,
-            email_verified_at: new Date().toISOString()
+    // Check if this is a verification callback from Supabase
+    const handleVerification = async () => {
+      try {
+        // Check if we have access_token and refresh_token in URL (Supabase callback)
+        const accessToken = searchParams.get('access_token')
+        const refreshToken = searchParams.get('refresh_token')
+        
+        if (accessToken && refreshToken) {
+          // This is a Supabase verification callback
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
           })
-          .eq('email', email)
 
-        if (error) {
-          throw error
-        }
-
-        setVerificationStatus('success')
-        
-        // Get user profile to determine redirect
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('email', email)
-          .single()
-        
-        // Redirect based on user role after 2 seconds
-        setTimeout(() => {
-          if (profile?.role === 'school_admin') {
-            router.push('/school-admin-dashboard')
-          } else if (profile?.role === 'tutor') {
-            router.push('/tutor-dashboard')
-          } else {
-            router.push('/dashboard-with-children')
+          if (error) {
+            console.error('Session error:', error)
+            setVerificationStatus('error')
+            setErrorMessage('Verification failed. Please try again.')
+            return
           }
-        }, 2000)
-        
-      } else {
-        setErrorMessage('Invalid verification code. Please try again.')
+
+          if (data.user?.email) {
+            // User is verified and authenticated
+            setVerificationStatus('success')
+            
+            // Clear pending emails
+            localStorage.removeItem('pendingParentData')
+            localStorage.removeItem('pendingInstitutionData')
+            localStorage.removeItem('pendingTutorData')
+            
+            // Redirect to password setup after a short delay
+            setTimeout(() => {
+              router.push(`/set-password?email=${data.user!.email}`)
+            }, 2000)
+          }
+        } else {
+          // No tokens, check if user needs to verify
+          setVerificationStatus('verifying')
+        }
+      } catch (error) {
+        console.error('Verification error:', error)
         setVerificationStatus('error')
+        setErrorMessage('An unexpected error occurred.')
+      }
+    }
+
+    handleVerification()
+  }, [searchParams, router])
+
+  const resendVerification = async () => {
+    try {
+      setVerificationStatus('verifying')
+      
+      // Get the correct email from pending data
+      const storedParentEmail = localStorage.getItem('pendingParentData') ? JSON.parse(localStorage.getItem('pendingParentData')!).parentEmail : null
+      const storedInstitutionEmail = localStorage.getItem('pendingInstitutionData') ? JSON.parse(localStorage.getItem('pendingInstitutionData')!).contactEmail : null
+      const storedTutorEmail = localStorage.getItem('pendingTutorData') ? JSON.parse(localStorage.getItem('pendingTutorData')!).email : null
+      const emailToUse = email || storedParentEmail || storedInstitutionEmail || storedTutorEmail
+      
+      if (!emailToUse) {
+        throw new Error('No email found for verification')
       }
       
+      // Send verification email using Supabase Auth
+      const { error } = await supabase.auth.signInWithOtp({
+        email: emailToUse,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        }
+      })
+
+      if (error) {
+        throw error
+      }
+
+      setVerificationStatus('verifying')
+      setErrorMessage('')
     } catch (error) {
-      console.error('Error verifying code:', error)
-      setErrorMessage('Failed to verify code. Please try again.')
+      console.error('Resend error:', error)
       setVerificationStatus('error')
-    } finally {
-      setIsVerifying(false)
+      setErrorMessage('Failed to resend verification email. Please try again.')
     }
   }
 
-  const resendCode = () => {
-    setShowCodeInput(false)
-    setVerificationCode('')
-    setVerificationStatus('pending')
-    sendVerificationEmail()
+  const renderContent = () => {
+    switch (verificationStatus) {
+      case 'verifying':
+        return (
+          <div className="text-center">
+            <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-6">
+              <ClockIcon className="w-8 h-8 text-blue-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Verify Your Email
+            </h2>
+            <p className="text-gray-600 mb-6">
+              We've sent a verification link to <strong>{email}</strong>
+            </p>
+            <p className="text-gray-500 text-sm mb-8">
+              Click the link in your email to verify your account and continue.
+            </p>
+            
+            <div className="space-y-4">
+              <button
+                onClick={resendVerification}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Resend Verification Email
+              </button>
+              
+              <div className="text-sm text-gray-500">
+                <p>Didn't receive the email?</p>
+                <p>Check your spam folder or try resending.</p>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'success':
+        return (
+          <div className="text-center">
+            <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6">
+              <CheckCircleIcon className="w-8 h-8 text-green-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Email Verified Successfully! 🎉
+            </h2>
+            <p className="text-gray-600 mb-6">
+              Your email has been verified. Redirecting you to set up your password...
+            </p>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
+          </div>
+        )
+
+      case 'error':
+        return (
+          <div className="text-center">
+            <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-6">
+              <XCircleIcon className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Verification Failed
+            </h2>
+            <p className="text-gray-600 mb-6">
+              {errorMessage || 'Something went wrong during verification.'}
+            </p>
+            <button
+              onClick={resendVerification}
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        )
+
+      case 'expired':
+        return (
+          <div className="text-center">
+            <div className="mx-auto w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mb-6">
+              <ClockIcon className="w-8 h-8 text-yellow-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">
+              Verification Link Expired
+            </h2>
+            <p className="text-gray-600 mb-6">
+              The verification link has expired. Please request a new one.
+            </p>
+            <button
+              onClick={resendVerification}
+              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Send New Verification Email
+            </button>
+          </div>
+        )
+
+      default:
+        return null
+    }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-primary-50 py-12">
-      <div className="max-w-md mx-auto px-4">
+    <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full">
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
           className="bg-white rounded-2xl shadow-lg p-8"
         >
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <EnvelopeIcon className="w-8 h-8 text-primary-600" />
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Verify Your Email
-            </h1>
-            <p className="text-gray-600">
-              Please verify your email address to access your dashboard
-            </p>
-          </div>
+          {renderContent()}
+        </motion.div>
 
-          {/* Email Input */}
-          {!showCodeInput && (
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  id="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Enter your email address"
-                />
-              </div>
-              
-              <button
-                onClick={sendVerificationEmail}
-                disabled={isVerifying}
-                className="w-full bg-primary-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-primary-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isVerifying ? 'Sending...' : 'Send Verification Code'}
-              </button>
-            </div>
-          )}
-
-          {/* Verification Code Input */}
-          {showCodeInput && (
-            <div className="space-y-4">
-              <div className="text-center">
-                <p className="text-gray-600 mb-4">
-                  We've sent a 6-digit verification code to:
-                </p>
-                <p className="font-medium text-gray-900">{email}</p>
-              </div>
-
-              <div>
-                <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-2">
-                  Verification Code
-                </label>
-                <input
-                  type="text"
-                  id="code"
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-center text-2xl font-mono tracking-widest"
-                  placeholder="000000"
-                  maxLength={6}
-                />
-              </div>
-
-              <button
-                onClick={verifyCode}
-                disabled={isVerifying || verificationCode.length !== 6}
-                className="w-full bg-primary-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-primary-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isVerifying ? 'Verifying...' : 'Verify Code'}
-              </button>
-
-              <button
-                onClick={resendCode}
-                disabled={isVerifying}
-                className="w-full text-primary-600 py-2 px-4 rounded-lg font-medium hover:bg-primary-50 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Resend Code
-              </button>
-            </div>
-          )}
-
-          {/* Status Messages */}
-          {verificationStatus === 'success' && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg"
-            >
-              <div className="flex items-center">
-                <CheckCircleIcon className="w-5 h-5 text-green-600 mr-2" />
-                <p className="text-green-800 font-medium">Email verified successfully!</p>
-              </div>
-              <p className="text-green-700 text-sm mt-1">Redirecting to dashboard...</p>
-            </motion.div>
-          )}
-
-          {verificationStatus === 'error' && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg"
-            >
-              <div className="flex items-center">
-                <ExclamationTriangleIcon className="w-5 h-5 text-red-600 mr-2" />
-                <p className="text-red-800 font-medium">Verification failed</p>
-              </div>
-              <p className="text-red-700 text-sm mt-1">{errorMessage}</p>
-            </motion.div>
-          )}
-
-          {/* Demo Note */}
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-blue-800 text-sm">
-              <strong>Demo Note:</strong> For testing, any 6-digit code will work. In production, this would verify against the actual code sent via email.
-            </p>
-          </div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.6, delay: 0.4 }}
+          className="text-center mt-6"
+        >
+          <button
+            onClick={() => router.push('/')}
+            className="text-primary-600 hover:text-primary-700 font-medium"
+          >
+            ← Back to Home
+          </button>
         </motion.div>
       </div>
     </div>

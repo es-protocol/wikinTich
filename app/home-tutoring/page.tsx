@@ -38,90 +38,55 @@ export default function HomeTutoringRequest() {
     e.preventDefault()
     setIsSubmitting(true)
 
-         try {
-       // For MVP, let's create profiles directly without auth signup
-       // This avoids rate limiting issues and simplifies the flow
-       
-       // 1. Check if profile already exists
-       const { data: existingProfile, error: checkError } = await supabase
-         .from('profiles')
-         .select('id')
-         .eq('email', formData.parentEmail)
-         .single()
+    try {
+      // Use Supabase Auth for real email verification
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.parentEmail,
+        password: 'temporary_password_123', // Temporary password that will be changed
+        options: {
+          data: {
+            full_name: formData.parentName,
+            phone: formData.parentPhone,
+            role: 'parent',
+            // Store student info temporarily for after verification
+            student_name: formData.studentName,
+            student_age: formData.studentAge,
+            grade_level: formData.gradeLevel,
+            subjects: formData.subjects,
+            preferred_schedule: formData.preferredSchedule,
+            location: formData.location,
+            additional_requirements: formData.additionalRequirements
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        }
+      })
 
-       if (checkError && checkError.code !== 'PGRST116') {
-         throw checkError
-       }
+      if (error) {
+        throw error
+      }
 
-       let userId = existingProfile?.id
+      if (data.user) {
+        // Store the temporary data for after verification
+        localStorage.setItem('pendingParentData', JSON.stringify({
+          parentName: formData.parentName,
+          parentPhone: formData.parentPhone,
+          parentEmail: formData.parentEmail,
+          studentName: formData.studentName,
+          studentAge: formData.studentAge,
+          gradeLevel: formData.gradeLevel,
+          subjects: formData.subjects,
+          preferredSchedule: formData.preferredSchedule,
+          location: formData.location,
+          additionalRequirements: formData.additionalRequirements
+        }))
 
-       if (!userId) {
-         // 2. Create profile directly (we'll handle auth later)
-         const { data: newProfile, error: profileError } = await supabase
-           .from('profiles')
-           .insert({
-             full_name: formData.parentName,
-             phone: formData.parentPhone,
-             email: formData.parentEmail,
-             role: 'parent'
-           })
-           .select('id')
-           .single()
-
-         if (profileError) {
-           throw profileError
-         }
-
-         userId = newProfile.id
-       }
-
-      
-
-             // 3. Create student record first
-       const studentAge = formData.studentAge ? parseInt(formData.studentAge) : null
-       
-       const { data: newStudent, error: studentError } = await supabase
-         .from('students')
-         .insert({
-           parent_id: userId,
-           name: formData.studentName,
-           age: studentAge,
-           grade_level: formData.gradeLevel
-         })
-         .select('id')
-         .single()
-
-       if (studentError) {
-         throw studentError
-       }
-
-       // 4. Create home tutoring request with student_id reference
-       const { error: requestError } = await supabase
-         .from('home_tutoring_requests')
-         .insert({
-           parent_id: userId,
-           student_id: newStudent.id,
-           student_name: formData.studentName,
-           student_age: studentAge,
-           grade_level: formData.gradeLevel,
-           subjects: formData.subjects,
-           preferred_schedule: formData.preferredSchedule,
-           location: formData.location,
-           additional_requirements: formData.additionalRequirements
-         })
-
-       if (requestError) {
-         throw requestError
-       }
-
-                  // 5. Store email for verification and redirect to verification page
-            localStorage.setItem('pendingVerificationEmail', formData.parentEmail)
-            router.push(`/verify-email?email=${formData.parentEmail}`)
-      
-         } catch (error) {
-       console.error('Error submitting request:', error)
-       alert(`Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`)
-     } finally {
+        // Redirect to verification page
+        router.push(`/verify-email?email=${formData.parentEmail}`)
+      }
+    } catch (error) {
+      console.error('Error submitting request:', error)
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`)
+    } finally {
       setIsSubmitting(false)
     }
   }

@@ -16,7 +16,8 @@ import {
   XMarkIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
-  ChevronDownIcon
+  ChevronDownIcon,
+  BellIcon
 } from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
 
@@ -73,6 +74,7 @@ interface HomeTutoringSession {
   notes: string
   student_id: string
   student_name: string
+  created_by?: string  // Add this field to track who created the session
 }
 
 interface Payment {
@@ -138,6 +140,7 @@ export default function TutorDashboard() {
   const [error, setError] = useState('')
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [showProfileDropdown, setShowProfileDropdown] = useState(false)
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false)
   const [profileFormData, setProfileFormData] = useState({
     fullName: '',
     email: '',
@@ -147,7 +150,7 @@ export default function TutorDashboard() {
     availability: ''
   })
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false)
-  const [lastUpdate, setLastUpdate] = useState(Date.now()) // Force re-render trigger
+  const [lastUpdate, setLastUpdate] = useState(0)
 
   // Loading states for different sections
   const [isLoadingSessions, setIsLoadingSessions] = useState(false)
@@ -165,6 +168,7 @@ export default function TutorDashboard() {
     notes: ''
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [sessionFilter, setSessionFilter] = useState<string>('all')
 
   const { user, isLoading: authLoading, logout } = useAuth()
 
@@ -183,14 +187,19 @@ export default function TutorDashboard() {
     }
   }, [user, authLoading])
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showProfileDropdown) {
-        const target = event.target as Element
-        if (!target.closest('.relative')) {
-          setShowProfileDropdown(false)
-        }
+      const target = event.target as Element
+      
+      // Close profile dropdown
+      if (showProfileDropdown && !target.closest('.profile-dropdown')) {
+        setShowProfileDropdown(false)
+      }
+      
+      // Close notifications dropdown
+      if (showNotificationsDropdown && !target.closest('.notifications-dropdown')) {
+        setShowNotificationsDropdown(false)
       }
     }
 
@@ -198,7 +207,7 @@ export default function TutorDashboard() {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [showProfileDropdown])
+  }, [showProfileDropdown, showNotificationsDropdown])
 
 
 
@@ -802,21 +811,22 @@ export default function TutorDashboard() {
       const endTime = new Date(`2000-01-01T${proposeSessionForm.end_time}`)
       const durationHours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60)
 
-      // Create session proposal
-      const { error: sessionError } = await supabase
-        .from('home_tutoring_sessions')
-        .insert({
-          request_id: request.data.id,
-          tutor_id: tutorData.id,
-          student_id: selectedStudent,
-          session_date: proposeSessionForm.session_date,
-          start_time: proposeSessionForm.start_time,
-          end_time: proposeSessionForm.end_time,
-          duration_hours: durationHours,
-          amount: 70000, // Add default amount in Sierra Leone Leones (SLL)
-          status: 'scheduled', // Use 'scheduled' instead of 'proposed' to match database constraint
-          notes: proposeSessionForm.notes
-        })
+             // Create session proposal - Add created_by field to distinguish tutor-created sessions
+       const { error: sessionError } = await supabase
+         .from('home_tutoring_sessions')
+         .insert({
+           request_id: request.data.id, // Use the actual request ID for tutor-created sessions
+           tutor_id: tutorData.id,
+           student_id: selectedStudent,
+           session_date: proposeSessionForm.session_date,
+           start_time: proposeSessionForm.start_time,
+           end_time: proposeSessionForm.end_time,
+           duration_hours: durationHours,
+           amount: 70000, // Add default amount in Sierra Leone Leones (SLL)
+           status: 'scheduled', // Use 'scheduled' instead of 'proposed' to match database constraint
+           notes: proposeSessionForm.notes,
+           created_by: 'tutor' // Add this field to distinguish tutor-created sessions
+         })
 
       if (sessionError) {
         throw sessionError
@@ -864,13 +874,12 @@ export default function TutorDashboard() {
     alert('Session editing functionality coming soon!')
   }
 
-  const handleSessionAction = async (sessionId: string, action: 'approve' | 'reject') => {
+  const handleSessionAction = async (sessionId: string, action: 'approve' | 'reject' | 'cancel') => {
     try {
       setIsSubmitting(true)
       
-      // Use status values that are actually allowed by the database constraint
-      // According to the schema: ['scheduled', 'completed', 'cancelled', 'no_show']
-      const newStatus = action === 'approve' ? 'completed' : 'cancelled'
+      // Fix: Use correct status values - 'approved' for approve, 'cancelled' for reject/cancel
+      const newStatus = action === 'approve' ? 'approved' : 'cancelled'
       
       console.log(`Debug: Updating session ${sessionId} to status: ${newStatus}`)
       
@@ -891,8 +900,36 @@ export default function TutorDashboard() {
 
       console.log(`Session ${action}d successfully:`, data)
       
+             // Create notification for parent when tutor approves/rejects their session
+       try {
+         const session = homeTutoringSessions.find(s => s.id === sessionId)
+         if (session && session.created_by !== 'tutor') {
+           // This is a parent-created session, find the parent through the request
+           const { data: requestData } = await supabase
+             .from('home_tutoring_requests')
+             .select('parent_id, student_id')
+             .eq('id', session.request_id)
+             .single()
+           
+           if (requestData) {
+             await supabase
+               .from('parent_notifications')
+               .insert({
+                 parent_id: requestData.parent_id,
+                 title: `Session ${action === 'approve' ? 'Approved' : 'Rejected'}`,
+                 message: `Your session for ${formatDate(session.session_date)} has been ${action === 'approve' ? 'approved' : 'rejected'} by the tutor.`,
+                 notification_type: 'session'
+               })
+           }
+         }
+       } catch (notifError) {
+         console.error('Error creating parent notification:', notifError)
+         // Don't fail the session action if notification fails
+       }
+      
       // Show success message
-      alert(`Session ${action}d successfully!`)
+      const actionText = action === 'cancel' ? 'cancelled' : action === 'approve' ? 'approved' : 'rejected'
+      alert(`Session ${actionText} successfully!`)
       
       // Refresh the dashboard data to show updated status
       await loadDashboardData()
@@ -902,6 +939,73 @@ export default function TutorDashboard() {
       alert(`Error ${action}ing session: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleNotificationClick = async (notification: Notification) => {
+    try {
+      // Mark notification as read
+      if (!notification.is_read) {
+        const { error } = await supabase
+          .from('tutor_notifications')
+          .update({ is_read: true })
+          .eq('id', notification.id)
+
+        if (error) {
+          console.error('Error marking notification as read:', error)
+        } else {
+          // Update local state
+          setNotifications(prev => 
+            prev.map(n => 
+              n.id === notification.id ? { ...n, is_read: true } : n
+            )
+          )
+        }
+      }
+
+      // Close dropdown
+      setShowNotificationsDropdown(false)
+
+      // Handle different notification types
+      switch (notification.notification_type) {
+        case 'home_tutoring':
+          // Switch to sessions tab and show relevant session
+          setActiveSection('sessions')
+          break
+        case 'session':
+          // Switch to sessions tab
+          setActiveSection('sessions')
+          break
+        default:
+          // For other types, just close the dropdown
+          break
+      }
+    } catch (error) {
+      console.error('Error handling notification click:', error)
+    }
+  }
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      if (!tutorData) return
+
+      // Mark all notifications as read in database
+      const { error } = await supabase
+        .from('tutor_notifications')
+        .update({ is_read: true })
+        .eq('tutor_id', tutorData.id)
+        .eq('is_read', false)
+
+      if (error) {
+        console.error('Error marking all notifications as read:', error)
+      } else {
+        // Update local state
+        setNotifications(prev => 
+          prev.map(n => ({ ...n, is_read: true }))
+        )
+      }
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error)
     }
   }
 
@@ -924,6 +1028,19 @@ export default function TutorDashboard() {
       month: 'short',
       day: 'numeric'
     })
+  }
+
+  const formatDuration = (durationHours: number) => {
+    const hours = Math.floor(durationHours)
+    const minutes = Math.round((durationHours - hours) * 60)
+    
+    if (hours === 0) {
+      return `${minutes} minute${minutes === 1 ? '' : 's'}`
+    } else if (minutes === 0) {
+      return `${hours} hour${hours === 1 ? '' : 's'}`
+    } else {
+      return `${hours} hour${hours === 1 ? '' : 's'} ${minutes} minute${minutes === 1 ? '' : 's'}`
+    }
   }
 
   const getStatusColor = (status: string) => {
@@ -988,6 +1105,12 @@ export default function TutorDashboard() {
     console.log('Debug: Number of scheduledSessions:', scheduledSessions?.length || 0)
     
     return scheduledSessions
+  }
+
+  const getFilteredSessionsByStatus = () => {
+    const baseFilteredSessions = getFilteredSessions()
+    if (sessionFilter === 'all') return baseFilteredSessions
+    return baseFilteredSessions.filter(session => session.status === sessionFilter)
   }
 
   const getCompletedSessions = () => {
@@ -1197,30 +1320,58 @@ export default function TutorDashboard() {
                     </button>
                   </div>
 
-                  {/* Session Stats */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-yellow-50 p-4 rounded-lg">
-                                      <p className="text-sm text-gray-600">Scheduled</p>
-                <p className="text-2xl font-bold text-yellow-600">{getScheduledSessions().length}</p>
-                    </div>
-                    <div className="bg-blue-50 p-4 rounded-lg">
-                      <p className="text-sm text-gray-600">Scheduled</p>
-                      <p className="text-2xl font-bold text-blue-600">{getScheduledSessions().length}</p>
-                    </div>
-                    <div className="bg-green-50 p-4 rounded-lg">
-                      <p className="text-sm text-gray-600">Completed</p>
-                      <p className="text-2xl font-bold text-green-600">{getCompletedSessions().length}</p>
-                    </div>
+                                     {/* Session Stats */}
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                     <div className="bg-yellow-50 p-4 rounded-lg">
+                       <p className="text-sm text-gray-600">Pending Approval</p>
+                       <p className="text-2xl font-bold text-yellow-600">{getFilteredSessions().filter(s => s.status === 'scheduled' && s.created_by !== 'tutor').length}</p>
+                     </div>
+                     <div className="bg-blue-50 p-4 rounded-lg">
+                       <p className="text-sm text-gray-600">My Sessions</p>
+                       <p className="text-2xl font-bold text-blue-600">{getFilteredSessions().filter(s => s.status === 'scheduled' && s.created_by === 'tutor').length}</p>
+                     </div>
+                     <div className="bg-green-50 p-4 rounded-lg">
+                       <p className="text-sm text-gray-600">Completed</p>
+                       <p className="text-2xl font-bold text-green-600">{getCompletedSessions().length}</p>
+                     </div>
+                   </div>
+
+                  {/* Session Filter Tabs */}
+                  <div className="flex space-x-4 border-b border-gray-200 mb-6">
+                    {[
+                      { id: 'all', name: 'All', count: getFilteredSessions().length },
+                      { id: 'scheduled', name: 'Scheduled', count: getFilteredSessions().filter(s => s.status === 'scheduled').length },
+                      { id: 'approved', name: 'Approved', count: getFilteredSessions().filter(s => s.status === 'approved').length },
+                      { id: 'completed', name: 'Completed', count: getFilteredSessions().filter(s => s.status === 'completed').length },
+                      { id: 'cancelled', name: 'Cancelled', count: getFilteredSessions().filter(s => s.status === 'cancelled').length }
+                    ].map((filter) => (
+                      <button
+                        key={filter.id}
+                        onClick={() => setSessionFilter(filter.id)}
+                        className={`py-2 px-3 text-sm font-medium border-b-2 ${
+                          sessionFilter === filter.id
+                            ? 'border-primary-500 text-primary-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        {filter.name} ({filter.count})
+                      </button>
+                    ))}
                   </div>
 
-                  {/* Scheduled Sessions */}
-                  {getScheduledSessions().length > 0 && (
+                  {/* Sessions Display */}
+                  {getFilteredSessionsByStatus().length > 0 ? (
                     <div className="mb-6">
                       <h4 className="text-md font-semibold text-gray-900 mb-3">
-                        Sessions ({getScheduledSessions().length}) - {getScheduledSessions().filter(s => s.status === 'scheduled' && s.request_id).length} parent requests, {getScheduledSessions().filter(s => s.status === 'scheduled' && !s.request_id).length} my sessions
+                        {sessionFilter === 'all' ? 'All Sessions' : 
+                         sessionFilter === 'scheduled' ? 'Scheduled Sessions' :
+                         sessionFilter === 'approved' ? 'Approved Sessions' :
+                         sessionFilter === 'completed' ? 'Completed Sessions' :
+                         sessionFilter === 'cancelled' ? 'Cancelled Sessions' : 'Sessions'} 
+                        ({getFilteredSessionsByStatus().length})
                       </h4>
                       <div className="space-y-3">
-                        {getScheduledSessions().map((session) => (
+                        {getFilteredSessionsByStatus().map((session) => (
                           <div key={session.id} className="border border-yellow-200 bg-yellow-50 rounded-lg p-4">
                             <div className="flex items-center justify-between">
                               <div>
@@ -1228,186 +1379,84 @@ export default function TutorDashboard() {
                                   {formatDate(session.session_date)} at {session.start_time}
                                 </p>
                                 <p className="text-sm text-gray-600">
-                                  Duration: {session.duration_hours} hours
+                                  Duration: {formatDuration(session.duration_hours)}
                                 </p>
                                 {session.notes && (
                                   <p className="text-sm text-gray-500 mt-1">Notes: {session.notes}</p>
                                 )}
                               </div>
-                              <div className="flex space-x-2">
-                                {/* Session Actions - Show different actions based on who created the session */}
-                                {session.status === 'scheduled' && session.request_id && (
-                                  <div className="flex space-x-2 mt-3">
-                                    <button
-                                      onClick={() => handleSessionAction(session.id, 'approve')}
-                                      disabled={isSubmitting}
-                                      className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50"
-                                    >
-                                      {isSubmitting ? 'Processing...' : 'Approve'}
-                                    </button>
-                                    <button
-                                      onClick={() => handleSessionAction(session.id, 'reject')}
-                                      disabled={isSubmitting}
-                                      className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
-                                    >
-                                      {isSubmitting ? 'Processing...' : 'Reject'}
-                                    </button>
-                                  </div>
-                                )}
-                                {session.status === 'scheduled' && !session.request_id && (
-                                  <div className="flex space-x-2 mt-3">
-                                    <button
-                                      onClick={() => handleEditSession(session)}
-                                      disabled={isSubmitting}
-                                      className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                                    >
-                                      Edit
-                                    </button>
-                                    <button
-                                      onClick={() => handleSessionAction(session.id, 'reject')}
-                                      disabled={isSubmitting}
-                                      className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
-                                    >
-                                      {isSubmitting ? 'Processing...' : 'Cancel'}
-                                    </button>
-                                  </div>
-                                )}
-                                
-                                {/* Show status badge for non-scheduled sessions */}
-                                {session.status !== 'scheduled' && (
-                                  <div className="mt-3">
-                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                      session.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                      session.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                                      session.status === 'no_show' ? 'bg-orange-100 text-orange-800' :
-                                      'bg-gray-100 text-gray-800'
-                                    }`}>
-                                      {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
+                                                                                            <div className="flex space-x-2">
+                                 {/* Session Actions - Show different actions based on who created the session */}
+                                 {/* Parent-created sessions (created_by !== 'tutor'): Show Approve/Reject */}
+                                 {session.status === 'scheduled' && session.created_by !== 'tutor' && (
+                                   <div className="flex space-x-2 mt-3">
+                                     <button
+                                       onClick={() => handleSessionAction(session.id, 'approve')}
+                                       disabled={isSubmitting}
+                                       className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50"
+                                     >
+                                       {isSubmitting ? 'Processing...' : 'Approve'}
+                                     </button>
+                                     <button
+                                       onClick={() => handleSessionAction(session.id, 'reject')}
+                                       disabled={isSubmitting}
+                                       className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
+                                     >
+                                       {isSubmitting ? 'Processing...' : 'Reject'}
+                                     </button>
+                                   </div>
+                                 )}
+                                 {/* Tutor-created sessions (created_by === 'tutor'): Show Edit/Cancel */}
+                                 {session.status === 'scheduled' && session.created_by === 'tutor' && (
+                                   <div className="flex space-x-2 mt-3">
+                                     <button
+                                       onClick={() => handleEditSession(session)}
+                                       disabled={isSubmitting}
+                                       className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                                     >
+                                       Edit
+                                     </button>
+                                     <button
+                                       onClick={() => handleSessionAction(session.id, 'cancel')}
+                                       disabled={isSubmitting}
+                                       className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
+                                     >
+                                       {isSubmitting ? 'Processing...' : 'Cancel'}
+                                     </button>
+                                   </div>
+                                 )}
+                                 
+                                 {/* Show status badge for non-scheduled sessions */}
+                                 {session.status !== 'scheduled' && (
+                                   <div className="mt-3">
+                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                       session.status === 'approved' ? 'bg-blue-100 text-blue-800' :
+                                       session.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                       session.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                       session.status === 'no_show' ? 'bg-orange-100 text-orange-800' :
+                                       'bg-gray-100 text-gray-800'
+                                     }`}>
+                                       {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+                                     </span>
+                                   </div>
+                                 )}
+                               </div>
                             </div>
                           </div>
                         ))}
                       </div>
                     </div>
-                  )}
-
-                  {/* All Sessions */}
-                  <div>
-                    <h4 className="text-md font-semibold text-gray-900 mb-3">All Sessions</h4>
-                    {isLoadingSessions ? (
-                      <div className="text-center py-8">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                        <p className="mt-2 text-gray-600">Loading sessions...</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {getFilteredSessions().length === 0 ? (
-                          <p className="text-gray-500">
-                            {selectedStudent 
-                              ? `No sessions found for ${getSelectedStudentName()}.` 
-                              : 'No sessions found.'
-                            }
-                          </p>
-                        ) : (
-                          getFilteredSessions()
-                            .sort((a, b) => new Date(b.session_date).getTime() - new Date(a.session_date).getTime())
-                            .map((session) => (
-                              <div key={session.id} className="border border-gray-200 rounded-lg p-4">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="font-medium text-gray-900">
-                                      {formatDate(session.session_date)}
-                                    </p>
-                                    <p className="text-sm text-gray-600">
-                                      {session.start_time} - {session.end_time}
-                                    </p>
-                                    <p className="text-sm text-gray-500">
-                                      Duration: {session.duration_hours} hours
-                                    </p>
-                                    {session.notes && (
-                                      <p className="text-sm text-gray-500 mt-1">Notes: {session.notes}</p>
-                                    )}
-                                  </div>
-                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
-                                    {session.status}
-                                  </span>
-                                </div>
-                              </div>
-                            ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {!selectedStudent && matchedStudents.length > 0 && (
-              <>
-                <div className="bg-white rounded-2xl shadow-lg p-6 text-center mb-6">
-                  <p className="text-gray-500">Select a student above to view their specific sessions, or view all sessions below.</p>
-                </div>
-                
-                {/* Show All Sessions When No Student Selected */}
-                <div className="bg-white rounded-2xl shadow-lg p-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">All Sessions</h3>
-                  {isLoadingSessions ? (
-                    <div className="text-center py-8">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                      <p className="mt-2 text-gray-600">Loading sessions...</p>
-                    </div>
                   ) : (
-                    <div className="space-y-4">
-                      {getFilteredSessions().length === 0 ? (
-                        <p className="text-gray-500">No sessions found.</p>
-                      ) : (
-                        getFilteredSessions()
-                          .sort((a, b) => new Date(b.session_date).getTime() - new Date(a.session_date).getTime())
-                          .map((session) => (
-                            <div key={session.id} className="border border-gray-200 rounded-lg p-4">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="font-medium text-gray-900">
-                                    Session on {formatDate(session.session_date)}
-                                  </p>
-                                  <p className="text-sm text-gray-600">
-                                    {session.start_time} - {session.end_time}
-                                  </p>
-                                  <p className="text-sm text-gray-500">
-                                    Duration: {session.duration_hours} hours
-                                  </p>
-                                  {session.notes && (
-                                    <p className="text-sm text-gray-500 mt-1">Notes: {session.notes}</p>
-                                  )}
-                                </div>
-                                <div className="text-right">
-                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
-                                    {session.status}
-                                  </span>
-                                  {session.status === 'proposed' && (
-                                    <div className="flex space-x-2 mt-2">
-                                      <button
-                                        onClick={() => handleSessionAction(session.id, 'approve')}
-                                        className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
-                                      >
-                                        Approve
-                                      </button>
-                                      <button
-                                        onClick={() => handleSessionAction(session.id, 'reject')}
-                                        className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-                                      >
-                                        Reject
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                      )}
+                    <div className="text-center py-8">
+                      <CalendarIcon className="w-12 h-12 text-gray-400 mx-auto" />
+                      <p className="mt-2 text-gray-600">No {sessionFilter === 'all' ? '' : sessionFilter} sessions found</p>
+                      <p className="text-sm text-gray-500">
+                        {sessionFilter === 'scheduled' ? 'No sessions waiting for approval' :
+                         sessionFilter === 'approved' ? 'No approved sessions yet' :
+                         sessionFilter === 'completed' ? 'No completed sessions yet' :
+                         sessionFilter === 'cancelled' ? 'No cancelled sessions yet' :
+                         'No sessions found for this student'}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1504,34 +1553,7 @@ export default function TutorDashboard() {
           </div>
         )
 
-      case 'notifications':
-        return (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">All Notifications</h3>
-              {isLoadingNotifications ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Loading notifications...</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {notifications.length === 0 ? (
-                    <p className="text-gray-500">No notifications found.</p>
-                  ) : (
-                    notifications.map((notification) => (
-                      <div key={notification.id} className={`border-l-4 ${notification.is_read ? 'border-gray-200' : 'border-primary-500'} pl-4 py-3`}>
-                        <p className="font-medium text-gray-900">{notification.title}</p>
-                        <p className="text-sm text-gray-600">{notification.message}</p>
-                        <p className="text-xs text-gray-500 mt-1">{formatDate(notification.created_at)}</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )
+      
 
       default:
         return null
@@ -1616,7 +1638,86 @@ export default function TutorDashboard() {
                 <p className="text-sm text-gray-500">Welcome back,</p>
                 <p key={`header-name-${lastUpdate}`} className="font-medium text-gray-900">{userProfile?.full_name || 'Loading...'}</p>
               </div>
-              <div className="relative">
+              
+              {/* Notification Bell */}
+              <div className="relative notifications-dropdown">
+                <button 
+                  onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    notifications.length > 0 
+                      ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' 
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <BellIcon className="w-5 h-5" />
+                  {notifications.filter(n => !n.is_read).length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                      {notifications.filter(n => !n.is_read).length}
+                    </span>
+                  )}
+                </button>
+
+                  {/* Notifications Dropdown */}
+                  {showNotificationsDropdown && (
+                    <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 overflow-y-auto">
+                      <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                        <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+                        {notifications.filter(n => !n.is_read).length > 0 && (
+                          <button
+                            onClick={handleMarkAllAsRead}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            Mark All as Read
+                          </button>
+                        )}
+                      </div>
+                      <div className="p-2">
+                        {notifications.length === 0 ? (
+                          <div className="text-center py-4">
+                            <p className="text-gray-500">No notifications</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {notifications.map((notification) => (
+                              <div 
+                                key={notification.id} 
+                                className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                                  notification.is_read 
+                                    ? 'bg-gray-50 hover:bg-gray-100' 
+                                    : 'bg-blue-50 hover:bg-blue-100 border-l-4 border-blue-500'
+                                }`}
+                                onClick={() => handleNotificationClick(notification)}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <p className={`text-sm font-medium ${
+                                      notification.is_read ? 'text-gray-700' : 'text-blue-900'
+                                    }`}>
+                                      {notification.title}
+                                    </p>
+                                    <p className={`text-xs mt-1 ${
+                                      notification.is_read ? 'text-gray-500' : 'text-blue-700'
+                                    }`}>
+                                      {notification.message}
+                                    </p>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                      {formatDate(notification.created_at)}
+                                    </p>
+                                  </div>
+                                  {!notification.is_read && (
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full ml-2"></div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              
+              <div className="relative profile-dropdown">
                 <button
                   onClick={() => setShowProfileDropdown(!showProfileDropdown)}
                   className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -1669,8 +1770,7 @@ export default function TutorDashboard() {
             { id: 'overview', name: 'Overview', icon: '📊' },
             { id: 'sessions', name: 'Sessions', icon: '📅' },
             { id: 'payments', name: 'Payments', icon: '💰' },
-            { id: 'performance', name: 'Performance', icon: '📈' },
-            { id: 'notifications', name: 'Notifications', icon: '🔔' }
+            { id: 'performance', name: 'Performance', icon: '📈' }
           ].map((tab) => (
             <button
               key={tab.id}

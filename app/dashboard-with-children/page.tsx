@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment, FormEvent } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '@/lib/auth-context'
 import { 
@@ -70,6 +70,7 @@ interface Session {
   notes: string | null
   created_at: string
   updated_at: string | null
+  created_by?: string  // Add this field to track who created the session
 }
 
 interface NewChildForm {
@@ -160,6 +161,238 @@ interface SessionReport {
   updated_at: string
 }
 
+// Weekly Schedule Component
+const WeeklyScheduleView = ({ 
+  sessions, 
+  students, 
+  getTutorName, 
+  formatDuration 
+}: { 
+  sessions: Session[]
+  students: Student[]
+  getTutorName: (tutorId: string | null) => string
+  formatDuration: (durationHours: number) => string
+}) => {
+  const [currentWeek, setCurrentWeek] = useState(new Date())
+  
+  // Get the start of the current week (Monday)
+  const getWeekStart = (date: Date) => {
+    const d = new Date(date)
+    const day = d.getDay()
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1) // Adjust when day is Sunday
+    return new Date(d.setDate(diff))
+  }
+  
+  // Generate week days
+  const getWeekDays = () => {
+    const weekStart = getWeekStart(currentWeek)
+    const days = []
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(weekStart)
+      day.setDate(weekStart.getDate() + i)
+      days.push(day)
+    }
+    return days
+  }
+  
+  // Get sessions for a specific day
+  const getSessionsForDay = (date: Date) => {
+    const dateStr = date.toISOString().split('T')[0]
+    return sessions.filter(session => session.session_date === dateStr)
+  }
+  
+  // Navigate to previous/next week
+  const goToPreviousWeek = () => {
+    const newDate = new Date(currentWeek)
+    newDate.setDate(currentWeek.getDate() - 7)
+    setCurrentWeek(newDate)
+  }
+  
+  const goToNextWeek = () => {
+    const newDate = new Date(currentWeek)
+    newDate.setDate(currentWeek.getDate() + 7)
+    setCurrentWeek(newDate)
+  }
+  
+  // Get student name by ID
+  const getStudentName = (studentId: string) => {
+    const student = students.find(s => s.id === studentId)
+    return student ? student.name : 'Unknown Student'
+  }
+  
+  // Format time for display
+  const formatTime = (time: string) => {
+    return time.substring(0, 5) // Remove seconds if present
+  }
+  
+  const weekDays = getWeekDays()
+  
+  if (sessions.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <CalendarDaysIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">No Approved Sessions</h3>
+        <p className="text-gray-600">You don't have any approved tutoring sessions yet.</p>
+        <p className="text-sm text-gray-500 mt-1">Sessions will appear here once they are approved by tutors.</p>
+      </div>
+    )
+  }
+  
+  return (
+    <div className="space-y-6">
+      {/* Week Navigation */}
+      <div className="flex items-center justify-between">
+        <button
+          onClick={goToPreviousWeek}
+          className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Previous Week
+        </button>
+        
+        <h2 className="text-lg font-semibold text-gray-900">
+          {getWeekStart(currentWeek).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} - {getWeekStart(currentWeek).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+        </h2>
+        
+        <button
+          onClick={goToNextWeek}
+          className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        >
+          Next Week
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+      
+      {/* Weekly Calendar Grid */}
+      <div className="grid grid-cols-8 gap-1 bg-gray-100 rounded-lg p-1">
+        {/* Time column header */}
+        <div className="bg-gray-50 rounded p-2 text-center">
+          <span className="text-xs font-medium text-gray-500">Time</span>
+        </div>
+        
+        {/* Day headers */}
+        {weekDays.map((day, index) => (
+          <div key={index} className="bg-gray-50 rounded p-2 text-center">
+            <div className="text-xs font-medium text-gray-900">
+              {day.toLocaleDateString('en-US', { weekday: 'short' })}
+            </div>
+            <div className="text-xs text-gray-500">
+              {day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </div>
+          </div>
+        ))}
+        
+        {/* Time slots */}
+        {Array.from({ length: 14 }, (_, hourIndex) => {
+          const hour = 8 + hourIndex // Start from 8 AM
+          const timeSlot = `${hour.toString().padStart(2, '0')}:00`
+          
+          return (
+            <Fragment key={hourIndex}>
+              {/* Time label */}
+              <div className="bg-gray-50 rounded p-2 text-center">
+                <span className="text-xs font-medium text-gray-500">{timeSlot}</span>
+              </div>
+              
+              {/* Day columns */}
+              {weekDays.map((day, dayIndex) => {
+                const daySessions = getSessionsForDay(day)
+                const hourSessions = daySessions.filter(session => {
+                  const sessionHour = parseInt(session.start_time.split(':')[0])
+                  return sessionHour === hour
+                })
+                
+                return (
+                  <div key={dayIndex} className="min-h-[60px] bg-white rounded p-1 relative">
+                    {hourSessions.map((session, sessionIndex) => (
+                      <div
+                        key={session.id}
+                        className="absolute inset-1 bg-blue-100 border border-blue-300 rounded text-xs p-1 overflow-hidden"
+                        style={{
+                          top: `${(sessionIndex * 25)}px`,
+                          height: '20px',
+                          zIndex: sessionIndex + 1
+                        }}
+                      >
+                        <div className="font-medium text-blue-900 truncate">
+                          {getStudentName(session.student_id)}
+                        </div>
+                        <div className="text-blue-700 truncate">
+                          {formatTime(session.start_time)} - {formatTime(session.end_time)}
+                        </div>
+                        <div className="text-blue-600 truncate">
+                          {getTutorName(session.tutor_id)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+                         </Fragment>
+          )
+        })}
+      </div>
+      
+      {/* Session Details List */}
+      <div className="mt-8">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Session Details</h3>
+        <div className="space-y-3">
+          {sessions
+            .filter(session => {
+              const sessionDate = new Date(session.session_date)
+              const weekStart = getWeekStart(currentWeek)
+              const weekEnd = new Date(weekStart)
+              weekEnd.setDate(weekStart.getDate() + 6)
+              return sessionDate >= weekStart && sessionDate <= weekEnd
+            })
+            .sort((a, b) => new Date(a.session_date).getTime() - new Date(b.session_date).getTime())
+            .map(session => (
+              <div key={session.id} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-3">
+                      <h4 className="text-lg font-medium text-gray-900">
+                        {new Date(session.session_date).toLocaleDateString('en-US', { 
+                          weekday: 'long', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </h4>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        <CheckCircleIcon className="w-3 h-3 mr-1" />
+                        Approved
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {formatTime(session.start_time)} - {formatTime(session.end_time)} ({formatDuration(session.duration_hours)})
+                    </p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Student: {getStudentName(session.student_id)} • Tutor: {getTutorName(session.tutor_id)}
+                    </p>
+                    {session.notes && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        Notes: {session.notes}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-gray-900">
+                      {session.amount.toLocaleString()} Leones
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function DashboardWithChildren() {
   const { user, isLoading: authLoading } = useAuth()
   const [activeSection, setActiveSection] = useState('overview')
@@ -189,6 +422,7 @@ export default function DashboardWithChildren() {
   const [selectedChildForEdit, setSelectedChildForEdit] = useState<Student | null>(null)
   const [showSessionDetailsModal, setShowSessionDetailsModal] = useState(false)
   const [showNotificationsModal, setShowNotificationsModal] = useState(false)
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState(false)
   const [showProfileModal, setShowProfileModal] = useState(false)
   
   // Tutor matching states
@@ -255,10 +489,11 @@ export default function DashboardWithChildren() {
   // Notification state
   const [notifications, setNotifications] = useState<Array<{
     id: string
-    type: 'session_proposed' | 'session_approved' | 'session_rejected'
+    type: 'session_proposed' | 'session_approved' | 'session_rejected' | 'session_scheduled'
     message: string
     sessionId?: string
     timestamp: Date
+    is_read: boolean
   }>>([])
 
   const fetchUserProfile = async () => {
@@ -313,23 +548,29 @@ export default function DashboardWithChildren() {
       fetchTutorData()
       fetchStudentProgress()
       fetchSessionReports()
+      fetchParentNotifications()
     }
   }, [userProfile, selectedStudent])
 
-  // Check for pending session approvals
+  // Close dropdowns when clicking outside
   useEffect(() => {
-    const pendingSessions = sessions.filter(s => s.status === 'scheduled')
-    if (pendingSessions.length > 0) {
-      const newNotifications = pendingSessions.map(session => ({
-        id: session.id,
-        type: 'session_proposed' as const,
-        message: `New session proposed for ${session.session_date} - ${session.start_time} to ${session.end_time}`,
-        sessionId: session.id,
-        timestamp: new Date(session.created_at)
-      }))
-      setNotifications(prev => [...prev, ...newNotifications])
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element
+      
+      // Close notifications dropdown
+      if (showNotificationsDropdown && !target.closest('.notifications-dropdown')) {
+        setShowNotificationsDropdown(false)
+      }
     }
-  }, [sessions])
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showNotificationsDropdown])
+
+  // Note: No automatic notifications for pending sessions
+  // Parents only receive notifications when tutors approve/reject or propose sessions
 
   const fetchStudents = async () => {
     try {
@@ -428,7 +669,7 @@ export default function DashboardWithChildren() {
     }
   }
 
-  const handleNewChild = async (e: React.FormEvent) => {
+  const handleNewChild = async (e: FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
 
@@ -467,7 +708,7 @@ export default function DashboardWithChildren() {
     }
   }
 
-  const handleNewRequest = async (e: React.FormEvent) => {
+  const handleNewRequest = async (e: FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
 
@@ -517,7 +758,7 @@ export default function DashboardWithChildren() {
     }
   }
 
-  const handleNewSession = async (e: React.FormEvent) => {
+  const handleNewSession = async (e: FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
 
@@ -576,7 +817,8 @@ export default function DashboardWithChildren() {
           duration_hours: durationHours,
           amount: 70000, // Default amount
           status: 'scheduled', // Use 'scheduled' status for new sessions
-          notes: newSessionForm.notes
+          notes: newSessionForm.notes,
+          created_by: 'parent' // Add this field to track who created the session
         }])
         .select()
 
@@ -591,14 +833,15 @@ export default function DashboardWithChildren() {
           end_time: newSessionForm.end_time,
           duration_hours: durationHours,
           amount: 70000,
-          status: 'proposed',
-          notes: newSessionForm.notes
+          status: 'scheduled',
+          notes: newSessionForm.notes,
+          created_by: 'parent'
         })
         alert(`Failed to create session: ${error.message}`)
         return
       }
 
-      // Create notification for tutor
+      // Create notification for tutor when parent creates a session
       try {
         await supabase
           .from('tutor_notifications')
@@ -660,6 +903,26 @@ export default function DashboardWithChildren() {
       console.log('Debug: Session update successful, returned data:', data)
       console.log('Debug: New session status:', data?.[0]?.status)
       
+      // Create notification for tutor when parent approves/rejects their session
+      try {
+        const session = sessions.find(s => s.id === sessionId)
+        if (session && session.created_by === 'tutor') {
+          // This is a tutor-created session, notify the tutor
+          await supabase
+            .from('tutor_notifications')
+            .insert({
+              tutor_id: session.tutor_id,
+              title: `Session ${action === 'approve' ? 'Approved' : 'Rejected'}`,
+              message: `Your session for ${new Date(session.session_date).toLocaleDateString()} has been ${action === 'approve' ? 'approved' : 'rejected'} by the parent.`,
+              notification_type: 'home_tutoring',
+              category: 'home_tutoring'
+            })
+        }
+      } catch (notifError) {
+        console.error('Error creating tutor notification:', notifError)
+        // Don't fail the session action if notification fails
+      }
+      
       await fetchSessions()
       setShowSessionDetailsModal(false)
       setSelectedSession(null)
@@ -687,7 +950,7 @@ export default function DashboardWithChildren() {
     setShowEditChildModal(true)
   }
 
-  const handleUpdateChild = async (e: React.FormEvent) => {
+  const handleUpdateChild = async (e: FormEvent) => {
     e.preventDefault()
     if (!selectedChildForEdit) return
 
@@ -795,7 +1058,7 @@ export default function DashboardWithChildren() {
     setSelectedSession(session)
   }
 
-  const handleUpdateProfile = async (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
 
@@ -978,6 +1241,117 @@ export default function DashboardWithChildren() {
     }
   }
 
+  const fetchParentNotifications = async () => {
+    try {
+      if (!userProfile) return
+      
+      const { data: notifications, error } = await supabase
+        .from('parent_notifications')
+        .select('*')
+        .eq('parent_id', userProfile.id)
+        .order('created_at', { ascending: false })
+        .limit(50) // Limit to last 50 notifications
+
+      if (error) {
+        console.error('Error fetching parent notifications:', error)
+      } else {
+        // Transform notifications to match the local state format
+        const transformedNotifications = (notifications || []).map(notif => {
+          let type: 'session_proposed' | 'session_approved' | 'session_rejected' | 'session_scheduled' = 'session_approved'
+          
+          // Map notification titles to types
+          if (notif.title?.includes('Approved')) {
+            type = 'session_approved'
+          } else if (notif.title?.includes('Rejected')) {
+            type = 'session_rejected'
+          } else if (notif.title?.includes('Scheduled')) {
+            type = 'session_scheduled'
+          } else if (notif.title?.includes('Proposed')) {
+            type = 'session_proposed'
+          }
+          
+          return {
+            id: notif.id,
+            type,
+            message: notif.message,
+            sessionId: undefined, // Could be extracted from message if needed
+            timestamp: new Date(notif.created_at),
+            is_read: notif.is_read || false // Use existing is_read field or default to false
+          }
+        })
+        setNotifications(transformedNotifications)
+      }
+    } catch (error) {
+      console.error('Error fetching parent notifications:', error)
+    }
+  }
+
+  const handleNotificationClick = async (notification: any) => {
+    try {
+      // Mark notification as read if it's not already read
+      if (!notification.is_read) {
+        const { error } = await supabase
+          .from('parent_notifications')
+          .update({ is_read: true })
+          .eq('id', notification.id)
+
+        if (error) {
+          console.error('Error marking notification click:', error)
+        } else {
+          // Update local state
+          setNotifications(prev => 
+            prev.map(n => 
+              n.id === notification.id ? { ...n, is_read: true } : n
+            )
+          )
+        }
+      }
+
+      // Close dropdown
+      setShowNotificationsDropdown(false)
+
+      // Handle different notification types
+      switch (notification.type) {
+        case 'session_proposed':
+        case 'session_approved':
+        case 'session_rejected':
+        case 'session_scheduled':
+          // Switch to sessions tab
+          setActiveSection('sessions')
+          break
+        default:
+          // For other types, just close the dropdown
+          break
+      }
+    } catch (error) {
+      console.error('Error handling notification click:', error)
+    }
+  }
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      if (!userProfile) return
+
+      // Mark all notifications as read in database
+      const { error } = await supabase
+        .from('parent_notifications')
+        .update({ is_read: true })
+        .eq('parent_id', userProfile.id)
+        .eq('is_read', false)
+
+      if (error) {
+        console.error('Error marking all notifications as read:', error)
+      } else {
+        // Update local state
+        setNotifications(prev => 
+          prev.map(n => ({ ...n, is_read: true }))
+        )
+      }
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error)
+    }
+  }
+
   const handleProposalResponse = async (proposalId: string, action: 'accept' | 'reject', notes: string) => {
     try {
       setIsSubmitting(true)
@@ -1089,6 +1463,19 @@ export default function DashboardWithChildren() {
       month: 'short',
       day: 'numeric'
     })
+  }
+
+  const formatDuration = (durationHours: number) => {
+    const hours = Math.floor(durationHours)
+    const minutes = Math.round((durationHours - hours) * 60)
+    
+    if (hours === 0) {
+      return `${minutes} minute${minutes === 1 ? '' : 's'}`
+    } else if (minutes === 0) {
+      return `${hours} hour${hours === 1 ? '' : 's'}`
+    } else {
+      return `${hours} hour${hours === 1 ? '' : 's'} ${minutes} minute${minutes === 1 ? '' : 's'}`
+    }
   }
 
   const getFilteredRequests = () => {
@@ -1415,7 +1802,7 @@ export default function DashboardWithChildren() {
                                   {formatDate(session.session_date)} at {session.start_time}
                                 </p>
                                 <p className="text-sm text-gray-600">
-                                  Duration: {session.duration_hours} hours
+                                  Duration: {formatDuration(session.duration_hours)}
                                 </p>
                                 <p className="text-sm text-gray-500">
                                   {session.notes || 'No additional notes'}
@@ -1701,7 +2088,7 @@ export default function DashboardWithChildren() {
                             </span>
                           </div>
                           <p className="text-sm text-gray-600 mt-1">
-                            {session.start_time} - {session.end_time} ({session.duration_hours} hours)
+                            {session.start_time} - {session.end_time} ({formatDuration(session.duration_hours)})
                           </p>
                           <p className="text-sm text-gray-500 mt-1">
                             Amount: {session.amount.toLocaleString()} Leones
@@ -1721,8 +2108,8 @@ export default function DashboardWithChildren() {
                             >
                               View Details
                             </button>
-                            {/* Show Edit/Cancel buttons only for scheduled sessions created by parent (has request_id) */}
-                            {session.status === 'scheduled' && session.request_id && (
+                            {/* Show Edit/Cancel buttons only for scheduled sessions created by parent */}
+                            {session.status === 'scheduled' && session.created_by === 'parent' && (
                               <>
                                 <button
                                   onClick={() => handleEditSession(session)}
@@ -1738,12 +2125,12 @@ export default function DashboardWithChildren() {
                                 </button>
                               </>
                             )}
-                            {/* Show Approve/Reject buttons only for scheduled sessions created by tutor (no request_id) */}
-                            {session.status === 'scheduled' && !session.request_id && (
+                            {/* Show Approve/Reject buttons only for scheduled sessions created by tutor */}
+                            {session.status === 'scheduled' && session.created_by === 'tutor' && (
                               <>
                                 <button
                                   onClick={() => handleSessionAction(session.id, 'approve')}
-                                  className="text-green-600 hover:text-green-700 text-sm font-medium"
+                                  className="text-green-600 hover:text-blue-700 text-sm font-medium"
                                 >
                                   Approve Session
                                 </button>
@@ -1761,6 +2148,31 @@ export default function DashboardWithChildren() {
                     </motion.div>
                   ))}
                 </div>
+              )}
+            </div>
+          </div>
+        )
+
+      case 'my-schedule':
+        return (
+          <div className="bg-white rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-medium text-gray-900">My Weekly Schedule</h3>
+              <p className="text-sm text-gray-600 mt-1">View all your approved tutoring sessions in a weekly calendar format</p>
+            </div>
+            <div className="p-6">
+              {isLoadingSessions ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+                  <p className="mt-2 text-gray-600">Loading schedule...</p>
+                </div>
+              ) : (
+                <WeeklyScheduleView 
+                  sessions={sessions.filter(s => s.status === 'approved')}
+                  students={students}
+                  getTutorName={getTutorName}
+                  formatDuration={formatDuration}
+                />
               )}
             </div>
           </div>
@@ -2168,19 +2580,82 @@ export default function DashboardWithChildren() {
               </button>
               
               {/* Notification Bell */}
-              {notifications.length > 0 && (
-                <div className="relative">
-                  <button 
-                    onClick={() => setShowNotificationsModal(true)}
-                    className="bg-yellow-100 text-yellow-800 p-2 rounded-lg hover:bg-yellow-200"
-                  >
-                    <BellIcon className="w-5 h-5" />
+              <div className="relative notifications-dropdown">
+                <button 
+                  onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
+                  className={`p-2 rounded-lg transition-colors ${
+                    notifications.length > 0 
+                      ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' 
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  <BellIcon className="w-5 h-5" />
+                  {notifications.filter(n => !n.is_read).length > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                      {notifications.length}
+                      {notifications.filter(n => !n.is_read).length}
                     </span>
-                  </button>
-                </div>
-              )}
+                  )}
+                </button>
+
+                {/* Notifications Dropdown */}
+                {showNotificationsDropdown && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 overflow-y-auto">
+                    <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+                      <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+                      {notifications.filter(n => !n.is_read).length > 0 && (
+                        <button
+                          onClick={handleMarkAllAsRead}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          Mark All as Read
+                        </button>
+                      )}
+                    </div>
+                    <div className="p-2">
+                      {notifications.length === 0 ? (
+                        <div className="text-center py-4">
+                          <p className="text-gray-500">No notifications</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {notifications.map((notification) => (
+                            <div 
+                              key={notification.id} 
+                              className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                                notification.is_read 
+                                  ? 'bg-gray-50 hover:bg-gray-100' 
+                                  : 'bg-blue-50 hover:bg-blue-100 border-l-4 border-blue-500'
+                              }`}
+                              onClick={() => handleNotificationClick(notification)}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <p className={`text-sm font-medium ${
+                                    notification.is_read ? 'text-gray-700' : 'text-blue-900'
+                                  }`}>
+                                    {notification.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                  </p>
+                                  <p className={`text-xs mt-1 ${
+                                    notification.is_read ? 'text-gray-600' : 'text-blue-700'
+                                  }`}>
+                                    {notification.message}
+                                  </p>
+                                  <p className="text-xs text-gray-400 mt-1">
+                                    {notification.timestamp.toLocaleString()}
+                                  </p>
+                                </div>
+                                {!notification.is_read && (
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full ml-2"></div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
               
               <button 
                 onClick={() => setShowQuickActionsModal(true)}
@@ -2212,12 +2687,13 @@ export default function DashboardWithChildren() {
           <nav className="flex space-x-8">
             {[
               { id: 'overview', name: 'Overview', icon: UserIcon },
-              { id: 'children', name: 'My Children', icon: UserGroupIcon },
+              { id: 'children', name: 'Children', icon: UserGroupIcon },
               { id: 'requests', name: 'Requests', icon: DocumentTextIcon },
               { id: 'sessions', name: 'Sessions', icon: CalendarIcon },
-              { id: 'student-progress', name: 'Student Progress', icon: AcademicCapIcon },
-              { id: 'session-reports', name: 'Session Reports', icon: DocumentTextIcon },
-              { id: 'tutor-proposals', name: 'Tutor Proposals', icon: AcademicCapIcon },
+              { id: 'my-schedule', name: 'Schedule', icon: CalendarDaysIcon },
+              { id: 'student-progress', name: 'Progress', icon: AcademicCapIcon },
+              { id: 'session-reports', name: 'Reports', icon: DocumentTextIcon },
+              { id: 'tutor-proposals', name: 'Proposals', icon: AcademicCapIcon },
               { id: 'payments', name: 'Payments', icon: CreditCardIcon }
             ].map((tab) => (
               <button
@@ -2669,7 +3145,7 @@ export default function DashboardWithChildren() {
               {selectedRequest.matched_tutor_id && (
                 <div>
                   <h4 className="text-md font-medium text-gray-900">Tutor Details</h4>
-                  <p className="text-sm text-gray-600">Tutor: {selectedRequest.matched_tutor_id}</p>
+                  <p className="text-sm text-gray-600">Tutor: {getTutorName(selectedRequest.matched_tutor_id)}</p>
                   <p className="text-sm text-gray-600">Matched At: {selectedRequest.matched_at ? formatDate(selectedRequest.matched_at) : 'N/A'}</p>
                 </div>
               )}
@@ -2719,7 +3195,7 @@ export default function DashboardWithChildren() {
                 <h4 className="text-md font-medium text-gray-900">Session Details</h4>
                 <p className="text-sm text-gray-600">Date: {formatDate(selectedSession.session_date)}</p>
                 <p className="text-sm text-gray-600">Time: {selectedSession.start_time} - {selectedSession.end_time}</p>
-                <p className="text-sm text-gray-600">Duration: {selectedSession.duration_hours} hours</p>
+                <p className="text-sm text-gray-600">Duration: {formatDuration(selectedSession.duration_hours)}</p>
                 <p className="text-sm text-gray-600">Amount: {selectedSession.amount.toLocaleString()} Leones</p>
                 <p className="text-sm text-gray-600">Status: {selectedSession.status.replace('_', ' ')}</p>
                 <p className="text-sm text-gray-600">Notes: {selectedSession.notes}</p>
@@ -2727,7 +3203,7 @@ export default function DashboardWithChildren() {
               </div>
               
               {/* Session Management Buttons - Show different actions based on who created the session */}
-              {selectedSession.status === 'scheduled' && selectedSession.request_id && (
+              {selectedSession.status === 'scheduled' && selectedSession.created_by === 'parent' && (
                 <div className="flex space-x-3 mb-4">
                   <button
                     onClick={() => handleEditSession(selectedSession)}
@@ -2744,7 +3220,7 @@ export default function DashboardWithChildren() {
                 </div>
               )}
               
-              {selectedSession.status === 'scheduled' && !selectedSession.request_id && (
+              {selectedSession.status === 'scheduled' && selectedSession.created_by === 'tutor' && (
                 <div className="flex space-x-3">
                   <button
                     onClick={() => handleSessionAction(selectedSession.id, 'approve')}
@@ -2798,69 +3274,10 @@ export default function DashboardWithChildren() {
               )}
             </div>
           </motion.div>
-                 </div>
-       )}
+        </div>
+      )}
 
-       {/* Notifications Modal */}
-       {showNotificationsModal && (
-         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-           <motion.div
-             initial={{ opacity: 0, scale: 0.9 }}
-             animate={{ opacity: 1, scale: 1 }}
-             className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto"
-           >
-             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-               <h3 className="text-lg font-medium text-gray-900">Notifications</h3>
-               <button
-                 onClick={() => setShowNotificationsModal(false)}
-                 className="text-gray-400 hover:text-gray-600"
-               >
-                 <XMarkIcon className="w-6 h-6" />
-               </button>
-             </div>
-             <div className="p-6">
-               {notifications.length === 0 ? (
-                 <div className="text-center py-8">
-                   <BellIcon className="w-12 h-12 text-gray-400 mx-auto" />
-                   <p className="mt-2 text-gray-600">No notifications</p>
-                 </div>
-               ) : (
-                 <div className="space-y-4">
-                   {notifications.map((notification) => (
-                     <div key={notification.id} className="border border-gray-200 rounded-lg p-4">
-                       <div className="flex items-start justify-between">
-                         <div className="flex-1">
-                           <p className="text-sm text-gray-900">{notification.message}</p>
-                           <p className="text-xs text-gray-500 mt-1">
-                             {notification.timestamp.toLocaleString()}
-                           </p>
-                         </div>
-                         {notification.type === 'session_proposed' && (
-                           <button
-                             onClick={() => {
-                               const session = sessions.find(s => s.id === notification.sessionId)
-                               if (session) {
-                                 setSelectedSession(session)
-                                 setShowSessionDetailsModal(true)
-                                 setShowNotificationsModal(false)
-                               }
-                             }}
-                             className="ml-4 text-primary-600 hover:text-primary-700 text-sm font-medium"
-                           >
-                             Review
-                           </button>
-                         )}
-                       </div>
-                     </div>
-                   ))}
-                 </div>
-               )}
-             </div>
-           </motion.div>
-         </div>
-       )}
-
-       {/* Child Details Modal */}
+      {/* Child Details Modal */}
        {showChildDetailsModal && selectedChildForDetails && (
          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
            <motion.div

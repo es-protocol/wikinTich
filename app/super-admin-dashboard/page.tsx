@@ -97,6 +97,7 @@ interface InstitutionRequest {
     email: string
     phone: string
   }
+  school_id?: string // Added for existing school
 }
 
 interface Student {
@@ -143,10 +144,18 @@ export default function SuperAdminDashboard() {
   const [reviewNotes, setReviewNotes] = useState('')
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
 
+  // Tutor assignment states
+  const [showTutorAssignmentModal, setShowTutorAssignmentModal] = useState(false)
+  const [selectedInstitutionForAssignment, setSelectedInstitutionForAssignment] = useState<InstitutionRequest | null>(null)
+  const [availableTutorsForInstitution, setAvailableTutorsForInstitution] = useState<Tutor[]>([])
+  const [selectedTutorForInstitution, setSelectedTutorForInstitution] = useState('')
+  const [isLoadingTutorsForInstitution, setIsLoadingTutorsForInstitution] = useState(false)
+  const [isAssigningTutor, setIsAssigningTutor] = useState(false)
+
   // Filter states
   const [tutorFilter, setTutorFilter] = useState('all') // all, verified, pending
   const [requestFilter, setRequestFilter] = useState('all') // all, pending, matched
-  const [institutionRequestFilter, setInstitutionRequestFilter] = useState('all') // all, pending, reviewed, approved, rejected
+  const [institutionRequestFilter, setInstitutionRequestFilter] = useState('all') // all, pending, approved, rejected
   const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
@@ -430,8 +439,6 @@ export default function SuperAdminDashboard() {
       // Apply filters
       if (institutionRequestFilter === 'pending') {
         query = query.eq('status', 'pending')
-      } else if (institutionRequestFilter === 'reviewed') {
-        query = query.eq('status', 'reviewed')
       } else if (institutionRequestFilter === 'approved') {
         query = query.eq('status', 'approved')
       } else if (institutionRequestFilter === 'rejected') {
@@ -495,33 +502,15 @@ export default function SuperAdminDashboard() {
     }
   }
 
-  const updateInstitutionRequestStatus = async (requestId: string, status: string, reviewNotes?: string) => {
+  const updateInstitutionRequestStatus = async (requestId: string, status: string) => {
     try {
-      console.log('Updating institution request status:', { requestId, status, reviewNotes })
+      console.log('Updating institution request status:', { requestId, status })
       
-      // First, let's verify the request exists and get current data
-      const { data: currentRequest, error: fetchError } = await supabase
-        .from('institution_requests')
-        .select('*')
-        .eq('id', requestId)
-        .single()
-
-      if (fetchError || !currentRequest) {
-        console.error('Error fetching current request:', fetchError)
-        alert('Failed to fetch current request data')
-        return
-      }
-
-      console.log('Current request data:', currentRequest)
-
-      // Update the institution request status
+      // Update only the status field (other fields don't exist in schema)
       const { error: updateError } = await supabase
         .from('institution_requests')
         .update({
-          status: status,
-          reviewed_by: userProfile?.id,
-          reviewed_at: new Date().toISOString(),
-          review_notes: reviewNotes || null
+          status: status
         })
         .eq('id', requestId)
 
@@ -537,28 +526,11 @@ export default function SuperAdminDashboard() {
       await fetchInstitutionRequests()
       await fetchSystemStats()
 
-      // Send notification to institution admin (if they have a profile)
-      if (currentRequest.admin_id) {
-        try {
-          const { error: notificationError } = await supabase
-            .from('school_admin_notifications')
-            .insert({
-              admin_id: currentRequest.admin_id,
-              school_id: null, // Will be set when school is created
-              title: `Institution Request ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-              message: `Your institution request for "${currentRequest.institution_name}" has been ${status}. ${reviewNotes ? `Notes: ${reviewNotes}` : ''}`,
-              notification_type: 'request'
-            })
-
-          if (notificationError) {
-            console.error('Error sending notification:', notificationError)
-            // Don't fail the whole operation if notification fails
-          } else {
-            console.log('Notification sent successfully')
-          }
-        } catch (notificationError) {
-          console.error('Error in notification process:', notificationError)
-          // Don't fail the whole operation if notification fails
+      // If approved, automatically open tutor assignment modal
+      if (status === 'approved') {
+        const approvedRequest = institutionRequests.find(r => r.id === requestId)
+        if (approvedRequest) {
+          openTutorAssignmentModal(approvedRequest)
         }
       }
 
@@ -573,29 +545,39 @@ export default function SuperAdminDashboard() {
     setSelectedInstitutionRequest(request)
     setReviewNotes('')
     setShowReviewModal(true)
-    // Store the action to perform
-    setSelectedInstitutionRequest(prev => prev ? { ...prev, action } : null)
   }
 
-  const handleStatusUpdate = async () => {
-    if (!selectedInstitutionRequest) return
+  const openTutorAssignmentModal = async (institutionRequest: InstitutionRequest) => {
+    setSelectedInstitutionForAssignment(institutionRequest)
+    setSelectedTutorForInstitution('')
+    setShowTutorAssignmentModal(true)
     
-    const action = (selectedInstitutionRequest as any).action
-    if (!action) return
-
-    // Map the action to the correct status value
-    let status = action
-    if (action === 'approve') status = 'approved'
-    if (action === 'reject') status = 'rejected'
-
-    setIsUpdatingStatus(true)
+    // Fetch available tutors (verified tutors)
+    setIsLoadingTutorsForInstitution(true)
     try {
-      await updateInstitutionRequestStatus(selectedInstitutionRequest.id, status, reviewNotes)
-      setShowReviewModal(false)
-      setSelectedInstitutionRequest(null)
-      setReviewNotes('')
+      const { data: tutors, error } = await supabase
+        .from('tutors')
+        .select(`
+          *,
+          profiles (
+            full_name,
+            email,
+            phone
+          )
+        `)
+        .eq('is_verified', true)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching available tutors:', error)
+        return
+      }
+
+      setAvailableTutorsForInstitution(tutors || [])
+    } catch (error) {
+      console.error('Error fetching tutors:', error)
     } finally {
-      setIsUpdatingStatus(false)
+      setIsLoadingTutorsForInstitution(false)
     }
   }
 
@@ -701,6 +683,112 @@ export default function SuperAdminDashboard() {
       alert('Failed to match tutor to request')
     } finally {
       setIsMatching(false)
+    }
+  }
+
+  const assignTutorToInstitution = async () => {
+    if (!selectedInstitutionForAssignment || !selectedTutorForInstitution) {
+      alert('Please select a tutor to assign')
+      return
+    }
+
+    try {
+      setIsAssigningTutor(true)
+
+      console.log('=== DEBUGGING TUTOR ASSIGNMENT ===')
+      console.log('Selected institution:', selectedInstitutionForAssignment)
+      console.log('Selected tutor ID:', selectedTutorForInstitution)
+      console.log('Admin ID from institution:', selectedInstitutionForAssignment.admin_id)
+      console.log('School ID from institution:', selectedInstitutionForAssignment.school_id)
+
+      if (!selectedInstitutionForAssignment.admin_id) {
+        console.error('ERROR: No admin_id found in institution request!')
+        alert('Cannot assign tutor: Institution request is missing admin information')
+        return
+      }
+
+      if (!selectedInstitutionForAssignment.school_id) {
+        console.error('ERROR: No school_id found in institution request!')
+        alert('Cannot assign tutor: Institution request is missing school information')
+        return
+      }
+
+      // Use the existing school record from the institution request
+      const schoolId = selectedInstitutionForAssignment.school_id
+      console.log('Using existing school ID:', schoolId)
+
+      // 2. Create a school_teacher assignment
+      const { error: assignmentError } = await supabase
+        .from('school_teacher')
+        .insert({
+          school_id: schoolId,
+          tutor_id: selectedTutorForInstitution,
+          start_date: new Date().toISOString().split('T')[0],
+          status: 'active'
+        })
+
+      if (assignmentError) {
+        console.error('Error creating teacher assignment:', assignmentError)
+        alert('Failed to create teacher assignment')
+        return
+      }
+
+      // 3. Update the institution request status (school_id is already set)
+      const { error: updateError } = await supabase
+        .from('institution_requests')
+        .update({
+          status: 'approved' // Keep as approved since tutor is now assigned
+        })
+        .eq('id', selectedInstitutionForAssignment.id)
+
+      if (updateError) {
+        console.error('Error updating institution request:', updateError)
+        alert('Failed to update institution request')
+        return
+      }
+
+      // 4. Send notification to the assigned tutor
+      const selectedTutor = availableTutorsForInstitution.find(t => t.id === selectedTutorForInstitution)
+      if (selectedTutor) {
+        await supabase
+          .from('tutor_notifications')
+          .insert({
+            tutor_id: selectedTutorForInstitution,
+            title: 'New Institution Assignment',
+            message: `You have been assigned to ${selectedInstitutionForAssignment.institution_name}. Please check your dashboard for details.`,
+            notification_type: 'institution',
+            category: 'institution'
+          })
+      }
+
+      // 5. Send notification to school admin
+      if (selectedInstitutionForAssignment.admin_id) {
+        await supabase
+          .from('school_admin_notifications')
+          .insert({
+            admin_id: selectedInstitutionForAssignment.admin_id,
+            school_id: schoolId,
+            title: 'Tutor Assigned',
+            message: `A tutor has been assigned to your institution. You can now view tutor details in your dashboard.`,
+            notification_type: 'teacher'
+          })
+      }
+
+      // Close modal and refresh data
+      setShowTutorAssignmentModal(false)
+      setSelectedInstitutionForAssignment(null)
+      setSelectedTutorForInstitution('')
+      
+      // Refresh data
+      await fetchInstitutionRequests()
+      await fetchSystemStats()
+
+      alert('Tutor assigned successfully! The school admin can now see the tutor in their dashboard.')
+    } catch (error) {
+      console.error('Error assigning tutor:', error)
+      alert('Failed to assign tutor to institution')
+    } finally {
+      setIsAssigningTutor(false)
     }
   }
 
@@ -1211,7 +1299,6 @@ export default function SuperAdminDashboard() {
               {[
                 { id: 'all', name: 'All' },
                 { id: 'pending', name: 'Pending' },
-                { id: 'reviewed', name: 'Reviewed' },
                 { id: 'approved', name: 'Approved' },
                 { id: 'rejected', name: 'Rejected' }
               ].map((filter) => (
@@ -1299,8 +1386,6 @@ export default function SuperAdminDashboard() {
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                               request.status === 'pending' 
                                 ? 'bg-yellow-100 text-yellow-800'
-                                : request.status === 'reviewed'
-                                ? 'bg-blue-100 text-blue-800'
                                 : request.status === 'approved'
                                 ? 'bg-green-100 text-green-800'
                                 : request.status === 'rejected'
@@ -1323,58 +1408,16 @@ export default function SuperAdminDashboard() {
                                   Review
                                 </button>
                                 <button 
-                                  onClick={() => openReviewModal(request, 'approve')}
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
                                   className="text-green-600 hover:text-green-900"
                                 >
                                   Approve
                                 </button>
                                 <button 
-                                  onClick={() => openReviewModal(request, 'reject')}
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
                                   className="text-red-600 hover:text-red-900"
                                 >
                                   Reject
-                                </button>
-                                {/* Quick actions without notes */}
-                                <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
-                                  className="text-green-500 hover:text-green-700 text-xs border border-green-300 px-2 py-1 rounded"
-                                >
-                                  Quick Approve
-                                </button>
-                                <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
-                                  className="text-red-500 hover:text-red-700 text-xs border border-red-300 px-2 py-1 rounded"
-                                >
-                                  Quick Reject
-                                </button>
-                              </div>
-                            )}
-                            {request.status === 'reviewed' && (
-                              <div className="flex space-x-2">
-                                <button 
-                                  onClick={() => openReviewModal(request, 'approve')}
-                                  className="text-green-600 hover:text-green-900"
-                                >
-                                  Approve
-                                </button>
-                                <button 
-                                  onClick={() => openReviewModal(request, 'reject')}
-                                  className="text-red-600 hover:text-red-900"
-                                >
-                                  Reject
-                                </button>
-                                {/* Quick actions without notes */}
-                                <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
-                                  className="text-green-500 hover:text-green-700 text-xs border border-green-300 px-2 py-1 rounded"
-                                >
-                                  Quick Approve
-                                </button>
-                                <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
-                                  className="text-red-500 hover:text-red-700 text-xs border border-red-300 px-2 py-1 rounded"
-                                >
-                                  Quick Reject
                                 </button>
                               </div>
                             )}
@@ -1608,11 +1651,88 @@ export default function SuperAdminDashboard() {
                  Cancel
                </button>
                <button
-                 onClick={handleStatusUpdate}
+                 onClick={() => {
+                   updateInstitutionRequestStatus(selectedInstitutionRequest.id, 'approved')
+                   setShowReviewModal(false)
+                   setSelectedInstitutionRequest(null)
+                   setReviewNotes('')
+                 }}
                  disabled={isUpdatingStatus}
+                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 Approve
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
+
+       {/* Tutor Assignment Modal */}
+       {showTutorAssignmentModal && selectedInstitutionForAssignment && (
+         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+           <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+             <div className="flex justify-between items-center mb-6">
+               <h3 className="text-lg font-semibold text-gray-900">
+                 Assign Tutor to Institution
+               </h3>
+               <button
+                 onClick={() => setShowTutorAssignmentModal(false)}
+                 className="text-gray-400 hover:text-gray-600"
+               >
+                 <XCircleIcon className="w-6 h-6" />
+               </button>
+             </div>
+
+             <div className="mb-6">
+               <h4 className="font-medium text-gray-900 mb-2">Institution Details:</h4>
+               <div className="bg-gray-50 rounded-lg p-4">
+                 <p><strong>Institution:</strong> {selectedInstitutionForAssignment.institution_name}</p>
+                 <p><strong>Contact Person:</strong> {selectedInstitutionForAssignment.contact_person}</p>
+                 <p><strong>Email:</strong> {selectedInstitutionForAssignment.email}</p>
+                 <p><strong>Phone:</strong> {selectedInstitutionForAssignment.phone}</p>
+                 <p><strong>Address:</strong> {selectedInstitutionForAssignment.address}</p>
+                 <p><strong>Type:</strong> {selectedInstitutionForAssignment.institution_type}</p>
+                 <p><strong>Subjects:</strong> {selectedInstitutionForAssignment.subjects}</p>
+                 <p><strong>Teachers:</strong> {selectedInstitutionForAssignment.teacher_count}</p>
+                 <p><strong>Students:</strong> {selectedInstitutionForAssignment.student_count}</p>
+                 <p><strong>Start Date:</strong> {formatDate(selectedInstitutionForAssignment.start_date)}</p>
+                 <p><strong>Duration:</strong> {selectedInstitutionForAssignment.duration}</p>
+                 <p><strong>Additional Info:</strong> {selectedInstitutionForAssignment.additional_info}</p>
+                 <p><strong>Additional Requirements:</strong> {selectedInstitutionForAssignment.additional_requirements}</p>
+               </div>
+             </div>
+
+             <div className="mb-6">
+               <label className="block text-sm font-medium text-gray-700 mb-2">
+                 Select a Tutor:
+               </label>
+               <select
+                 value={selectedTutorForInstitution}
+                 onChange={(e) => setSelectedTutorForInstitution(e.target.value)}
+                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+               >
+                 <option value="">Choose a tutor...</option>
+                 {availableTutorsForInstitution.map((tutor) => (
+                   <option key={tutor.id} value={tutor.id}>
+                     {tutor.profiles.full_name} - {Array.isArray(tutor.subjects) ? tutor.subjects.join(', ') : tutor.subjects}
+                   </option>
+                 ))}
+               </select>
+             </div>
+
+             <div className="flex justify-end space-x-3">
+               <button
+                 onClick={() => setShowTutorAssignmentModal(false)}
+                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+               >
+                 Cancel
+               </button>
+               <button
+                 onClick={assignTutorToInstitution}
+                 disabled={!selectedTutorForInstitution || isAssigningTutor}
                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                >
-                 {isUpdatingStatus ? 'Updating...' : 'Update Status'}
+                 {isAssigningTutor ? 'Assigning...' : 'Assign Tutor'}
                </button>
              </div>
            </div>

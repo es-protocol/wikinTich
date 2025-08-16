@@ -137,6 +137,12 @@ export default function SuperAdminDashboard() {
   const [selectedTutorId, setSelectedTutorId] = useState('')
   const [isMatching, setIsMatching] = useState(false)
 
+  // Institution request review states
+  const [showReviewModal, setShowReviewModal] = useState(false)
+  const [selectedInstitutionRequest, setSelectedInstitutionRequest] = useState<InstitutionRequest | null>(null)
+  const [reviewNotes, setReviewNotes] = useState('')
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+
   // Filter states
   const [tutorFilter, setTutorFilter] = useState('all') // all, verified, pending
   const [requestFilter, setRequestFilter] = useState('all') // all, pending, matched
@@ -491,7 +497,25 @@ export default function SuperAdminDashboard() {
 
   const updateInstitutionRequestStatus = async (requestId: string, status: string, reviewNotes?: string) => {
     try {
-      const { error } = await supabase
+      console.log('Updating institution request status:', { requestId, status, reviewNotes })
+      
+      // First, let's verify the request exists and get current data
+      const { data: currentRequest, error: fetchError } = await supabase
+        .from('institution_requests')
+        .select('*')
+        .eq('id', requestId)
+        .single()
+
+      if (fetchError || !currentRequest) {
+        console.error('Error fetching current request:', fetchError)
+        alert('Failed to fetch current request data')
+        return
+      }
+
+      console.log('Current request data:', currentRequest)
+
+      // Update the institution request status
+      const { error: updateError } = await supabase
         .from('institution_requests')
         .update({
           status: status,
@@ -501,33 +525,77 @@ export default function SuperAdminDashboard() {
         })
         .eq('id', requestId)
 
-      if (error) {
-        console.error('Error updating institution request status:', error)
+      if (updateError) {
+        console.error('Error updating institution request status:', updateError)
+        alert(`Failed to update status: ${updateError.message}`)
         return
       }
+
+      console.log('Status updated successfully')
 
       // Refresh data
       await fetchInstitutionRequests()
       await fetchSystemStats()
 
-      // Send notification to institution admin
-      const request = institutionRequests.find(r => r.id === requestId)
-      if (request) {
-        await supabase
-          .from('school_admin_notifications')
-          .insert({
-            admin_id: request.admin_id,
-            school_id: null, // Will be set when school is created
-            title: `Institution Request ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-            message: `Your institution request has been ${status}. ${reviewNotes ? `Notes: ${reviewNotes}` : ''}`,
-            notification_type: 'request'
-          })
+      // Send notification to institution admin (if they have a profile)
+      if (currentRequest.admin_id) {
+        try {
+          const { error: notificationError } = await supabase
+            .from('school_admin_notifications')
+            .insert({
+              admin_id: currentRequest.admin_id,
+              school_id: null, // Will be set when school is created
+              title: `Institution Request ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+              message: `Your institution request for "${currentRequest.institution_name}" has been ${status}. ${reviewNotes ? `Notes: ${reviewNotes}` : ''}`,
+              notification_type: 'request'
+            })
+
+          if (notificationError) {
+            console.error('Error sending notification:', notificationError)
+            // Don't fail the whole operation if notification fails
+          } else {
+            console.log('Notification sent successfully')
+          }
+        } catch (notificationError) {
+          console.error('Error in notification process:', notificationError)
+          // Don't fail the whole operation if notification fails
+        }
       }
 
       alert(`Institution request ${status} successfully!`)
     } catch (error) {
       console.error('Error updating institution request status:', error)
-      alert('Failed to update institution request status')
+      alert(`Failed to update institution request status: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  const openReviewModal = (request: InstitutionRequest, action: 'review' | 'approve' | 'reject') => {
+    setSelectedInstitutionRequest(request)
+    setReviewNotes('')
+    setShowReviewModal(true)
+    // Store the action to perform
+    setSelectedInstitutionRequest(prev => prev ? { ...prev, action } : null)
+  }
+
+  const handleStatusUpdate = async () => {
+    if (!selectedInstitutionRequest) return
+    
+    const action = (selectedInstitutionRequest as any).action
+    if (!action) return
+
+    // Map the action to the correct status value
+    let status = action
+    if (action === 'approve') status = 'approved'
+    if (action === 'reject') status = 'rejected'
+
+    setIsUpdatingStatus(true)
+    try {
+      await updateInstitutionRequestStatus(selectedInstitutionRequest.id, status, reviewNotes)
+      setShowReviewModal(false)
+      setSelectedInstitutionRequest(null)
+      setReviewNotes('')
+    } finally {
+      setIsUpdatingStatus(false)
     }
   }
 
@@ -1249,38 +1317,64 @@ export default function SuperAdminDashboard() {
                             {request.status === 'pending' && (
                               <div className="flex space-x-2">
                                 <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'reviewed')}
+                                  onClick={() => openReviewModal(request, 'review')}
                                   className="text-blue-600 hover:text-blue-900"
                                 >
                                   Review
                                 </button>
                                 <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
+                                  onClick={() => openReviewModal(request, 'approve')}
                                   className="text-green-600 hover:text-green-900"
                                 >
                                   Approve
                                 </button>
                                 <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
+                                  onClick={() => openReviewModal(request, 'reject')}
                                   className="text-red-600 hover:text-red-900"
                                 >
                                   Reject
+                                </button>
+                                {/* Quick actions without notes */}
+                                <button 
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
+                                  className="text-green-500 hover:text-green-700 text-xs border border-green-300 px-2 py-1 rounded"
+                                >
+                                  Quick Approve
+                                </button>
+                                <button 
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
+                                  className="text-red-500 hover:text-red-700 text-xs border border-red-300 px-2 py-1 rounded"
+                                >
+                                  Quick Reject
                                 </button>
                               </div>
                             )}
                             {request.status === 'reviewed' && (
                               <div className="flex space-x-2">
                                 <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
+                                  onClick={() => openReviewModal(request, 'approve')}
                                   className="text-green-600 hover:text-green-900"
                                 >
                                   Approve
                                 </button>
                                 <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
+                                  onClick={() => openReviewModal(request, 'reject')}
                                   className="text-red-600 hover:text-red-900"
                                 >
                                   Reject
+                                </button>
+                                {/* Quick actions without notes */}
+                                <button 
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
+                                  className="text-green-500 hover:text-green-700 text-xs border border-green-300 px-2 py-1 rounded"
+                                >
+                                  Quick Approve
+                                </button>
+                                <button 
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
+                                  className="text-red-500 hover:text-red-700 text-xs border border-red-300 px-2 py-1 rounded"
+                                >
+                                  Quick Reject
                                 </button>
                               </div>
                             )}
@@ -1453,6 +1547,72 @@ export default function SuperAdminDashboard() {
                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                >
                  {isMatching ? 'Matching...' : 'Match Tutor'}
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
+
+       {/* Institution Request Review Modal */}
+       {showReviewModal && selectedInstitutionRequest && (
+         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+           <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+             <div className="flex justify-between items-center mb-6">
+               <h3 className="text-lg font-semibold text-gray-900">
+                 Review Institution Request
+               </h3>
+               <button
+                 onClick={() => setShowReviewModal(false)}
+                 className="text-gray-400 hover:text-gray-600"
+               >
+                 <XCircleIcon className="w-6 h-6" />
+               </button>
+             </div>
+
+             <div className="mb-6">
+               <h4 className="font-medium text-gray-900 mb-2">Request Details:</h4>
+               <div className="bg-gray-50 rounded-lg p-4">
+                 <p><strong>Institution:</strong> {selectedInstitutionRequest.institution_name}</p>
+                 <p><strong>Contact Person:</strong> {selectedInstitutionRequest.contact_person}</p>
+                 <p><strong>Email:</strong> {selectedInstitutionRequest.email}</p>
+                 <p><strong>Phone:</strong> {selectedInstitutionRequest.phone}</p>
+                 <p><strong>Address:</strong> {selectedInstitutionRequest.address}</p>
+                 <p><strong>Type:</strong> {selectedInstitutionRequest.institution_type}</p>
+                 <p><strong>Subjects:</strong> {selectedInstitutionRequest.subjects}</p>
+                 <p><strong>Teachers:</strong> {selectedInstitutionRequest.teacher_count}</p>
+                 <p><strong>Students:</strong> {selectedInstitutionRequest.student_count}</p>
+                 <p><strong>Start Date:</strong> {formatDate(selectedInstitutionRequest.start_date)}</p>
+                 <p><strong>Duration:</strong> {selectedInstitutionRequest.duration}</p>
+                 <p><strong>Additional Info:</strong> {selectedInstitutionRequest.additional_info}</p>
+                 <p><strong>Additional Requirements:</strong> {selectedInstitutionRequest.additional_requirements}</p>
+               </div>
+             </div>
+
+             <div className="mb-6">
+               <label className="block text-sm font-medium text-gray-700 mb-2">
+                 Review Notes:
+               </label>
+               <textarea
+                 value={reviewNotes}
+                 onChange={(e) => setReviewNotes(e.target.value)}
+                 rows={4}
+                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+               ></textarea>
+             </div>
+
+             <div className="flex justify-end space-x-3">
+               <button
+                 onClick={() => setShowReviewModal(false)}
+                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+               >
+                 Cancel
+               </button>
+               <button
+                 onClick={handleStatusUpdate}
+                 disabled={isUpdatingStatus}
+                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 {isUpdatingStatus ? 'Updating...' : 'Update Status'}
                </button>
              </div>
            </div>

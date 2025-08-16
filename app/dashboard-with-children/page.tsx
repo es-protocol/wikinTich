@@ -988,11 +988,34 @@ export default function DashboardWithChildren() {
   }
 
   const handleDeleteChild = async (childId: string) => {
-    if (!confirm('Are you sure you want to delete this child? This action cannot be undone.')) {
+    if (!confirm('Are you sure you want to delete this child? This action cannot be undone. All associated tutoring requests, sessions, and data will also be deleted.')) {
       return
     }
 
     try {
+      setIsSubmitting(true)
+      
+      // First, delete related sessions
+      const { error: sessionsError } = await supabase
+        .from('home_tutoring_sessions')
+        .delete()
+        .eq('student_id', childId)
+
+      if (sessionsError) {
+        console.error('Error deleting sessions:', sessionsError)
+      }
+
+      // Delete related tutoring requests
+      const { error: requestsError } = await supabase
+        .from('home_tutoring_requests')
+        .delete()
+        .eq('student_id', childId)
+
+      if (requestsError) {
+        console.error('Error deleting requests:', requestsError)
+      }
+
+      // Finally, delete the child
       const { error } = await supabase
         .from('students')
         .delete()
@@ -1004,14 +1027,30 @@ export default function DashboardWithChildren() {
         return
       }
 
-      await fetchStudents()
+      // Refresh all data
+      await Promise.all([
+        fetchStudents(),
+        fetchTutoringRequests(),
+        fetchSessions()
+      ])
+
+      // Clear selected student if it was the deleted one
       if (selectedStudent?.id === childId) {
         setSelectedStudent(null)
       }
-      alert('Child deleted successfully!')
+
+      // Close any open modals
+      setShowChildDetailsModal(false)
+      setShowEditChildModal(false)
+      setSelectedChildForDetails(null)
+      setSelectedChildForEdit(null)
+
+      alert('Child and all associated data deleted successfully!')
     } catch (error) {
       console.error('Error deleting child:', error)
       alert('Failed to delete child. Please try again.')
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -1551,7 +1590,7 @@ export default function DashboardWithChildren() {
       case 'overview':
         return (
           <div className="space-y-6">
-            {/* Child Selector */}
+            {/* Children Management */}
             <div className="bg-white rounded-lg shadow p-6">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-medium text-gray-900">My Children</h3>
@@ -1620,6 +1659,20 @@ export default function DashboardWithChildren() {
                 </div>
               )}
             </div>
+
+            {/* Child Selection Prompt */}
+            {!selectedStudent && students.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
+                <UserIcon className="w-12 h-12 text-blue-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-blue-900 mb-2">Select a Child</h3>
+                <p className="text-blue-700 mb-4">
+                  Use the child selector in the header above to view detailed information for a specific child.
+                </p>
+                <p className="text-sm text-blue-600">
+                  You can also click on any child card above to select them.
+                </p>
+              </div>
+            )}
 
             {/* Selected Child Overview */}
             {selectedStudent && (
@@ -1887,15 +1940,25 @@ export default function DashboardWithChildren() {
                         <div className="flex items-center space-x-2">
                           <button
                             onClick={() => handleViewChildDetails(student)}
-                            className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                            disabled={isSubmitting}
+                            className="text-primary-600 hover:text-primary-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             View Details
                           </button>
                           <button 
                             onClick={() => handleEditChild(student)}
-                            className="text-gray-400 hover:text-gray-600"
+                            disabled={isSubmitting}
+                            className="text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <PencilIcon className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteChild(student.id)}
+                            disabled={isSubmitting}
+                            className="text-red-400 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Delete child"
+                          >
+                            <TrashIcon className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
@@ -1930,7 +1993,6 @@ export default function DashboardWithChildren() {
                   { id: 'all', name: 'All', count: tutoringRequests.length },
                   { id: 'pending', name: 'Pending', count: tutoringRequests.filter(r => r.status === 'pending').length },
                   { id: 'matched', name: 'Matched', count: tutoringRequests.filter(r => r.status === 'matched').length },
-                  { id: 'in_progress', name: 'In Progress', count: tutoringRequests.filter(r => r.status === 'in_progress').length },
                   { id: 'completed', name: 'Completed', count: tutoringRequests.filter(r => r.status === 'completed').length },
                   { id: 'cancelled', name: 'Cancelled', count: tutoringRequests.filter(r => r.status === 'cancelled').length }
                 ].map((filter) => (
@@ -1949,7 +2011,13 @@ export default function DashboardWithChildren() {
               </div>
             </div>
             <div className="p-6">
-              {isLoadingRequests ? (
+              {!selectedStudent ? (
+                <div className="text-center py-8">
+                  <UserIcon className="w-12 h-12 text-gray-400 mx-auto" />
+                  <p className="mt-2 text-gray-600">Please select a child to view requests</p>
+                  <p className="text-sm text-gray-500">Use the child selector in the header above</p>
+                </div>
+              ) : isLoadingRequests ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
                   <p className="mt-2 text-gray-600">Loading requests...</p>
@@ -2056,7 +2124,13 @@ export default function DashboardWithChildren() {
               </div>
             </div>
             <div className="p-6">
-              {isLoadingSessions ? (
+              {!selectedStudent ? (
+                <div className="text-center py-8">
+                  <UserIcon className="w-12 h-12 text-gray-400 mx-auto" />
+                  <p className="mt-2 text-gray-600">Please select a child to view sessions</p>
+                  <p className="text-sm text-gray-500">Use the child selector in the header above</p>
+                </div>
+              ) : isLoadingSessions ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
                   <p className="mt-2 text-gray-600">Loading sessions...</p>
@@ -2161,7 +2235,13 @@ export default function DashboardWithChildren() {
               <p className="text-sm text-gray-600 mt-1">View all your approved tutoring sessions in a weekly calendar format</p>
             </div>
             <div className="p-6">
-              {isLoadingSessions ? (
+              {!selectedStudent ? (
+                <div className="text-center py-8">
+                  <UserIcon className="w-12 h-12 text-gray-400 mx-auto" />
+                  <p className="mt-2 text-gray-600">Please select a child to view schedule</p>
+                  <p className="text-sm text-gray-500">Use the child selector in the header above</p>
+                </div>
+              ) : isLoadingSessions ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
                   <p className="mt-2 text-gray-600">Loading schedule...</p>
@@ -2178,321 +2258,320 @@ export default function DashboardWithChildren() {
           </div>
         )
 
-      case 'student-progress':
-        return (
-          <div className="bg-white rounded-lg shadow">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Student Progress</h3>
-            </div>
-            <div className="p-6">
-              {isLoadingProgress ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Loading progress data...</p>
-                </div>
-              ) : getFilteredProgress().length === 0 ? (
-                <div className="text-center py-8">
-                  <AcademicCapIcon className="w-12 h-12 text-gray-400 mx-auto" />
-                  <p className="mt-2 text-gray-600">No progress data yet</p>
-                  <p className="text-sm text-gray-500">Track your child's progress over time</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {getFilteredProgress().map((progress) => (
-                    <motion.div
-                      key={progress.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3">
-                            <h4 className="text-lg font-medium text-gray-900">{progress.subject}</h4>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(progress.mastery_level)}`}>
-                              {getStatusIcon(progress.mastery_level)}
-                              <span className="ml-1">{progress.mastery_level}</span>
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-600 mt-1">
-                            Attendance Rate: {progress.attendance_rate}%
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Last Updated: {formatDate(progress.last_updated)}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-500">
-                            Created: {formatDate(progress.created_at)}
-                          </p>
-                          <button
-                            onClick={() => {
-                              setSelectedProgress(progress)
-                              setShowProgressModal(true)
-                            }}
-                            className="mt-2 text-primary-600 hover:text-primary-700 text-sm font-medium"
-                          >
-                            View Details
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )
+      // case 'student-progress': // Commented out for MVP
+      //   return (
+      //     <div className="bg-white rounded-lg shadow">
+      //       <div className="px-6 py-4 border-b border-gray-200">
+      //         <h3 className="text-lg font-medium text-gray-900">Student Progress</h3>
+      //       </div>
+      //       <div className="p-6">
+      //         {isLoadingProgress ? (
+      //           <div className="text-center py-8">
+      //             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+      //             <p className="mt-2 text-gray-600">Loading progress data...</p>
+      //           </div>
+      //         ) : getFilteredProgress().length === 0 ? (
+      //           <div className="text-center py-8">
+      //           <AcademicCapIcon className="w-12 h-12 text-gray-400 mx-auto" />
+      //           <p className="mt-2 text-gray-600">No progress data yet</p>
+      //           <p className="text-sm text-gray-500">Track your child's progress over time</p>
+      //         </div>
+      //       ) : (
+      //         <div className="space-y-4">
+      //           {getFilteredProgress().map((progress) => (
+      //             <motion.div
+      //               key={progress.id}
+      //               initial={{ opacity: 0, y: 10 }}
+      //               animate={{ opacity: 1, y: 0 }}
+      //               className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+      //             >
+      //               <div className="flex items-center justify-between">
+      //                 <div className="flex-1">
+      //                   <div className="flex items-center space-x-3">
+      //                     <h4 className="text-lg font-medium text-gray-900">{progress.subject}</h4>
+      //                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(progress.mastery_level)}`}>
+      //                       {getStatusIcon(progress.mastery_level)}
+      //                       <span className="ml-1">{progress.mastery_level}</span>
+      //                     </span>
+      //                   </div>
+      //                   <p className="text-sm text-gray-600 mt-1">
+      //                     Attendance Rate: {progress.attendance_rate}%
+      //                     </p>
+      //                     <p className="text-sm text-gray-500 mt-1">
+      //                       Last Updated: {formatDate(progress.last_updated)}
+      //                     </p>
+      //                   </div>
+      //                   <div className="text-right">
+      //                     <p className="text-sm text-gray-500">
+      //                       Created: {formatDate(progress.created_at)}
+      //                     </p>
+      //                     <button
+      //                       onClick={() => {
+      //                         setSelectedProgress(progress)
+      //                         setShowProgressModal(true)
+      //                       }}
+      //                       className="mt-2 text-primary-600 hover:text-primary-700 text-sm font-medium"
+      //                     >
+      //                       View Details
+      //                       </button>
+      //                     </div>
+      //                   </div>
+      //                 </motion.div>
+      //               ))}
+      //             </div>
+      //           )}
+      //         </div>
+      //       </div>
+      //     )
 
-      case 'session-reports':
-        return (
-          <div className="bg-white rounded-lg shadow">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Session Reports</h3>
-            </div>
-            <div className="p-6">
-              {isLoadingReports ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Loading reports data...</p>
-                </div>
-              ) : getFilteredReports().length === 0 ? (
-                <div className="text-center py-8">
-                  <DocumentTextIcon className="w-12 h-12 text-gray-400 mx-auto" />
-                  <p className="mt-2 text-gray-600">No reports yet</p>
-                  <p className="text-sm text-gray-500">Track your child's progress after each session</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {getFilteredReports().map((report) => (
-                    <motion.div
-                      key={report.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3">
-                            <h4 className="text-lg font-medium text-gray-900">{report.topics_covered}</h4>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(report.student_engagement)}`}>
-                              {getStatusIcon(report.student_engagement)}
-                              <span className="ml-1">{report.student_engagement}</span>
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-600 mt-1">
-                            Areas for Improvement: {report.areas_for_improvement}
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Homework Assigned: {report.homework_assigned}
-                          </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Next Session Focus: {report.next_session_focus}
-                          </p>
-                          <p className="text-sm text-gray-600 mt-1">
-                            Tutor Notes: {report.tutor_notes}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-500">
-                            Created: {formatDate(report.created_at)}
-                          </p>
-                          <button
-                            onClick={() => {
-                              setSelectedReport(report)
-                              setShowReportModal(true)
-                            }}
-                            className="mt-2 text-primary-600 hover:text-primary-700 text-sm font-medium"
-                          >
-                            View Details
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )
+      // case 'session-reports': // Commented out for MVP
+      //   return (
+      //     <div className="bg-white rounded-lg shadow">
+      //       <div className="px-6 py-4 border-b border-gray-200">
+      //         <h3 className="text-lg font-medium text-gray-900">Session Reports</h3>
+      //       </div>
+      //       <div className="p-6">
+      //         {isLoadingReports ? (
+      //           <div className="text-center py-8">
+      //             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+      //             <p className="mt-2 text-gray-600">Loading reports data...</p>
+      //           </div>
+      //         ) : getFilteredReports().length === 0 ? (
+      //           <div className="text-center py-8">
+      //           <DocumentTextIcon className="w-12 h-12 text-gray-400 mx-auto" />
+      //           <p className="mt-2 text-gray-600">No reports yet</p>
+      //           <p className="text-sm text-gray-500">Track your child's progress after each session</p>
+      //         </div>
+      //       ) : (
+      //         <div className="space-y-4">
+      //           {getFilteredReports().map((report) => (
+      //             <motion.div
+      //               key={report.id}
+      //               initial={{ opacity: 0, y: 10 }}
+      //               animate={{ opacity: 1, y: 0 }}
+      //               className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+      //             >
+      //               <div className="flex items-center justify-between">
+      //                 <div className="flex-1">
+      //                   <div className="flex items-center space-x-3">
+      //                     <h4 className="text-lg font-medium text-gray-900">{report.topics_covered}</h4>
+      //                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(report.student_engagement)}`}>
+      //                       {getStatusIcon(report.student_engagement)}
+      //                       <span className="ml-1">{report.student_engagement}</span>
+      //                     </span>
+      //                   </div>
+      //                   <p className="text-sm text-gray-600 mt-1">
+      //                         Areas for Improvement: {report.areas_for_improvement}
+      //                       </p>
+      //                       <p className="text-sm text-gray-500 mt-1">
+      //                         Homework Assigned: {report.homework_assigned}
+      //                       </p>
+      //                       <p className="text-sm text-gray-500 mt-1">
+      //                         Next Session Focus: {report.next_session_focus}
+      //                       </p>
+      //                       <p className="text-sm text-gray-600 mt-1">
+      //                         Tutor Notes: {report.tutor_notes}
+      //                       </p>
+      //                     </div>
+      //                     <div className="text-right">
+      //                       <p className="text-sm text-gray-500">
+      //                         Created: {formatDate(report.created_at)}
+      //                       </p>
+      //                       <button
+      //                         onClick={() => {
+      //                           setSelectedReport(report)
+      //                           setShowReportModal(true)
+      //                         }}
+      //                         className="mt-2 text-primary-600 hover:text-primary-700 text-sm font-medium"
+      //                       >
+      //                         View Details
+      //                       </button>
+      //                     </div>
+      //                   </div>
+      //                 </motion.div>
+      //               ))}
+      //             </div>
+      //           )}
+      //         </div>
+      //       </div>
+      //     )
 
-      case 'tutor-proposals':
-        return (
-          <div className="bg-white rounded-lg shadow">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">
-                Tutor Proposals {selectedStudent ? `for ${selectedStudent.name}` : ''}
-              </h3>
-            </div>
-            <div className="p-6">
-              {!selectedStudent ? (
-                <div className="text-center py-8">
-                  <AcademicCapIcon className="w-12 h-12 text-gray-400 mx-auto" />
-                  <p className="mt-2 text-gray-600">Please select a child to view tutor proposals</p>
-                </div>
-              ) : isLoadingTutorData ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Loading tutor proposals...</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Pending Proposals */}
-                  <div>
-                    <h4 className="text-lg font-medium text-gray-900 mb-4">Pending Proposals</h4>
-                    {getPendingProposals().length === 0 ? (
-                      <div className="text-center py-6 bg-gray-50 rounded-lg">
-                        <AcademicCapIcon className="w-8 h-8 text-gray-400 mx-auto" />
-                        <p className="mt-2 text-gray-600">No pending proposals</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {getPendingProposals().map((proposal) => {
-                          const tutorInfo = getTutorDisplayInfo(proposal.tutor_id)
-                          return (
-                            <motion.div
-                              key={proposal.id}
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-                            >
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center space-x-3">
-                                    <h5 className="text-lg font-medium text-gray-900">
-                                      {tutorInfo?.display_name || 'Tutor'}
-                                    </h5>
-                                    {tutorInfo?.is_featured && (
-                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                        Featured
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-sm text-gray-600 mt-1">
-                                    Subjects: {tutorInfo?.subjects_taught?.join(', ')}
-                                  </p>
-                                  <p className="text-sm text-gray-500 mt-1">
-                                    Experience: {tutorInfo?.experience_years} years • {tutorInfo?.education_level}
-                                  </p>
-                                  
-                                  <p className="text-sm text-gray-500 mt-1">
-                                    Availability: {tutorInfo?.availability_summary}
-                                  </p>
-                                  <div className="flex items-center mt-2">
-                                    <div className="flex items-center">
-                                      {[...Array(5)].map((_, i) => (
-                                        <svg
-                                          key={i}
-                                          className={`w-4 h-4 ${
-                                            i < Math.floor(tutorInfo?.rating || 0)
-                                              ? 'text-yellow-400'
-                                              : 'text-gray-300'
-                                          }`}
-                                          fill="currentColor"
-                                          viewBox="0 0 20 20"
-                                        >
-                                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                                        </svg>
-                                      ))}
-                                      <span className="ml-1 text-sm text-gray-600">
-                                        {tutorInfo?.rating} ({tutorInfo?.total_reviews} reviews)
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <p className="text-sm text-gray-500 mt-2">
-                                    Proposed: {formatDate(proposal.proposed_at)}
-                                  </p>
-                                </div>
-                                <div className="flex flex-col space-y-2 ml-4">
-                                  <button
-                                    onClick={() => {
-                                      setSelectedTutor(tutorInfo || null)
-                                      setShowTutorDetailsModal(true)
-                                    }}
-                                    className="text-primary-600 hover:text-primary-700 text-sm font-medium"
-                                  >
-                                    View Details
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setSelectedProposal(proposal)
-                                      setShowTutorProposalsModal(true)
-                                    }}
-                                    className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 text-sm"
-                                  >
-                                    Respond
-                                  </button>
-                                </div>
-                              </div>
-                            </motion.div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
+      // case 'tutor-proposals': // Commented out for MVP
+      //   return (
+      //     <div className="bg-white rounded-lg shadow">
+      //       <div className="px-6 py-4 border-b border-gray-200">
+      //         <h3 className="text-lg font-medium text-gray-900">
+      //           Tutor Proposals {selectedStudent ? `for ${selectedStudent.name}` : ''}
+      //         </h3>
+      //       </div>
+      //       <div className="p-6">
+      //         {!selectedStudent ? (
+      //           <div className="text-center py-8">
+      //           <AcademicCapIcon className="w-12 h-12 text-gray-400 mx-auto" />
+      //           <p className="mt-2 text-gray-600">Please select a child to view tutor proposals</p>
+      //         </div>
+      //       ) : isLoadingTutorData ? (
+      //         <div className="text-center py-8">
+      //           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+      //           <p className="mt-2 text-gray-600">Loading tutor proposals...</p>
+      //         </div>
+      //       ) : (
+      //         <div className="space-y-6">
+      //           {/* Pending Proposals */}
+      //           <div>
+      //             <h4 className="text-lg font-medium text-gray-900 mb-4">Pending Proposals</h4>
+      //             {getPendingProposals().length === 0 ? (
+      //               <div className="text-center py-6 bg-gray-50 rounded-lg">
+      //             <AcademicCapIcon className="w-8 h-8 text-gray-400 mx-auto" />
+      //             <p className="mt-2 text-gray-600">No pending proposals</p>
+      //           </div>
+      //         ) : (
+      //           <div className="space-y-4">
+      //             {getPendingProposals().map((proposal) => {
+      //               const tutorInfo = getTutorDisplayInfo(proposal.tutor_id)
+      //               return (
+      //                 <motion.div
+      //                   key={proposal.id}
+      //                   initial={{ opacity: 0, y: 10 }}
+      //                   animate={{ opacity: 1, y: 0 }}
+      //                   className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+      //                 >
+      //                   <div className="flex items-start justify-between">
+      //                     <div className="flex-1">
+      //                       <div className="flex items-center space-x-3">
+      //                         <h5 className="text-lg font-medium text-gray-900">
+      //                           {tutorInfo?.display_name || 'Tutor'}
+      //                         </h5>
+      //                         {tutorInfo?.is_featured && (
+      //                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+      //                             Featured
+      //                           </span>
+      //                         )}
+      //                       </div>
+      //                       <p className="text-sm text-gray-600 mt-1">
+      //                         Subjects: {tutorInfo?.subjects_taught?.join(', ')}
+      //                       </p>
+      //                       <p className="text-sm text-gray-500 mt-1">
+      //                         Experience: {tutorInfo?.experience_years} years • {tutorInfo?.education_level}
+      //                       </p>
+      //                       
+      //                       <p className="text-sm text-gray-500 mt-1">
+      //                         Availability: {tutorInfo?.availability_summary}
+      //                       </p>
+      //                       <div className="flex items-center mt-2">
+      //                         <div className="flex items-center">
+      //                           {[...Array(5)].map((_, i) => (
+      //                             <svg
+      //                               key={i}
+      //                               className={`w-4 h-4 ${
+      //                                 i < Math.floor(tutorInfo?.rating || 0)
+      //                                   ? 'text-yellow-400'
+      //                                   : 'text-gray-300'
+      //                               }`}
+      //                               fill="currentColor"
+      //                               viewBox="0 0 20 20"
+      //                             >
+      //                               <svg d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+      //                             </svg>
+      //                           ))}
+      //                           <span className="ml-1 text-sm text-gray-600">
+      //                             {tutorInfo?.rating} ({tutorInfo?.total_reviews} reviews)
+      //                           </span>
+      //                         </div>
+      //                       </div>
+      //                       <p className="text-sm text-gray-500 mt-2">
+      //                         Proposed: {formatDate(proposal.proposed_at)}
+      //                       </p>
+      //                     </div>
+      //                     <div className="flex flex-col space-y-2 ml-4">
+      //                       <button
+      //                         onClick={() => {
+      //                           setSelectedTutor(tutorInfo || null)
+      //                           setShowTutorDetailsModal(true)
+      //                         }}
+      //                         className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+      //                       >
+      //                         View Details
+      //                         </button>
+      //                       <button
+      //                         onClick={() => {
+      //                           setSelectedProposal(proposal)
+      //                           setShowTutorProposalsModal(true)
+      //                         }}
+      //                         className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 text-sm"
+      //                       >
+      //                         Respond
+      //                         </button>
+      //                     </div>
+      //                   </div>
+      //                 </motion.div>
+      //               ))
+      //             )}
+      //           </div>
+      //         </div>
 
-                  {/* Accepted Proposals */}
-                  <div>
-                    <h4 className="text-lg font-medium text-gray-900 mb-4">Accepted Proposals</h4>
-                    {getAcceptedProposals().length === 0 ? (
-                      <div className="text-center py-6 bg-gray-50 rounded-lg">
-                        <CheckCircleIcon className="w-8 h-8 text-gray-400 mx-auto" />
-                        <p className="mt-2 text-gray-600">No accepted proposals</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {getAcceptedProposals().map((proposal) => {
-                          const tutorInfo = getTutorDisplayInfo(proposal.tutor_id)
-                          return (
-                            <motion.div
-                              key={proposal.id}
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className="border border-green-200 bg-green-50 rounded-lg p-4"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center space-x-3">
-                                    <h5 className="text-lg font-medium text-gray-900">
-                                      {tutorInfo?.display_name || 'Tutor'}
-                                    </h5>
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                      Accepted
-                                    </span>
-                                  </div>
-                                  <p className="text-sm text-gray-600 mt-1">
-                                    Subjects: {tutorInfo?.subjects_taught?.join(', ')}
-                                  </p>
-                                  <p className="text-sm text-gray-500 mt-1">
-                                    Accepted: {formatDate(proposal.responded_at || '')}
-                                  </p>
-                                  {proposal.response_notes && (
-                                    <p className="text-sm text-gray-600 mt-1">
-                                      Notes: {proposal.response_notes}
-                                    </p>
-                                  )}
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    setSelectedTutor(tutorInfo || null)
-                                    setShowTutorDetailsModal(true)
-                                  }}
-                                  className="text-primary-600 hover:text-primary-700 text-sm font-medium"
-                                >
-                                  View Details
-                                </button>
-                              </div>
-                            </motion.div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )
+      //         {/* Accepted Proposals */}
+      //         <div>
+      //           <h4 className="text-lg font-medium text-gray-900 mb-4">Accepted Proposals</h4>
+      //           {getAcceptedProposals().length === 0 ? (
+      //             <div className="text-center py-6 bg-gray-50 rounded-lg">
+      //               <CheckCircleIcon className="w-8 h-8 text-gray-400 mx-auto" />
+      //               <p className="mt-2 text-gray-600">No accepted proposals</p>
+      //             </div>
+      //           ) : (
+      //             <div className="space-y-4">
+      //               {getAcceptedProposals().map((proposal) => {
+      //                 const tutorInfo = getTutorDisplayInfo(proposal.tutor_id)
+      //                 return (
+      //                   <motion.div
+      //                     key={proposal.id}
+      //                     initial={{ opacity: 0, y: 10 }}
+      //                     animate={{ opacity: 1, y: 0 }}
+      //                     className="border border-green-200 bg-green-50 rounded-lg p-4"
+      //                   >
+      //                     <div className="flex items-center space-x-3">
+      //                       <div className="flex-1">
+      //                         <div className="flex items-center space-x-3">
+      //                           <h5 className="text-lg font-medium text-gray-900">
+      //                             {tutorInfo?.display_name || 'Tutor'}
+      //                           </h5>
+      //                           <span className="inline-flex items-center px-2.5 py-0.500 rounded-full text-xs font-medium bg-green-100 text-green-800">
+      //                             Accepted
+      //                           </span>
+      //                         </div>
+      //                         <p className="text-sm text-gray-600 mt-1">
+      //                           Subjects: {tutorInfo?.subjects_taught?.join(', ')}
+      //                         </p>
+      //                         <p className="text-sm text-gray-500 mt-1">
+      //                           Accepted: {formatDate(proposal.responded_at || '')}
+      //                         </p>
+      //                         {proposal.response_notes && (
+      //                           <p className="text-sm text-gray-600 mt-1">
+      //                             Notes: {proposal.response_notes}
+      //                           </p>
+      //                         )}
+      //                       </div>
+      //                       <button
+      //                         onClick={() => {
+      //                           setSelectedTutor(tutorInfo || null)
+      //                           setShowTutorDetailsModal(true)
+      //                         }}
+      //                         className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+      //                       >
+      //                         View Details
+      //                       </button>
+      //                     </div>
+      //                   </motion.div>
+      //                 )
+      //               })}
+      //             </div>
+      //           )}
+      //         </div>
+      //       </div>
+      //     )}
+      //   </div>
+      // </div>
+      // )
 
       case 'payments':
         return (
@@ -2562,6 +2641,36 @@ export default function DashboardWithChildren() {
             <div className="flex items-center">
               <h1 className="text-2xl font-bold text-gray-900">Parent Dashboard</h1>
               <span className="ml-2 text-sm text-gray-500">(With Child Management)</span>
+              
+              {/* Child Selector - Always Visible */}
+              {students.length > 0 && (
+                <div className="ml-8">
+                  <label htmlFor="child-selector" className="block text-sm font-medium text-gray-700 mb-1">
+                    Select Child
+                  </label>
+                  <select
+                    id="child-selector"
+                    value={selectedStudent?.id || ''}
+                    onChange={(e) => {
+                      const student = students.find(s => s.id === e.target.value)
+                      setSelectedStudent(student || null)
+                    }}
+                    className="block w-48 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  >
+                    <option value="">Choose a child...</option>
+                    {students.map((student) => (
+                      <option key={student.id} value={student.id}>
+                        {student.name} ({student.grade_level})
+                      </option>
+                    ))}
+                  </select>
+                  {!selectedStudent && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Select a child to view detailed information
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center space-x-4">
               <button 
@@ -2689,12 +2798,12 @@ export default function DashboardWithChildren() {
               { id: 'overview', name: 'Overview', icon: UserIcon },
               { id: 'children', name: 'Children', icon: UserGroupIcon },
               { id: 'requests', name: 'Requests', icon: DocumentTextIcon },
-              { id: 'sessions', name: 'Sessions', icon: CalendarIcon },
-              { id: 'my-schedule', name: 'Schedule', icon: CalendarDaysIcon },
-              { id: 'student-progress', name: 'Progress', icon: AcademicCapIcon },
-              { id: 'session-reports', name: 'Reports', icon: DocumentTextIcon },
-              { id: 'tutor-proposals', name: 'Proposals', icon: AcademicCapIcon },
-              { id: 'payments', name: 'Payments', icon: CreditCardIcon }
+                              { id: 'sessions', name: 'Sessions', icon: CalendarIcon },
+                { id: 'my-schedule', name: 'Schedule', icon: CalendarDaysIcon },
+                // { id: 'student-progress', name: 'Progress', icon: AcademicCapIcon }, // Commented out for MVP
+                // { id: 'session-reports', name: 'Reports', icon: DocumentTextIcon }, // Commented out for MVP
+                // { id: 'tutor-proposals', name: 'Proposals', icon: AcademicCapIcon }, // Commented out for MVP
+                { id: 'payments', name: 'Payments', icon: CreditCardIcon }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -3334,15 +3443,17 @@ export default function DashboardWithChildren() {
                        setSelectedChildForDetails(null)
                        handleEditChild(selectedChildForDetails)
                      }}
-                     className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+                     disabled={isSubmitting}
+                     className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                    >
                      Edit Child
                    </button>
                    <button
                      onClick={() => handleDeleteChild(selectedChildForDetails.id)}
-                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                     disabled={isSubmitting}
+                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                    >
-                     Delete Child
+                     {isSubmitting ? 'Deleting...' : 'Delete Child'}
                    </button>
                  </div>
                </div>

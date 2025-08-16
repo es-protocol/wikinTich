@@ -34,6 +34,8 @@ interface SystemStats {
   totalSchools: number
   pendingTutors: number
   pendingRequests: number
+  totalInstitutionRequests: number
+  pendingInstitutionRequests: number
   totalRevenue: number
   averageRating: number
 }
@@ -71,6 +73,32 @@ interface HomeTutoringRequest {
   }
 }
 
+interface InstitutionRequest {
+  id: string
+  institution_name: string
+  contact_person: string
+  email: string
+  phone: string
+  address: string
+  institution_type: string
+  student_count: number
+  subjects: string
+  teacher_count: number
+  start_date: string
+  additional_info: string
+  status: string
+  created_at: string
+  admin_id: string
+  experience_level: string
+  duration: string
+  additional_requirements: string
+  profiles: {
+    full_name: string
+    email: string
+    phone: string
+  }
+}
+
 interface Student {
   id: string
   parent_id: string
@@ -96,9 +124,11 @@ export default function SuperAdminDashboard() {
   const [tutors, setTutors] = useState<Tutor[]>([])
   const [requests, setRequests] = useState<HomeTutoringRequest[]>([])
   const [students, setStudents] = useState<Student[]>([])
+  const [institutionRequests, setInstitutionRequests] = useState<InstitutionRequest[]>([])
   const [isLoadingTutors, setIsLoadingTutors] = useState(false)
   const [isLoadingRequests, setIsLoadingRequests] = useState(false)
   const [isLoadingStudents, setIsLoadingStudents] = useState(false)
+  const [isLoadingInstitutionRequests, setIsLoadingInstitutionRequests] = useState(false)
 
   // Matching states
   const [showMatchModal, setShowMatchModal] = useState(false)
@@ -110,6 +140,7 @@ export default function SuperAdminDashboard() {
   // Filter states
   const [tutorFilter, setTutorFilter] = useState('all') // all, verified, pending
   const [requestFilter, setRequestFilter] = useState('all') // all, pending, matched
+  const [institutionRequestFilter, setInstitutionRequestFilter] = useState('all') // all, pending, reviewed, approved, rejected
   const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
@@ -122,6 +153,7 @@ export default function SuperAdminDashboard() {
       fetchTutors()
       fetchRequests()
       fetchStudents()
+      fetchInstitutionRequests()
     }
   }, [userProfile])
 
@@ -130,6 +162,12 @@ export default function SuperAdminDashboard() {
       fetchTutors()
     }
   }, [tutorFilter, searchTerm])
+
+  useEffect(() => {
+    if (userProfile) {
+      fetchInstitutionRequests()
+    }
+  }, [institutionRequestFilter])
 
   const checkSuperAdminStatus = async () => {
     try {
@@ -211,6 +249,17 @@ export default function SuperAdminDashboard() {
         .from('schools')
         .select('*', { count: 'exact', head: true })
 
+      // Fetch total institution requests
+      const { count: totalInstitutionRequests } = await supabase
+        .from('institution_requests')
+        .select('*', { count: 'exact', head: true })
+
+      // Fetch pending institution requests
+      const { count: pendingInstitutionRequests } = await supabase
+        .from('institution_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending')
+
       // Calculate average rating
       const { data: ratings } = await supabase
         .from('tutor_reviews')
@@ -237,6 +286,8 @@ export default function SuperAdminDashboard() {
         totalSchools: totalSchools || 0,
         pendingTutors: pendingTutors || 0,
         pendingRequests: pendingRequests || 0,
+        totalInstitutionRequests: totalInstitutionRequests || 0,
+        pendingInstitutionRequests: pendingInstitutionRequests || 0,
         totalRevenue: totalRevenue,
         averageRating: averageRating
       })
@@ -354,6 +405,48 @@ export default function SuperAdminDashboard() {
     }
   }
 
+  const fetchInstitutionRequests = async () => {
+    try {
+      setIsLoadingInstitutionRequests(true)
+      
+      let query = supabase
+        .from('institution_requests')
+        .select(`
+          *,
+          profiles (
+            full_name,
+            email,
+            phone
+          )
+        `)
+        .order('created_at', { ascending: false })
+
+      // Apply filters
+      if (institutionRequestFilter === 'pending') {
+        query = query.eq('status', 'pending')
+      } else if (institutionRequestFilter === 'reviewed') {
+        query = query.eq('status', 'reviewed')
+      } else if (institutionRequestFilter === 'approved') {
+        query = query.eq('status', 'approved')
+      } else if (institutionRequestFilter === 'rejected') {
+        query = query.eq('status', 'rejected')
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error('Error fetching institution requests:', error)
+        return
+      }
+
+      setInstitutionRequests(data || [])
+    } catch (error) {
+      console.error('Error fetching institution requests:', error)
+    } finally {
+      setIsLoadingInstitutionRequests(false)
+    }
+  }
+
   const verifyTutor = async (tutorId: string, verified: boolean) => {
     try {
       const { error } = await supabase
@@ -393,6 +486,48 @@ export default function SuperAdminDashboard() {
     } catch (error) {
       console.error('Error verifying tutor:', error)
       alert('Failed to update tutor verification status')
+    }
+  }
+
+  const updateInstitutionRequestStatus = async (requestId: string, status: string, reviewNotes?: string) => {
+    try {
+      const { error } = await supabase
+        .from('institution_requests')
+        .update({
+          status: status,
+          reviewed_by: userProfile?.id,
+          reviewed_at: new Date().toISOString(),
+          review_notes: reviewNotes || null
+        })
+        .eq('id', requestId)
+
+      if (error) {
+        console.error('Error updating institution request status:', error)
+        return
+      }
+
+      // Refresh data
+      await fetchInstitutionRequests()
+      await fetchSystemStats()
+
+      // Send notification to institution admin
+      const request = institutionRequests.find(r => r.id === requestId)
+      if (request) {
+        await supabase
+          .from('school_admin_notifications')
+          .insert({
+            admin_id: request.admin_id,
+            school_id: null, // Will be set when school is created
+            title: `Institution Request ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+            message: `Your institution request has been ${status}. ${reviewNotes ? `Notes: ${reviewNotes}` : ''}`,
+            notification_type: 'request'
+          })
+      }
+
+      alert(`Institution request ${status} successfully!`)
+    } catch (error) {
+      console.error('Error updating institution request status:', error)
+      alert('Failed to update institution request status')
     }
   }
 
@@ -531,7 +666,7 @@ export default function SuperAdminDashboard() {
         return (
           <div className="space-y-6">
             {/* System Statistics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -613,12 +748,34 @@ export default function SuperAdminDashboard() {
                   Avg Rating: {systemStats?.averageRating.toFixed(1) || '0.0'}/5
                 </p>
               </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="bg-white rounded-2xl shadow-lg p-6"
+              >
+                <div className="flex items-center">
+                  <div className="p-3 bg-indigo-100 rounded-lg">
+                    <AcademicCapIcon className="w-6 h-6 text-indigo-600" />
+                  </div>
+                  <div className="ml-4">
+                    <p className="text-sm font-medium text-gray-600">Institution Requests</p>
+                    <p className="text-2xl font-bold text-gray-900">{systemStats?.totalInstitutionRequests || 0}</p>
+                  </div>
+                </div>
+                {systemStats?.pendingInstitutionRequests && systemStats.pendingInstitutionRequests > 0 && (
+                  <p className="text-sm text-orange-600 mt-2">
+                    {systemStats.pendingInstitutionRequests} pending review
+                  </p>
+                )}
+              </motion.div>
             </div>
 
             {/* Quick Actions */}
             <div className="bg-white rounded-2xl shadow-lg p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <button
                   onClick={() => setActiveSection('tutors')}
                   className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
@@ -649,6 +806,17 @@ export default function SuperAdminDashboard() {
                   <div className="text-left">
                     <p className="font-medium text-gray-900">View Students</p>
                     <p className="text-sm text-gray-500">Browse registered students</p>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => setActiveSection('institution-requests')}
+                  className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <AcademicCapIcon className="w-5 h-5 text-indigo-600 mr-3" />
+                  <div className="text-left">
+                    <p className="font-medium text-gray-900">Review Institutions</p>
+                    <p className="text-sm text-gray-500">Process institution requests</p>
                   </div>
                 </button>
               </div>
@@ -962,6 +1130,171 @@ export default function SuperAdminDashboard() {
           </div>
         )
 
+      case 'institution-requests':
+        return (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">Institution Requests</h2>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+              {[
+                { id: 'all', name: 'All' },
+                { id: 'pending', name: 'Pending' },
+                { id: 'reviewed', name: 'Reviewed' },
+                { id: 'approved', name: 'Approved' },
+                { id: 'rejected', name: 'Rejected' }
+              ].map((filter) => (
+                <button
+                  key={filter.id}
+                  onClick={() => setInstitutionRequestFilter(filter.id)}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    institutionRequestFilter === filter.id
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  {filter.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Institution Requests List */}
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              {isLoadingInstitutionRequests ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="mt-2 text-gray-600">Loading institution requests...</p>
+                </div>
+              ) : institutionRequests.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-gray-500">No institution requests found.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Institution
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Contact Person
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Requirements
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Submitted
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {institutionRequests.map((request) => (
+                        <tr key={request.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {request.institution_name}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {request.institution_type}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {request.contact_person}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {request.email}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              <div><strong>Subjects:</strong> {request.subjects}</div>
+                              <div><strong>Teachers:</strong> {request.teacher_count}</div>
+                              <div><strong>Students:</strong> {request.student_count}</div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              request.status === 'pending' 
+                                ? 'bg-yellow-100 text-yellow-800'
+                                : request.status === 'reviewed'
+                                ? 'bg-blue-100 text-blue-800'
+                                : request.status === 'approved'
+                                ? 'bg-green-100 text-green-800'
+                                : request.status === 'rejected'
+                                ? 'bg-red-100 text-red-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatDate(request.created_at)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            {request.status === 'pending' && (
+                              <div className="flex space-x-2">
+                                <button 
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'reviewed')}
+                                  className="text-blue-600 hover:text-blue-900"
+                                >
+                                  Review
+                                </button>
+                                <button 
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
+                                  className="text-green-600 hover:text-green-900"
+                                >
+                                  Approve
+                                </button>
+                                <button 
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
+                                  className="text-red-600 hover:text-red-900"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            )}
+                            {request.status === 'reviewed' && (
+                              <div className="flex space-x-2">
+                                <button 
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
+                                  className="text-green-600 hover:text-green-900"
+                                >
+                                  Approve
+                                </button>
+                                <button 
+                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
+                                  className="text-red-600 hover:text-red-900"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
       default:
         return (
           <div className="text-center py-12">
@@ -1038,7 +1371,8 @@ export default function SuperAdminDashboard() {
               { id: 'overview', name: 'Overview', icon: ChartBarIcon },
               { id: 'tutors', name: 'Tutors', icon: AcademicCapIcon },
               { id: 'requests', name: 'Requests', icon: ClockIcon },
-              { id: 'students', name: 'Students', icon: UserGroupIcon }
+              { id: 'students', name: 'Students', icon: UserGroupIcon },
+              { id: 'institution-requests', name: 'Institution Requests', icon: AcademicCapIcon }
             ].map((tab) => (
               <button
                 key={tab.id}

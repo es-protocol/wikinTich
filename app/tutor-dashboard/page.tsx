@@ -1509,49 +1509,48 @@ export default function TutorDashboard() {
           </div>
         )
 
-      case 'performance':
-        return (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl shadow-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Metrics</h3>
-              {isLoadingPerformance ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Loading performance data...</p>
-                </div>
-              ) : performance ? (
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Total Hours</span>
-                      <span className="font-semibold text-gray-900">{performance.total_hours}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Average Rating</span>
-                      <span className="font-semibold text-gray-900">{performance.average_rating.toFixed(1)}/5</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Attendance Rate</span>
-                      <span className="font-semibold text-gray-900">{performance.overall_attendance_rate}%</span>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Institution Assignments</span>
-                      <span className="font-semibold text-gray-900">{performance.active_institution_assignments}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Home Tutoring Assignments</span>
-                      <span className="font-semibold text-gray-900">{performance.active_home_assignments}</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-gray-500">No performance data available.</p>
-              )}
-            </div>
-          </div>
-        )
+      // case 'performance': // Commented out for MVP
+      //   return (
+      //     <div className="space-y-6">
+      //       <div className="bg-white rounded-2xl shadow-lg p-6">
+      //         <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance Metrics</h3>
+      //         {isLoadingPerformance ? (
+      //           <div className="text-center py-8">
+      //           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+      //           <p className="mt-2 text-gray-6">Loading performance data...</p>
+      //         </div>
+      //       ) : performance ? (
+      //         <div className="grid md:grid-cols-2 gap-6">
+      //           <div className="space-y-4">
+      //             <div className="flex justify-between items-center">
+      //               <span className="text-gray-600">Total Hours</span>
+      //               <span className="font-semibold text-gray-900">{performance.total_hours}</span>
+      //             </div>
+      //             <div className="flex justify-between items-center">
+      //               <span className="text-gray-600">Average Rating</span>
+      //               <span className="font-semibold text-gray-900">{performance.average_rating.toFixed(1)}/5</span>
+      //             </div>
+      //             <div className="flex justify-between items-center">
+      //               <span className="text-gray-600">Attendance Rate</span>
+      //               <span className="font-semibold text-gray-900">{performance.overall_attendance_rate}%</span>
+      //             </div>
+      //           </div>
+      //           <div className="space-y-4">
+      //             <div className="flex justify-between items-center">
+      //               <span className="text-gray-600">Institution Assignments</span>
+      //               <span className="font-semibold text-gray-900">{performance.active_institution_assignments}</span>
+      //             </div>
+      //             <div className="flex justify-between items-center">
+      //               <span className="text-gray-600">Home Tutoring Assignments</span>
+      //               <span className="font-semibold text-gray-900">{performance.active_home_assignments}</span>
+      //             </div>
+      //         </div>
+      //       ) : (
+      //         <p className="text-gray-500">No performance data available.</p>
+      //       )}
+      //     </div>
+      //   </div>
+      //   )
 
       
 
@@ -1769,8 +1768,8 @@ export default function TutorDashboard() {
           {[
             { id: 'overview', name: 'Overview', icon: '📊' },
             { id: 'sessions', name: 'Sessions', icon: '📅' },
-            { id: 'payments', name: 'Payments', icon: '💰' },
-            { id: 'performance', name: 'Performance', icon: '📈' }
+            { id: 'payments', name: 'Payments', icon: '💰' }
+            // { id: 'performance', name: 'Performance', icon: '📈' } // Commented out for MVP
           ].map((tab) => (
             <button
               key={tab.id}

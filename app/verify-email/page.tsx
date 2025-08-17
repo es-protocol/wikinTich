@@ -12,6 +12,8 @@ export default function VerifyEmailPage() {
   const [verificationStatus, setVerificationStatus] = useState<'verifying' | 'success' | 'error' | 'expired'>('verifying')
   const [errorMessage, setErrorMessage] = useState('')
   const [email, setEmail] = useState('')
+  const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle')
+  const [resendCount, setResendCount] = useState(0)
 
   useEffect(() => {
     // Get email from URL params or localStorage
@@ -76,7 +78,18 @@ export default function VerifyEmailPage() {
 
   const resendVerification = async () => {
     try {
-      setVerificationStatus('verifying')
+      // Rate limiting: prevent spam clicking
+      if (resendStatus === 'sending') {
+        return
+      }
+      
+      // Rate limiting: max 3 attempts per session
+      if (resendCount >= 3) {
+        setErrorMessage('Maximum resend attempts reached. Please contact support.')
+        return
+      }
+      
+      setResendStatus('sending')
       
       // Get the correct email from pending data
       const storedParentEmail = localStorage.getItem('pendingParentData') ? JSON.parse(localStorage.getItem('pendingParentData')!).parentEmail : null
@@ -100,12 +113,25 @@ export default function VerifyEmailPage() {
         throw error
       }
 
-      setVerificationStatus('verifying')
+      // Success - update states
+      setResendStatus('sent')
+      setResendCount(prev => prev + 1)
       setErrorMessage('')
+      
+      // Reset to idle after 5 seconds
+      setTimeout(() => {
+        setResendStatus('idle')
+      }, 5000)
+      
     } catch (error) {
       console.error('Resend error:', error)
-      setVerificationStatus('error')
+      setResendStatus('failed')
       setErrorMessage('Failed to resend verification email. Please try again.')
+      
+      // Reset to idle after 5 seconds
+      setTimeout(() => {
+        setResendStatus('idle')
+      }, 5000)
     }
   }
 
@@ -128,16 +154,64 @@ export default function VerifyEmailPage() {
             </p>
             
             <div className="space-y-4">
-              <button
-                onClick={resendVerification}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Resend Verification Email
-              </button>
+              {/* Resend Button with Dynamic States */}
+              <div className="space-y-3">
+                <button
+                  onClick={resendVerification}
+                  disabled={resendStatus === 'sending' || resendCount >= 3}
+                  className={`px-6 py-2 rounded-lg transition-all duration-200 ${
+                    resendStatus === 'sending' || resendCount >= 3
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : resendStatus === 'sent'
+                      ? 'bg-green-600 hover:bg-green-700'
+                      : resendStatus === 'failed'
+                      ? 'bg-red-600 hover:bg-red-700'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  } text-white font-medium`}
+                >
+                  {resendStatus === 'sending' && (
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Sending...
+                    </div>
+                  )}
+                  {resendStatus === 'sent' && '✓ Email Sent!'}
+                  {resendStatus === 'failed' && '✗ Try Again'}
+                  {resendCount >= 3 && 'Max Attempts Reached'}
+                  {resendStatus === 'idle' && resendCount < 3 && 'Resend Verification Email'}
+                </button>
+                
+                {/* Status Messages */}
+                {resendStatus === 'sent' && (
+                  <div className="text-green-600 text-sm font-medium">
+                    ✓ Verification email sent successfully! Check your inbox and spam folder.
+                  </div>
+                )}
+                {resendStatus === 'failed' && (
+                  <div className="text-red-600 text-sm font-medium">
+                    ✗ Failed to send email. Please try again.
+                  </div>
+                )}
+                {resendStatus === 'idle' && resendCount > 0 && resendCount < 3 && (
+                  <div className="text-blue-600 text-sm font-medium">
+                    ℹ️ Email sent {resendCount} time{resendCount > 1 ? 's' : ''}. Check your inbox.
+                  </div>
+                )}
+                {resendCount >= 3 && (
+                  <div className="text-orange-600 text-sm font-medium">
+                    ⚠️ Maximum resend attempts reached. Please contact support if you still need help.
+                  </div>
+                )}
+              </div>
               
               <div className="text-sm text-gray-500">
                 <p>Didn't receive the email?</p>
                 <p>Check your spam folder or try resending.</p>
+                {resendCount > 0 && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    If you still don't receive it, contact support.
+                  </p>
+                )}
               </div>
             </div>
           </div>

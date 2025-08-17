@@ -196,7 +196,7 @@ export default function ApplyTutorPage() {
                     required
                     value={formData.fullName}
                     onChange={(e) => handleInputChange('fullName', e.target.value)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
                     placeholder="Enter your full name"
                   />
                 </div>
@@ -209,7 +209,7 @@ export default function ApplyTutorPage() {
                     required
                     value={formData.email}
                     onChange={(e) => handleInputChange('email', e.target.value)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
                     placeholder="Enter your email"
                   />
                 </div>
@@ -222,7 +222,7 @@ export default function ApplyTutorPage() {
                     required
                     value={formData.phone}
                     onChange={(e) => handleInputChange('phone', e.target.value)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
                     placeholder="Enter your phone number"
                   />
                 </div>
@@ -239,7 +239,7 @@ export default function ApplyTutorPage() {
                 rows={4}
                 value={formData.bio}
                 onChange={(e) => handleInputChange('bio', e.target.value)}
-                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base"
+                className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
                 placeholder="Tell us about your teaching experience, passion for education, and what makes you a great tutor..."
               />
             </div>
@@ -276,7 +276,7 @@ export default function ApplyTutorPage() {
                     required
                     value={formData.qualificationType}
                     onChange={(e) => handleInputChange('qualificationType', e.target.value)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
                   >
                     <option value="">Select qualification type</option>
                     <option value="degree">Degree</option>
@@ -294,7 +294,7 @@ export default function ApplyTutorPage() {
                     required
                     value={formData.qualificationTitle}
                     onChange={(e) => handleInputChange('qualificationTitle', e.target.value)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
                     placeholder="e.g., Bachelor of Education, Teaching Certificate"
                   />
                 </div>
@@ -307,7 +307,7 @@ export default function ApplyTutorPage() {
                     required
                     value={formData.institution}
                     onChange={(e) => handleInputChange('institution', e.target.value)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
                     placeholder="Name of institution"
                   />
                 </div>
@@ -322,7 +322,7 @@ export default function ApplyTutorPage() {
                     max={new Date().getFullYear()}
                     value={formData.yearObtained}
                     onChange={(e) => handleInputChange('yearObtained', e.target.value)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base"
+                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
                     placeholder="Year"
                   />
                 </div>
@@ -349,7 +349,7 @@ export default function ApplyTutorPage() {
                         type="text"
                         value={data.hours}
                         onChange={(e) => handleAvailabilityChange(day, 'hours', e.target.value)}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm text-gray-900"
                         placeholder="e.g., 9:00 AM - 5:00 PM"
                       />
                     )}

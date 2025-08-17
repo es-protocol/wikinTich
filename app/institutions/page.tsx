@@ -184,7 +184,7 @@ export default function InstitutionRegistration() {
                     value={formData.schoolName}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter institution name"
                   />
                 </div>
@@ -197,7 +197,7 @@ export default function InstitutionRegistration() {
                     value={formData.schoolType}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   >
                     <option value="">Select Institution Type</option>
                     <option value="primary">Primary School</option>
@@ -218,7 +218,7 @@ export default function InstitutionRegistration() {
                     value={formData.schoolAddress}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter full address"
                   />
                 </div>
@@ -232,7 +232,7 @@ export default function InstitutionRegistration() {
                     value={formData.schoolPhone}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter phone number"
                   />
                 </div>
@@ -246,7 +246,7 @@ export default function InstitutionRegistration() {
                      value={formData.schoolEmail}
                      onChange={handleInputChange}
                      required
-                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                      placeholder="Enter email address"
                    />
                  </div>
@@ -262,7 +262,7 @@ export default function InstitutionRegistration() {
                      min="1"
                      max="10000"
                      required
-                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                      placeholder="Enter approximate number of students"
                    />
                  </div>
@@ -285,7 +285,7 @@ export default function InstitutionRegistration() {
                     value={formData.contactName}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter contact person name"
                   />
                 </div>
@@ -299,7 +299,7 @@ export default function InstitutionRegistration() {
                     value={formData.contactPosition}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     placeholder="e.g., Principal, Director, HR Manager"
                   />
                 </div>
@@ -313,7 +313,7 @@ export default function InstitutionRegistration() {
                     value={formData.contactPhone}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter contact phone"
                   />
                 </div>
@@ -327,7 +327,7 @@ export default function InstitutionRegistration() {
                     value={formData.contactEmail}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter contact email"
                   />
                 </div>
@@ -350,7 +350,7 @@ export default function InstitutionRegistration() {
                     value={formData.subjects}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     placeholder="e.g., Mathematics, English, Science"
                   />
                 </div>
@@ -363,7 +363,7 @@ export default function InstitutionRegistration() {
                       name="experienceLevel"
                       value={formData.experienceLevel}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     >
                       <option value="">Select Experience Level</option>
                       <option value="entry">Entry Level (0-2 years)</option>
@@ -380,7 +380,7 @@ export default function InstitutionRegistration() {
                       name="duration"
                       value={formData.duration}
                       onChange={handleInputChange}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     >
                       <option value="">Select Duration</option>
                       <option value="temporary">Temporary (1-6 months)</option>
@@ -402,7 +402,7 @@ export default function InstitutionRegistration() {
                      min="1"
                      max="50"
                      required
-                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                      placeholder="Enter number of teachers needed"
                    />
                  </div>
@@ -415,7 +415,7 @@ export default function InstitutionRegistration() {
                      value={formData.additionalRequirements}
                      onChange={handleInputChange}
                      rows={3}
-                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                      placeholder="Any specific requirements, qualifications, or preferences..."
                    />
                  </div>

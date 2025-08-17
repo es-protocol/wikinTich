@@ -131,7 +131,7 @@ export default function HomeTutoringRequest() {
                     value={formData.parentName}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter parent's full name"
                   />
                 </div>
@@ -145,7 +145,7 @@ export default function HomeTutoringRequest() {
                     value={formData.parentPhone}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter phone number"
                   />
                 </div>
@@ -159,7 +159,7 @@ export default function HomeTutoringRequest() {
                     value={formData.parentEmail}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter email address"
                   />
                 </div>
@@ -182,7 +182,7 @@ export default function HomeTutoringRequest() {
                     value={formData.studentName}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900"
                     placeholder="Enter student's name"
                   />
                 </div>
@@ -197,7 +197,7 @@ export default function HomeTutoringRequest() {
                     onChange={handleInputChange}
                     min="1"
                     max="25"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900"
                     placeholder="Age"
                   />
                 </div>
@@ -210,7 +210,7 @@ export default function HomeTutoringRequest() {
                     value={formData.gradeLevel}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900"
                   >
                     <option value="">Select Grade Level</option>
                     <option value="Primary 1-3">Primary 1-3</option>
@@ -239,7 +239,7 @@ export default function HomeTutoringRequest() {
                     value={formData.subjects}
                     onChange={handleInputChange}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900"
                     placeholder="e.g., Mathematics, English, Science"
                   />
                 </div>
@@ -252,7 +252,7 @@ export default function HomeTutoringRequest() {
                     name="preferredSchedule"
                     value={formData.preferredSchedule}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900"
                     placeholder="e.g., Weekdays after 4 PM, Weekends"
                   />
                 </div>
@@ -265,7 +265,7 @@ export default function HomeTutoringRequest() {
                     value={formData.additionalRequirements}
                     onChange={handleInputChange}
                     rows={3}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900"
                     placeholder="Any specific requirements or preferences..."
                   />
                 </div>

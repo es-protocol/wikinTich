@@ -2853,7 +2853,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newChildForm.name}
                     onChange={(e) => setNewChildForm({...newChildForm, name: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
                 <div>
@@ -2867,7 +2867,7 @@ export default function DashboardWithChildren() {
                     max="25"
                     value={newChildForm.age}
                     onChange={(e) => setNewChildForm({...newChildForm, age: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
                 <div>
@@ -2878,7 +2878,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newChildForm.grade_level}
                     onChange={(e) => setNewChildForm({...newChildForm, grade_level: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   >
                     <option value="">Select Grade</option>
                     <option value="Primary 1">Primary 1</option>
@@ -2903,7 +2903,7 @@ export default function DashboardWithChildren() {
                     type="text"
                     value={newChildForm.school_name}
                     onChange={(e) => setNewChildForm({...newChildForm, school_name: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
               </div>

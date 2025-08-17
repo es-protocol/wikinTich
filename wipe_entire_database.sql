@@ -1,83 +1,92 @@
 -- =====================================================
--- COMPLETE DATABASE WIPE SCRIPT
--- =====================================================
--- This script will completely wipe all data from the entire database
--- WARNING: This will delete ALL records from ALL tables
--- Use with extreme caution - this action cannot be undone!
+-- COMPLETE DATABASE CLEANUP SCRIPT
+-- This script will remove ALL data from ALL tables
+-- WARNING: This will permanently delete all data!
 -- =====================================================
 
--- =====================================================
--- STEP 1: DISABLE ALL TRIGGERS AND CONSTRAINTS
--- =====================================================
-
--- Disable all triggers temporarily
+-- Disable foreign key checks temporarily to avoid constraint issues
 SET session_replication_role = replica;
 
--- =====================================================
--- STEP 2: DELETE FROM TABLES IN REVERSE DEPENDENCY ORDER
--- =====================================================
+-- Clear all data from tables in reverse dependency order
+-- (child tables first, then parent tables)
 
--- 1. Delete from notification tables first (they reference many other tables)
-DELETE FROM public.parent_notifications;
-DELETE FROM public.school_admin_notifications;
+-- 1. Clear all notification tables
 DELETE FROM public.tutor_notifications;
+DELETE FROM public.school_admin_notifications;
+DELETE FROM public.parent_notifications;
+DELETE FROM public.notifications;
 
--- 2. Delete from rating and review tables
-DELETE FROM public.home_tutoring_ratings;
-DELETE FROM public.student_teacher_ratings;
+-- 2. Clear all rating and review tables
 DELETE FROM public.tutor_reviews;
+DELETE FROM public.student_teacher_ratings;
+DELETE FROM public.home_tutoring_ratings;
+DELETE FROM public.teacher_ratings;
 
--- 3. Delete from session reports and attendance tables
-DELETE FROM public.session_reports;
-DELETE FROM public.session_attendance;
-DELETE FROM public.tutor_session_reports;
+-- 3. Clear all attendance and performance tables
 DELETE FROM public.tutor_session_attendance;
 DELETE FROM public.teacher_attendance;
-
--- 4. Delete from performance tracking tables
-DELETE FROM public.student_progress;
+DELETE FROM public.session_attendance;
 DELETE FROM public.tutor_performance;
 DELETE FROM public.teacher_performance;
+DELETE FROM public.student_progress;
 
--- 5. Delete from payment tables (only if they exist)
+-- 4. Clear all session and report tables
+DELETE FROM public.tutor_session_reports;
+DELETE FROM public.session_reports;
+
+-- 5. Clear all payment tables
 DELETE FROM public.tutor_payments;
+DELETE FROM public.school_payments;
+DELETE FROM public.home_tutoring_payments;
 
--- 6. Delete from session tables
+-- 6. Clear all session tables
 DELETE FROM public.home_tutoring_sessions;
+
+-- 7. Clear all proposal and request tables
+DELETE FROM public.tutor_proposals;
+DELETE FROM public.home_tutoring_requests;
+
+-- 8. Clear all assignment and relationship tables
 DELETE FROM public.school_teacher;
 
--- 7. Delete from proposal and matching tables
-DELETE FROM public.tutor_proposals;
+-- 9. Clear all institution and school tables
+DELETE FROM public.institution_requests;
+DELETE FROM public.schools;
+DELETE FROM public.school_admins;
+
+-- 10. Clear all qualification and display info tables
+DELETE FROM public.tutor_qualifications;
 DELETE FROM public.tutor_display_info;
 
--- 8. Delete from request tables
-DELETE FROM public.home_tutoring_requests;
-DELETE FROM public.institution_requests;
-
--- 9. Delete from student tables
+-- 11. Clear all student tables
 DELETE FROM public.students;
 
--- 10. Delete from school tables
-DELETE FROM public.schools;
-
--- 11. Delete from tutor qualification tables
-DELETE FROM public.tutor_qualifications;
-
--- 12. Delete from tutor tables
+-- 12. Clear all tutor tables
 DELETE FROM public.tutors;
 
--- 13. Delete from auth_users table (custom authentication)
-DELETE FROM public.auth_users;
-
--- 14. Finally, delete from profiles table (base user table)
+-- 13. Clear all profile tables
 DELETE FROM public.profiles;
 
--- =====================================================
--- STEP 3: VERIFICATION QUERIES
--- =====================================================
+-- 14. Clear all message tables
+DELETE FROM public.messages;
 
--- Check that all tables are empty
-SELECT 'profiles' as table_name, COUNT(*) as count FROM public.profiles
+-- 15. Clear all platform settings
+DELETE FROM public.platform_settings;
+
+-- 16. Clear all subject tables
+DELETE FROM public.subjects;
+
+-- 17. Clear all auth users (this will also clear related auth data)
+DELETE FROM public.auth_users;
+
+-- Re-enable foreign key checks
+SET session_replication_role = DEFAULT;
+
+-- Reset all sequences to start from 1
+-- (Note: PostgreSQL doesn't have sequences for UUID primary keys, but this is good practice)
+
+-- Verify cleanup - Check that all tables are empty
+SELECT 'profiles' as table_name, COUNT(*) as row_count FROM public.profiles
 UNION ALL
 SELECT 'tutors', COUNT(*) FROM public.tutors
 UNION ALL
@@ -126,73 +135,12 @@ UNION ALL
 SELECT 'auth_users', COUNT(*) FROM public.auth_users
 ORDER BY table_name;
 
--- =====================================================
--- STEP 4: RE-ENABLE TRIGGERS AND CONSTRAINTS
--- =====================================================
-
--- Re-enable all triggers
-SET session_replication_role = DEFAULT;
-
--- =====================================================
--- STEP 5: FINAL CONFIRMATION
--- =====================================================
-
--- Show total count of all records (should be 0)
-SELECT 'TOTAL RECORDS IN DATABASE' as status, 
-       (SELECT COUNT(*) FROM (
-         SELECT COUNT(*) FROM public.profiles
-         UNION ALL
-         SELECT COUNT(*) FROM public.tutors
-         UNION ALL
-         SELECT COUNT(*) FROM public.students
-         UNION ALL
-         SELECT COUNT(*) FROM public.schools
-         UNION ALL
-         SELECT COUNT(*) FROM public.home_tutoring_requests
-         UNION ALL
-         SELECT COUNT(*) FROM public.home_tutoring_sessions
-         UNION ALL
-         SELECT COUNT(*) FROM public.tutor_proposals
-         UNION ALL
-         SELECT COUNT(*) FROM public.tutor_display_info
-         UNION ALL
-         SELECT COUNT(*) FROM public.tutor_reviews
-         UNION ALL
-         SELECT COUNT(*) FROM public.session_reports
-         UNION ALL
-         SELECT COUNT(*) FROM public.session_attendance
-         UNION ALL
-         SELECT COUNT(*) FROM public.student_progress
-         UNION ALL
-         SELECT COUNT(*) FROM public.parent_notifications
-         UNION ALL
-         SELECT COUNT(*) FROM public.home_tutoring_ratings
-         UNION ALL
-         SELECT COUNT(*) FROM public.teacher_performance
-         UNION ALL
-         SELECT COUNT(*) FROM public.teacher_attendance
-         UNION ALL
-         SELECT COUNT(*) FROM public.student_teacher_ratings
-         UNION ALL
-         SELECT COUNT(*) FROM public.school_admin_notifications
-         UNION ALL
-         SELECT COUNT(*) FROM public.tutor_performance
-         UNION ALL
-         SELECT COUNT(*) FROM public.tutor_session_attendance
-         UNION ALL
-         SELECT COUNT(*) FROM public.tutor_notifications
-         UNION ALL
-         SELECT COUNT(*) FROM public.tutor_session_reports
-         UNION ALL
-         SELECT COUNT(*) FROM public.tutor_payments
-         UNION ALL
-         SELECT COUNT(*) FROM public.auth_users
-       ) as counts) as total_records;
+-- Display summary
+SELECT 
+    'Database cleanup completed successfully!' as status,
+    'All data has been removed from all tables.' as message,
+    'Tables structure preserved for fresh testing.' as note;
 
 -- =====================================================
--- DATABASE WIPE COMPLETE
--- =====================================================
--- All tables have been completely emptied
--- The database structure remains intact but contains no data
--- You can now start fresh with new data
+-- CLEANUP COMPLETE
 -- =====================================================

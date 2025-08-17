@@ -6,10 +6,19 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 // Function to get the correct redirect URL for email verification
 export const getEmailRedirectUrl = () => {
   if (typeof window !== 'undefined') {
-    return `${window.location.origin}/auth/callback`
+    const origin = window.location.origin
+    
+    // If we're on localhost, use localhost
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return `${origin}/auth/callback`
+    }
+    
+    // If we're not on localhost, use production URL
+    return 'https://wikin-tich.vercel.app/auth/callback'
   }
-  // Server-side fallback
-  return 'http://localhost:3000/auth/callback'
+  
+  // Server-side: always use production URL
+  return 'https://wikin-tich.vercel.app/auth/callback'
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

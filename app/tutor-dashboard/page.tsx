@@ -1828,7 +1828,7 @@ export default function TutorDashboard() {
                         required
                         value={profileFormData.fullName}
                         onChange={(e) => setProfileFormData({...profileFormData, fullName: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                       />
                     </div>
                     <div>
@@ -1851,7 +1851,7 @@ export default function TutorDashboard() {
                         type="tel"
                         value={profileFormData.phone}
                         onChange={(e) => setProfileFormData({...profileFormData, phone: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                         placeholder="+232 XX XXX XXXX"
                       />
                     </div>
@@ -1870,7 +1870,7 @@ export default function TutorDashboard() {
                         value={profileFormData.bio}
                         onChange={(e) => setProfileFormData({...profileFormData, bio: e.target.value})}
                         rows={4}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                         placeholder="Tell students and parents about your teaching experience, qualifications, and approach..."
                       />
                     </div>
@@ -1882,7 +1882,7 @@ export default function TutorDashboard() {
                         type="text"
                         value={profileFormData.subjects}
                         onChange={(e) => setProfileFormData({...profileFormData, subjects: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                         placeholder="Mathematics, Physics, Chemistry (comma-separated)"
                       />
                       <p className="text-xs text-gray-500 mt-1">Separate multiple subjects with commas</p>
@@ -1901,7 +1901,7 @@ export default function TutorDashboard() {
                       value={profileFormData.availability}
                       onChange={(e) => setProfileFormData({...profileFormData, availability: e.target.value})}
                       rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                       placeholder="Monday-Friday: 3:00 PM - 8:00 PM, Saturday: 9:00 AM - 5:00 PM"
                     />
                     <p className="text-xs text-gray-500 mt-1">Describe your general availability schedule</p>
@@ -1978,7 +1978,7 @@ export default function TutorDashboard() {
                     required
                     value={proposeSessionForm.session_date}
                     onChange={(e) => setProposeSessionForm({...proposeSessionForm, session_date: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -1991,7 +1991,7 @@ export default function TutorDashboard() {
                       required
                       value={proposeSessionForm.start_time}
                       onChange={(e) => setProposeSessionForm({...proposeSessionForm, start_time: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     />
                   </div>
                   <div>
@@ -2003,7 +2003,7 @@ export default function TutorDashboard() {
                       required
                       value={proposeSessionForm.end_time}
                       onChange={(e) => setProposeSessionForm({...proposeSessionForm, end_time: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     />
                   </div>
                 </div>
@@ -2015,7 +2015,7 @@ export default function TutorDashboard() {
                     value={proposeSessionForm.notes}
                     onChange={(e) => setProposeSessionForm({...proposeSessionForm, notes: e.target.value})}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     placeholder="Any additional notes about the session..."
                   />
                 </div>

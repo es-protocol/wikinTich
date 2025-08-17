@@ -990,7 +990,7 @@ export default function SuperAdminDashboard() {
                 <select
                   value={tutorFilter}
                   onChange={(e) => setTutorFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                 >
                   <option value="all">All Tutors</option>
                   <option value="verified">Verified</option>
@@ -1001,7 +1001,7 @@ export default function SuperAdminDashboard() {
                   placeholder="Search tutors..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                 />
               </div>
             </div>
@@ -1101,7 +1101,7 @@ export default function SuperAdminDashboard() {
               <select
                 value={requestFilter}
                 onChange={(e) => setRequestFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
               >
                 <option value="all">All Requests</option>
                 <option value="pending">Pending</option>
@@ -1566,7 +1566,7 @@ export default function SuperAdminDashboard() {
                <select
                  value={selectedTutorId}
                  onChange={(e) => setSelectedTutorId(e.target.value)}
-                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                >
                  <option value="">Choose a tutor...</option>
                  {availableTutors.map((tutor) => (
@@ -1639,7 +1639,7 @@ export default function SuperAdminDashboard() {
                  value={reviewNotes}
                  onChange={(e) => setReviewNotes(e.target.value)}
                  rows={4}
-                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                ></textarea>
              </div>
 
@@ -1709,7 +1709,7 @@ export default function SuperAdminDashboard() {
                <select
                  value={selectedTutorForInstitution}
                  onChange={(e) => setSelectedTutorForInstitution(e.target.value)}
-                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
                >
                  <option value="">Choose a tutor...</option>
                  {availableTutorsForInstitution.map((tutor) => (

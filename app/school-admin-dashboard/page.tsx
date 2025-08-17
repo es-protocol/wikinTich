@@ -1062,7 +1062,7 @@ export default function SchoolAdminDashboard() {
                   onChange={handleInputChange}
                   required
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   placeholder="e.g., Mathematics, English, Science"
                 />
               </div>
@@ -1079,7 +1079,7 @@ export default function SchoolAdminDashboard() {
                   required
                   min="1"
                   max="10"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                 />
               </div>
 
@@ -1091,7 +1091,7 @@ export default function SchoolAdminDashboard() {
                   name="experienceLevel"
                   value={newRequestForm.experienceLevel}
                   onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                 >
                   <option value="">Select Experience Level</option>
                   <option value="entry">Entry Level (0-2 years)</option>
@@ -1109,7 +1109,7 @@ export default function SchoolAdminDashboard() {
                   name="duration"
                   value={newRequestForm.duration}
                   onChange={handleInputChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                 >
                   <option value="">Select Duration</option>
                   <option value="temporary">Temporary (1-6 months)</option>
@@ -1128,7 +1128,7 @@ export default function SchoolAdminDashboard() {
                   value={newRequestForm.additionalRequirements}
                   onChange={handleInputChange}
                   rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   placeholder="Any specific requirements, qualifications, or preferences..."
                 />
               </div>

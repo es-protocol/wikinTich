@@ -2655,7 +2655,7 @@ export default function DashboardWithChildren() {
                       const student = students.find(s => s.id === e.target.value)
                       setSelectedStudent(student || null)
                     }}
-                    className="block w-48 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    className="block w-48 px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-gray-900"
                   >
                     <option value="">Choose a child...</option>
                     {students.map((student) => (
@@ -2955,7 +2955,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newRequestForm.student_id}
                     onChange={(e) => setNewRequestForm({...newRequestForm, student_id: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   >
                     <option value="">Select a child</option>
                     {students.map(student => (
@@ -2972,7 +2972,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newRequestForm.subjects}
                     onChange={(e) => setNewRequestForm({...newRequestForm, subjects: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
                 <div>
@@ -2984,7 +2984,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newRequestForm.preferred_schedule}
                     onChange={(e) => setNewRequestForm({...newRequestForm, preferred_schedule: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
                 <div>
@@ -2995,7 +2995,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newRequestForm.location}
                     onChange={(e) => setNewRequestForm({...newRequestForm, location: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   >
                     <option value="home_visit">Home Visit</option>
                     <option value="online_session">Online Session</option>
@@ -3009,7 +3009,7 @@ export default function DashboardWithChildren() {
                     value={newRequestForm.additional_requirements}
                     onChange={(e) => setNewRequestForm({...newRequestForm, additional_requirements: e.target.value})}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
               </div>
@@ -3061,7 +3061,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newSessionForm.student_id}
                     onChange={(e) => setNewSessionForm({...newSessionForm, student_id: e.target.value, request_id: ''})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   >
                     <option value="">Select a child</option>
                     {students.map(student => (
@@ -3077,7 +3077,7 @@ export default function DashboardWithChildren() {
                     <select
                       value={newSessionForm.request_id}
                       onChange={(e) => setNewSessionForm({...newSessionForm, request_id: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                     >
                       <option value="">No specific request</option>
                       {tutoringRequests.filter(r => r.student_id === newSessionForm.student_id && (r.status === 'matched' || r.status === 'in_progress')).map(r => (
@@ -3095,7 +3095,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newSessionForm.session_date}
                     onChange={(e) => setNewSessionForm({...newSessionForm, session_date: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
                 <div>
@@ -3107,7 +3107,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newSessionForm.start_time}
                     onChange={(e) => setNewSessionForm({...newSessionForm, start_time: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
                 <div>
@@ -3119,7 +3119,7 @@ export default function DashboardWithChildren() {
                     required
                     value={newSessionForm.end_time}
                     onChange={(e) => setNewSessionForm({...newSessionForm, end_time: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
                 <div>
@@ -3130,7 +3130,7 @@ export default function DashboardWithChildren() {
                     value={newSessionForm.notes}
                     onChange={(e) => setNewSessionForm({...newSessionForm, notes: e.target.value})}
                     rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
               </div>
@@ -3494,7 +3494,7 @@ export default function DashboardWithChildren() {
                      required
                      value={editChildForm.name}
                      onChange={(e) => setEditChildForm({...editChildForm, name: e.target.value})}
-                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                    />
                  </div>
                  <div>
@@ -3508,7 +3508,7 @@ export default function DashboardWithChildren() {
                      max="25"
                      value={editChildForm.age}
                      onChange={(e) => setEditChildForm({...editChildForm, age: e.target.value})}
-                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                    />
                  </div>
                  <div>
@@ -3519,7 +3519,7 @@ export default function DashboardWithChildren() {
                      required
                      value={editChildForm.grade_level}
                      onChange={(e) => setEditChildForm({...editChildForm, grade_level: e.target.value})}
-                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                    >
                      <option value="">Select Grade</option>
                      <option value="Primary 1">Primary 1</option>
@@ -3545,7 +3545,7 @@ export default function DashboardWithChildren() {
                      required
                      value={editChildForm.school_name}
                      onChange={(e) => setEditChildForm({...editChildForm, school_name: e.target.value})}
-                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                    />
                  </div>
                  <div className="flex space-x-3 pt-4">
@@ -3766,7 +3766,7 @@ export default function DashboardWithChildren() {
                      value={proposalResponse.notes}
                      onChange={(e) => setProposalResponse({...proposalResponse, notes: e.target.value})}
                      rows={3}
-                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                      placeholder="Add any notes about your decision..."
                    />
                  </div>
@@ -3829,7 +3829,7 @@ export default function DashboardWithChildren() {
                      required
                      value={profileForm.full_name}
                      onChange={(e) => setProfileForm({...profileForm, full_name: e.target.value})}
-                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                    />
                  </div>
                  <div>
@@ -3854,7 +3854,7 @@ export default function DashboardWithChildren() {
                      required
                      value={profileForm.phone}
                      onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})}
-                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                    />
                  </div>
                </div>

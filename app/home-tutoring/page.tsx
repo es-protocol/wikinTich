@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { supabase } from '@/lib/supabase'
+import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 
 export default function HomeTutoringRequest() {
@@ -57,7 +57,7 @@ export default function HomeTutoringRequest() {
             location: formData.location,
             additional_requirements: formData.additionalRequirements
           },
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: getEmailRedirectUrl()
         }
       })
 

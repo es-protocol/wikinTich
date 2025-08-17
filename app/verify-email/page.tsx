@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { CheckCircleIcon, XCircleIcon, ClockIcon } from '@heroicons/react/24/outline'
-import { supabase } from '@/lib/supabase'
+import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 
 export default function VerifyEmailPage() {
   const router = useRouter()
@@ -92,7 +92,7 @@ export default function VerifyEmailPage() {
       const { error } = await supabase.auth.signInWithOtp({
         email: emailToUse,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: getEmailRedirectUrl()
         }
       })
 

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { AcademicCapIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
+import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 
 interface FormData {
   // Profile information
@@ -121,7 +121,7 @@ export default function ApplyTutorPage() {
       const { error } = await supabase.auth.signInWithOtp({
         email: formData.email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: getEmailRedirectUrl()
         }
       })
 

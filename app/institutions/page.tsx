@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { supabase } from '@/lib/supabase'
+import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { CheckCircleIcon } from '@heroicons/react/24/outline'
 
@@ -74,7 +74,7 @@ export default function InstitutionRegistration() {
       const { error } = await supabase.auth.signInWithOtp({
         email: formData.contactEmail,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: getEmailRedirectUrl()
         }
       })
 

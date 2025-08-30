@@ -17,9 +17,23 @@ import {
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   ChevronDownIcon,
-  BellIcon
+  BellIcon,
+  DocumentTextIcon,
+  PhotoIcon,
+  AcademicCapIcon as AcademicCapIconSolid
 } from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
+import { 
+  EnhancedTutor, 
+  ProfileCompletionData, 
+  CertificateData, 
+  FileMetadata,
+  VERIFICATION_STEPS,
+  PROFILE_COMPLETION_STEPS,
+  PROFILE_COMPLETION_STEP_LABELS,
+  PROFILE_COMPLETION_STEP_DESCRIPTIONS,
+  FILE_UPLOAD_LIMITS
+} from '@/lib/enhanced-tutor-types'
 
 interface TutorProfile {
   id: string
@@ -37,6 +51,27 @@ interface TutorData {
   availability: any
   is_verified: boolean
   verification_date: string | null
+  
+  // New profile completion fields
+  profile_completion_percentage: number
+  profile_completion_data: ProfileCompletionData
+  profile_completion_step: string
+  profile_completion_submitted_at?: string
+  profile_completion_reviewed_at?: string
+  
+  // File storage fields
+  profile_picture_url?: string
+  cv_url?: string
+  certificates_data: CertificateData[]
+  
+  // Enhanced profile fields
+  years_of_experience?: number
+  education_level?: string
+  institution_name?: string
+  graduation_year?: number
+  professional_title?: string
+  languages_spoken?: string[]
+  specializations?: string[]
 }
 
 interface Qualification {
@@ -152,6 +187,36 @@ export default function TutorDashboard() {
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false)
   const [lastUpdate, setLastUpdate] = useState(0)
 
+  // Enhanced profile modal states
+  const [showEnhancedProfileModal, setShowEnhancedProfileModal] = useState(false)
+  const [enhancedProfileFormData, setEnhancedProfileFormData] = useState({
+    bio: '',
+    subjects: '',
+    availability: '',
+    yearsOfExperience: '',
+    educationLevel: '',
+    institutionName: '',
+    graduationYear: '',
+    professionalTitle: '',
+    languagesSpoken: '',
+    specializations: ''
+  })
+  const [isUpdatingEnhancedProfile, setIsUpdatingEnhancedProfile] = useState(false)
+  
+  // File upload states
+  const [uploadingProfilePicture, setUploadingProfilePicture] = useState(false)
+  const [uploadingCV, setUploadingCV] = useState(false)
+  const [uploadingCertificates, setUploadingCertificates] = useState(false)
+  const [selectedFiles, setSelectedFiles] = useState<{
+    profilePicture?: File
+    cv?: File
+    certificates: File[]
+  }>({ certificates: [] })
+  
+  // Profile completion tracking
+  const [currentCompletionStep, setCurrentCompletionStep] = useState<string>('basic_info')
+  const [showCompletionGuide, setShowCompletionGuide] = useState(false)
+
   // Loading states for different sections
   const [isLoadingSessions, setIsLoadingSessions] = useState(false)
   const [isLoadingPayments, setIsLoadingPayments] = useState(true)
@@ -261,7 +326,30 @@ export default function TutorDashboard() {
       }
 
       console.log('Debug: Tutor data loaded successfully:', tutor)
-      setTutorData(tutor)
+
+      // Fetch certificates for this tutor
+      if (tutor) {
+        console.log('Debug: Fetching certificates for tutor_id:', tutor.id)
+        const { data: certificates, error: certError } = await supabase
+          .from('tutor_certificates')
+          .select('*')
+          .eq('tutor_id', tutor.id)
+          .order('uploaded_at', { ascending: false })
+
+        if (certError) {
+          console.error('Certificates error:', certError)
+        } else {
+          console.log('Debug: Certificates loaded:', certificates)
+          // Update tutor data with certificates
+          const updatedTutor = {
+            ...tutor,
+            certificates_data: certificates || []
+          }
+          setTutorData(updatedTutor)
+        }
+      } else {
+        setTutorData(tutor)
+      }
 
       // Get qualifications
       if (tutor) {
@@ -646,6 +734,30 @@ export default function TutorDashboard() {
     }
   }
 
+  const loadEnhancedProfileData = async () => {
+    try {
+      if (!tutorData) return
+
+      // Populate enhanced profile form with existing data
+      const enhancedFormData = {
+        bio: tutorData.bio || '',
+        subjects: Array.isArray(tutorData.subjects) ? tutorData.subjects.join(', ') : (tutorData.subjects || ''),
+        availability: tutorData.availability || '',
+        yearsOfExperience: tutorData.years_of_experience?.toString() || '',
+        educationLevel: tutorData.education_level || '',
+        institutionName: tutorData.institution_name || '',
+        graduationYear: tutorData.graduation_year?.toString() || '',
+        professionalTitle: tutorData.professional_title || '',
+        languagesSpoken: Array.isArray(tutorData.languages_spoken) ? tutorData.languages_spoken.join(', ') : (tutorData.languages_spoken || ''),
+        specializations: Array.isArray(tutorData.specializations) ? tutorData.specializations.join(', ') : (tutorData.specializations || '')
+      }
+
+      setEnhancedProfileFormData(enhancedFormData)
+    } catch (error) {
+      console.error('Error loading enhanced profile data:', error)
+    }
+  }
+
   const updateProfile = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!tutorData) return
@@ -784,6 +896,309 @@ export default function TutorDashboard() {
       alert(`Failed to update profile: ${errorMessage}`)
     } finally {
       setIsUpdatingProfile(false)
+    }
+  }
+
+  const updateEnhancedProfile = async () => {
+    if (!tutorData) return
+
+    try {
+      setIsUpdatingEnhancedProfile(true)
+
+      // Prepare data for update
+      const subjectsArray = enhancedProfileFormData.subjects
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+
+      const languagesArray = enhancedProfileFormData.languagesSpoken
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+
+      const specializationsArray = enhancedProfileFormData.specializations
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+
+      // Fix: Handle availability properly - convert object to string if needed
+      let availabilityString = enhancedProfileFormData.availability
+      if (typeof availabilityString === 'object' && availabilityString !== null) {
+        availabilityString = JSON.stringify(availabilityString)
+      } else if (typeof availabilityString === 'string') {
+        availabilityString = availabilityString.trim()
+      } else {
+        availabilityString = ''
+      }
+
+      // Update tutors table with enhanced fields
+      const { data: updatedTutorProfile, error: tutorError } = await supabase
+        .from('tutors')
+        .update({
+          bio: enhancedProfileFormData.bio.trim() || null,
+          subjects: subjectsArray.length > 0 ? subjectsArray : null,
+          availability: availabilityString || null,
+          years_of_experience: enhancedProfileFormData.yearsOfExperience ? parseInt(enhancedProfileFormData.yearsOfExperience) : null,
+          education_level: enhancedProfileFormData.educationLevel.trim() || null,
+          institution_name: enhancedProfileFormData.institutionName.trim() || null,
+          graduation_year: enhancedProfileFormData.graduationYear ? parseInt(enhancedProfileFormData.graduationYear) : null,
+          professional_title: enhancedProfileFormData.professionalTitle.trim() || null,
+          languages_spoken: languagesArray.length > 0 ? languagesArray : null,
+          specializations: specializationsArray.length > 0 ? specializationsArray : null
+        })
+        .eq('id', tutorData.id)
+        .select()
+        .single()
+
+      if (tutorError) {
+        throw tutorError
+      }
+
+      // Handle file uploads if files are selected
+      if (selectedFiles.profilePicture || selectedFiles.cv || selectedFiles.certificates.length > 0) {
+        console.log('Files selected for upload:', {
+          profilePicture: selectedFiles.profilePicture?.name,
+          cv: selectedFiles.cv?.name,
+          certificates: selectedFiles.certificates.map(f => f.name)
+        })
+        await handleFileUploads()
+      } else {
+        console.log('No files selected for upload')
+      }
+
+      // Update profile completion percentage
+      const { error: completionError } = await supabase.rpc('update_profile_completion', {
+        tutor_id: tutorData.id
+      })
+
+      if (completionError) {
+        console.error('Error updating completion percentage:', completionError)
+      }
+
+      // Wait a moment for the database update to commit
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      // Explicitly fetch the updated completion percentage
+      const { data: updatedCompletionData, error: fetchError } = await supabase
+        .from('tutors')
+        .select('profile_completion_percentage, profile_completion_step, profile_completion_data')
+        .eq('id', tutorData.id)
+        .single()
+
+      if (!fetchError && updatedCompletionData) {
+        console.log('Debug: Updated completion data:', updatedCompletionData)
+        // Update the local state with the new completion data
+        setTutorData(prev => prev ? {
+          ...prev,
+          profile_completion_percentage: updatedCompletionData.profile_completion_percentage,
+          profile_completion_step: updatedCompletionData.profile_completion_step,
+          profile_completion_data: updatedCompletionData.profile_completion_data
+        } : prev)
+      }
+
+      // Refresh dashboard data
+      await loadDashboardData()
+
+      // Close modal and show success
+      setShowEnhancedProfileModal(false)
+      alert('Enhanced profile updated successfully!')
+
+    } catch (error) {
+      console.error('Error updating enhanced profile:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      alert(`Failed to update profile: ${errorMessage}`)
+    } finally {
+      setIsUpdatingEnhancedProfile(false)
+    }
+  }
+
+  const handleFileUploads = async () => {
+    if (!tutorData) return
+
+    const uploadErrors: string[] = []
+    let hasSuccessfulUploads = false
+
+    try {
+      // Upload profile picture
+      if (selectedFiles.profilePicture) {
+        try {
+          setUploadingProfilePicture(true)
+          console.log('Uploading profile picture:', selectedFiles.profilePicture.name)
+          
+          const { data: profilePicData, error: profilePicError } = await supabase.storage
+            .from('tutor-document')
+            .upload(`profile-pictures/${tutorData.id}/${Date.now()}_${selectedFiles.profilePicture.name}`, selectedFiles.profilePicture)
+
+          if (profilePicError) {
+            console.error('Profile picture upload error:', profilePicError)
+            uploadErrors.push(`Profile picture: ${profilePicError.message}`)
+          } else {
+            console.log('Profile picture uploaded successfully:', profilePicData.path)
+            
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+              .from('tutor-document')
+              .getPublicUrl(profilePicData.path)
+
+            // Update tutor record with profile picture URL
+            const { error: updateError } = await supabase
+              .from('tutors')
+              .update({ profile_picture_url: publicUrl })
+              .eq('id', tutorData.id)
+
+            if (updateError) {
+              console.error('Error updating profile picture URL:', updateError)
+              uploadErrors.push(`Profile picture URL update: ${updateError.message}`)
+            } else {
+              hasSuccessfulUploads = true
+              console.log('Profile picture URL updated successfully')
+            }
+          }
+        } catch (error) {
+          console.error('Profile picture upload exception:', error)
+          uploadErrors.push(`Profile picture: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        } finally {
+          setUploadingProfilePicture(false)
+        }
+      }
+
+      // Upload CV
+      if (selectedFiles.cv) {
+        try {
+          setUploadingCV(true)
+          console.log('Uploading CV:', selectedFiles.cv.name)
+          
+          const { data: cvData, error: cvError } = await supabase.storage
+            .from('tutor-document')
+            .upload(`cvs/${tutorData.id}/${Date.now()}_${selectedFiles.cv.name}`, selectedFiles.cv)
+
+          if (cvError) {
+            console.error('CV upload error:', cvError)
+            uploadErrors.push(`CV: ${cvError.message}`)
+          } else {
+            console.log('CV uploaded successfully:', cvData.path)
+            
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+              .from('tutor-document')
+              .getPublicUrl(cvData.path)
+
+            // Update tutor record with CV URL
+            const { error: updateError } = await supabase
+              .from('tutors')
+              .update({ cv_url: publicUrl })
+              .eq('id', tutorData.id)
+
+            if (updateError) {
+              console.error('Error updating CV URL:', updateError)
+              uploadErrors.push(`CV URL update: ${updateError.message}`)
+            } else {
+              hasSuccessfulUploads = true
+              console.log('CV URL updated successfully')
+            }
+          }
+        } catch (error) {
+          console.error('CV upload exception:', error)
+          uploadErrors.push(`CV: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        } finally {
+          setUploadingCV(false)
+        }
+      }
+
+      // Upload certificates
+      if (selectedFiles.certificates.length > 0) {
+        try {
+          setUploadingCertificates(true)
+          console.log('Uploading certificates:', selectedFiles.certificates.length, 'files')
+          
+          const uploadedCertificates = []
+          let successfulCertificates = 0
+
+          for (const certFile of selectedFiles.certificates) {
+            try {
+              console.log('Uploading certificate:', certFile.name)
+              
+                             const { data: certData, error: certError } = await supabase.storage
+                 .from('tutor-document')
+                 .upload(`certificates/${tutorData.id}/${Date.now()}_${certFile.name}`, certFile)
+
+              if (certError) {
+                console.error('Certificate upload error:', certError)
+                uploadErrors.push(`Certificate ${certFile.name}: ${certError.message}`)
+                continue
+              }
+
+              console.log('Certificate uploaded successfully:', certData.path)
+              
+                             // Get public URL
+               const { data: { publicUrl } } = supabase.storage
+                 .from('tutor-document')
+                 .getPublicUrl(certData.path)
+
+              // Create certificate record
+              const { data: certRecord, error: certRecordError } = await supabase
+                .from('tutor_certificates')
+                .insert({
+                  tutor_id: tutorData.id,
+                  url: publicUrl,
+                  filename: certFile.name,
+                  size: certFile.size,
+                  mime_type: certFile.type,
+                  uploaded_at: new Date().toISOString(),
+                  verified: false,
+                  certificate_type: 'other',
+                  issuing_institution: 'Not specified',
+                  issue_date: new Date().toISOString()
+                })
+                .select()
+                .single()
+
+              if (certRecordError) {
+                console.error('Error creating certificate record:', certRecordError)
+                uploadErrors.push(`Certificate record ${certFile.name}: ${certRecordError.message}`)
+              } else {
+                uploadedCertificates.push(certRecord)
+                successfulCertificates++
+                hasSuccessfulUploads = true
+                console.log('Certificate record created successfully:', certFile.name)
+              }
+            } catch (error) {
+              console.error('Certificate upload exception:', error)
+              uploadErrors.push(`Certificate ${certFile.name}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+            }
+          }
+
+          console.log(`Certificates: ${successfulCertificates}/${selectedFiles.certificates.length} uploaded successfully`)
+          
+        } catch (error) {
+          console.error('Certificates upload exception:', error)
+          uploadErrors.push(`Certificates: ${error instanceof Error ? error.message : 'Unknown error'}`)
+        } finally {
+          setUploadingCertificates(false)
+        }
+      }
+
+      // Clear selected files only if there were successful uploads
+      if (hasSuccessfulUploads) {
+        setSelectedFiles({ profilePicture: undefined, cv: undefined, certificates: [] })
+        
+        // Refresh tutor data to show newly uploaded files
+        await loadDashboardData()
+      }
+
+      // Show results only if not called from updateEnhancedProfile
+      if (uploadErrors.length > 0) {
+        if (hasSuccessfulUploads) {
+          alert(`Some files uploaded successfully, but there were errors:\n\n${uploadErrors.join('\n')}`)
+        } else {
+          alert(`File upload failed:\n\n${uploadErrors.join('\n')}`)
+        }
+      }
+      // Note: Success message is handled by the calling function (updateEnhancedProfile)
+
+    } catch (error) {
+      console.error('Error in handleFileUploads:', error)
+      alert(`File upload error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`)
     }
   }
 
@@ -1137,8 +1552,18 @@ export default function TutorDashboard() {
                 className="bg-white rounded-2xl shadow-lg p-6"
               >
                 <div className="text-center mb-6">
-                  <div className="w-20 h-20 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <UserIcon className="w-10 h-10 text-primary-600" />
+                  <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden">
+                    {tutorData?.profile_picture_url ? (
+                      <img 
+                        src={tutorData.profile_picture_url} 
+                        alt="Profile" 
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-primary-100 flex items-center justify-center">
+                        <UserIcon className="w-10 h-10 text-primary-600" />
+                      </div>
+                    )}
                   </div>
                   <h2 key={`name-${lastUpdate}`} className="text-xl font-bold text-gray-900">{userProfile?.full_name || 'Loading...'}</h2>
                   <p className="text-gray-600">Qualified Tutor</p>
@@ -1161,6 +1586,82 @@ export default function TutorDashboard() {
                   </div>
                 </div>
               </motion.div>
+
+              {/* Profile Completion Banner */}
+              {tutorData && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, delay: 0.05 }}
+                  className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-6"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-blue-900 flex items-center">
+                      <AcademicCapIconSolid className="w-5 h-5 mr-2 text-blue-600" />
+                      Profile Completion
+                    </h3>
+                    <span className="text-2xl font-bold text-blue-600">
+                      {tutorData.profile_completion_percentage || 0}%
+                    </span>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full bg-blue-200 rounded-full h-3 mb-4">
+                    <div 
+                      className="bg-gradient-to-r from-blue-500 to-indigo-600 h-3 rounded-full transition-all duration-500"
+                      style={{ width: `${tutorData.profile_completion_percentage || 0}%` }}
+                    ></div>
+                  </div>
+                  
+                  {/* Current Step */}
+                  <div className="mb-4">
+                    <p className="text-sm text-blue-700 mb-2">
+                      Current Step: <span className="font-semibold">
+                        {PROFILE_COMPLETION_STEP_LABELS[tutorData.profile_completion_step as keyof typeof PROFILE_COMPLETION_STEP_LABELS] || 'Getting Started'}
+                      </span>
+                    </p>
+                    <p className="text-xs text-blue-600">
+                      {PROFILE_COMPLETION_STEP_DESCRIPTIONS[tutorData.profile_completion_step as keyof typeof PROFILE_COMPLETION_STEP_DESCRIPTIONS] || 'Complete your profile to get verified'}
+                    </p>
+                  </div>
+                  
+                  {/* Action Buttons */}
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => {
+                        setShowEnhancedProfileModal(true)
+                        loadEnhancedProfileData()
+                      }}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors duration-200"
+                    >
+                      Complete Profile
+                    </button>
+                    <button
+                      onClick={() => setShowCompletionGuide(true)}
+                      className="px-3 py-2 text-blue-600 hover:text-blue-700 text-sm font-medium border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors duration-200"
+                    >
+                      <AcademicCapIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={diagnoseProfileCompletion}
+                      className="px-3 py-2 text-yellow-600 hover:text-yellow-700 text-sm font-medium border border-yellow-300 rounded-lg hover:bg-yellow-50 transition-colors duration-200"
+                      title="Diagnose profile completion issues"
+                    >
+                      🔍
+                    </button>
+                  </div>
+                  
+                  {/* Verification Status */}
+                  {tutorData.is_verified && (
+                    <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center">
+                        <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                        <span className="text-sm font-medium text-green-800">Profile Verified</span>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              )}
 
               {/* Stats Card */}
               <motion.div
@@ -1471,6 +1972,234 @@ export default function TutorDashboard() {
           </div>
         )
 
+      case 'documents':
+        return (
+          <div className="space-y-6">
+            {/* Documents Overview */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <DocumentTextIcon className="w-5 h-5 mr-2 text-primary-600" />
+                My Documents
+              </h3>
+              <p className="text-gray-600 mb-6">Manage your professional documents and credentials.</p>
+              
+              <div className="grid md:grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Profile Picture */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center mb-3">
+                    <PhotoIcon className="w-5 h-5 text-blue-600 mr-2" />
+                    <h4 className="font-medium text-gray-900">Profile Picture</h4>
+                  </div>
+                  {tutorData?.profile_picture_url ? (
+                    <div className="text-center">
+                      <img 
+                        src={tutorData.profile_picture_url} 
+                        alt="Profile" 
+                        className="w-20 h-20 rounded-full mx-auto mb-3 object-cover"
+                      />
+                      <div className="flex space-x-2">
+                        <a 
+                          href={tutorData.profile_picture_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 hover:text-blue-700 underline"
+                        >
+                          View Full Size
+                        </a>
+                        <button
+                          onClick={() => {
+                            setShowEnhancedProfileModal(true)
+                            loadEnhancedProfileData()
+                          }}
+                          className="text-sm text-gray-600 hover:text-gray-700 underline"
+                        >
+                          Change
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm('Are you sure you want to delete your profile picture?')) {
+                              deleteDocument('profile_picture')
+                            }
+                          }}
+                          className="text-sm text-red-600 hover:text-red-700 underline"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6">
+                      <PhotoIcon className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500 mb-3">No profile picture uploaded</p>
+                      <button
+                        onClick={() => {
+                          setShowEnhancedProfileModal(true)
+                          loadEnhancedProfileData()
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-700 underline"
+                      >
+                        Upload Picture
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* CV */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center mb-3">
+                    <DocumentTextIcon className="w-5 h-5 text-green-600 mr-2" />
+                    <h4 className="font-medium text-gray-900">CV/Resume</h4>
+                  </div>
+                  {tutorData?.cv_url ? (
+                    <div className="text-center">
+                      <DocumentTextIcon className="w-16 h-16 text-green-600 mx-auto mb-3" />
+                      <div className="space-y-2">
+                        <a 
+                          href={tutorData.cv_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="block w-full bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors duration-200"
+                        >
+                          View CV
+                        </a>
+                        <div className="flex space-x-4 justify-center">
+                          <button
+                            onClick={() => {
+                              setShowEnhancedProfileModal(true)
+                              loadEnhancedProfileData()
+                            }}
+                            className="text-sm text-gray-600 hover:text-gray-700 underline"
+                          >
+                            Change
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete your CV?')) {
+                                deleteDocument('cv')
+                              }
+                            }}
+                            className="text-sm text-red-600 hover:text-red-700 underline"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6">
+                      <DocumentTextIcon className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500 mb-3">No CV uploaded</p>
+                      <button
+                        onClick={() => {
+                          setShowEnhancedProfileModal(true)
+                          loadEnhancedProfileData()
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-700 underline"
+                      >
+                        Upload CV
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Certificates */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center mb-3">
+                    <AcademicCapIconSolid className="w-5 h-5 text-purple-600 mr-2" />
+                    <h4 className="font-medium text-gray-900">Certificates</h4>
+                  </div>
+                  {tutorData?.certificates_data && tutorData.certificates_data.length > 0 ? (
+                    <div className="space-y-3">
+                      {tutorData.certificates_data.map((cert, index) => (
+                        <div key={index} className="border border-gray-200 rounded-lg p-3 bg-white">
+                          <div className="flex items-center justify-between mb-2">
+                            <AcademicCapIconSolid className="w-4 h-4 text-purple-600" />
+                            <span className="text-xs text-gray-500">
+                              {cert.uploaded_at ? new Date(cert.uploaded_at).toLocaleDateString() : 'Unknown date'}
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            <a 
+                              href={cert.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="block w-full bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors duration-200"
+                            >
+                              View Certificate
+                            </a>
+                            <div className="flex space-x-2 justify-center">
+                              <button
+                                onClick={() => {
+                                  if (confirm('Are you sure you want to delete this certificate?')) {
+                                    deleteDocument('certificate', cert.id)
+                                  }
+                                }}
+                                className="text-xs text-red-600 hover:text-red-700 underline"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-600 text-center">
+                              {cert.filename || `Certificate ${index + 1}`}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => {
+                          setShowEnhancedProfileModal(true)
+                          loadEnhancedProfileData()
+                        }}
+                        className="text-sm text-gray-600 hover:text-gray-700 underline w-full text-center"
+                      >
+                        Add More
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-6">
+                      <AcademicCapIconSolid className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500 mb-3">No certificates uploaded</p>
+                      <button
+                        onClick={() => {
+                          setShowEnhancedProfileModal(true)
+                          loadEnhancedProfileData()
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-700 underline"
+                      >
+                        Upload Certificates
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Actions */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h4 className="text-md font-semibold text-gray-900 mb-4">Quick Actions</h4>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={() => {
+                      setShowEnhancedProfileModal(true)
+                      loadEnhancedProfileData()
+                    }}
+                    className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center"
+                  >
+                    <DocumentTextIcon className="w-4 h-4 mr-2" />
+                    Manage All Documents
+                  </button>
+                  <button
+                    onClick={() => setShowCompletionGuide(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center"
+                  >
+                    <AcademicCapIcon className="w-4 h-4 mr-2" />
+                    View Requirements
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+
       case 'payments':
         return (
           <div className="space-y-6">
@@ -1622,6 +2351,220 @@ export default function TutorDashboard() {
     )
   }
 
+  // Add delete document function
+  const deleteDocument = async (documentType: 'profile_picture' | 'cv' | 'certificate', certificateId?: string) => {
+    if (!tutorData?.id) {
+      alert('Tutor data not found')
+      return
+    }
+
+    try {
+      let success = false
+      let errorMessage = ''
+
+      if (documentType === 'profile_picture') {
+        // Delete profile picture from storage and update tutor record
+        if (tutorData.profile_picture_url) {
+          const fileName = tutorData.profile_picture_url.split('/').pop()
+          if (fileName) {
+            const { error: storageError } = await supabase.storage
+              .from('tutor-document')
+              .remove([`profile-pictures/${tutorData.id}/${fileName}`])
+            
+            if (storageError) {
+              console.error('Storage deletion error:', storageError)
+              errorMessage = 'Failed to delete profile picture from storage'
+            } else {
+              // Update tutor record to remove profile picture URL
+              const { error: updateError } = await supabase
+                .from('tutors')
+                .update({ profile_picture_url: null })
+                .eq('id', tutorData.id)
+              
+              if (updateError) {
+                console.error('Database update error:', updateError)
+                errorMessage = 'Failed to update tutor record'
+              } else {
+                success = true
+              }
+            }
+          }
+        }
+      } else if (documentType === 'cv') {
+        // Delete CV from storage and update tutor record
+        if (tutorData.cv_url) {
+          const fileName = tutorData.cv_url.split('/').pop()
+          if (fileName) {
+            const { error: storageError } = await supabase.storage
+              .from('tutor-document')
+              .remove([`cvs/${tutorData.id}/${fileName}`])
+            
+            if (storageError) {
+              console.error('Storage deletion error:', storageError)
+              errorMessage = 'Failed to delete CV from storage'
+            } else {
+              // Update tutor record to remove CV URL
+              const { error: updateError } = await supabase
+                .from('tutors')
+                .update({ cv_url: null })
+                .eq('id', tutorData.id)
+              
+              if (updateError) {
+                console.error('Database update error:', updateError)
+                errorMessage = 'Failed to update tutor record'
+              } else {
+                success = true
+              }
+            }
+          }
+        }
+      } else if (documentType === 'certificate' && certificateId) {
+        // Delete certificate from storage and database
+        const certificate = tutorData.certificates_data?.find(cert => cert.id === certificateId)
+        if (certificate?.url) {
+          const fileName = certificate.url.split('/').pop()
+          if (fileName) {
+            const { error: storageError } = await supabase.storage
+              .from('tutor-document')
+              .remove([`certificates/${tutorData.id}/${fileName}`])
+            
+            if (storageError) {
+              console.error('Storage deletion error:', storageError)
+              errorMessage = 'Failed to delete certificate from storage'
+            } else {
+              // Delete certificate record from database
+              const { error: deleteError } = await supabase
+                .from('tutor_certificates')
+                .delete()
+                .eq('id', certificateId)
+              
+              if (deleteError) {
+                console.error('Database deletion error:', deleteError)
+                errorMessage = 'Failed to delete certificate record'
+              } else {
+                success = true
+              }
+            }
+          }
+        }
+      }
+
+      if (success) {
+        // Refresh dashboard data to reflect changes
+        await loadDashboardData()
+        alert(`${documentType === 'profile_picture' ? 'Profile picture' : documentType === 'cv' ? 'CV' : 'Certificate'} deleted successfully`)
+      } else {
+        alert(`Failed to delete ${documentType === 'profile_picture' ? 'profile picture' : documentType === 'cv' ? 'CV' : 'certificate'}: ${errorMessage}`)
+      }
+    } catch (error) {
+      console.error('Error deleting document:', error)
+      alert(`Error deleting ${documentType === 'profile_picture' ? 'profile picture' : documentType === 'cv' ? 'CV' : 'certificate'}`)
+    }
+  }
+
+  // Add diagnostic function to check profile completion
+  const diagnoseProfileCompletion = () => {
+    if (!tutorData) return
+    
+    console.log('=== Profile Completion Diagnosis ===')
+    console.log('Current completion:', tutorData.profile_completion_percentage + '%')
+    console.log('Current step:', tutorData.profile_completion_step)
+    
+    // Check each field against the completion criteria
+    const checks = {
+      bio: {
+        value: tutorData.bio,
+        required: 'At least 10 characters',
+        status: tutorData.bio && tutorData.bio.length >= 10 ? '✅' : '❌',
+        points: 15
+      },
+      subjects: {
+        value: tutorData.subjects,
+        required: 'At least 1 subject',
+        status: tutorData.subjects && Array.isArray(tutorData.subjects) && tutorData.subjects.length > 0 ? '✅' : '❌',
+        points: 15
+      },
+      availability: {
+        value: tutorData.availability,
+        required: 'At least 5 characters',
+        status: tutorData.availability && (typeof tutorData.availability === 'string' ? tutorData.availability.length >= 5 : JSON.stringify(tutorData.availability).length >= 5) ? '✅' : '❌',
+        points: 10
+      },
+      years_of_experience: {
+        value: tutorData.years_of_experience,
+        required: 'Not null',
+        status: tutorData.years_of_experience !== null && tutorData.years_of_experience !== undefined ? '✅' : '❌',
+        points: 5
+      },
+      education_level: {
+        value: tutorData.education_level,
+        required: 'Not null',
+        status: tutorData.education_level ? '✅' : '❌',
+        points: 5
+      },
+      institution_name: {
+        value: tutorData.institution_name,
+        required: 'Not null',
+        status: tutorData.institution_name ? '✅' : '❌',
+        points: 5
+      },
+      professional_title: {
+        value: tutorData.professional_title,
+        required: 'Not null',
+        status: tutorData.professional_title ? '✅' : '❌',
+        points: 5
+      },
+      languages_spoken: {
+        value: tutorData.languages_spoken,
+        required: 'At least 1 language',
+        status: tutorData.languages_spoken && Array.isArray(tutorData.languages_spoken) && tutorData.languages_spoken.length > 0 ? '✅' : '❌',
+        points: 5
+      },
+      profile_picture: {
+        value: tutorData.profile_picture_url,
+        required: 'Not null',
+        status: tutorData.profile_picture_url ? '✅' : '❌',
+        points: 15
+      },
+      cv: {
+        value: tutorData.cv_url,
+        required: 'Not null',
+        status: tutorData.cv_url ? '✅' : '❌',
+        points: 15
+      },
+      certificates: {
+        value: tutorData.certificates_data,
+        required: 'At least 1 certificate',
+        status: tutorData.certificates_data && Array.isArray(tutorData.certificates_data) && tutorData.certificates_data.length > 0 ? '✅' : '❌',
+        points: 15
+      }
+    }
+    
+    let totalScore = 0
+    console.log('\nField-by-field breakdown:')
+    Object.entries(checks).forEach(([field, check]) => {
+      console.log(`${check.status} ${field}: ${check.value} (${check.points} points)`)
+      if (check.status === '✅') {
+        totalScore += check.points
+      }
+    })
+    
+    console.log(`\nCalculated total score: ${totalScore}/100`)
+    console.log('Expected completion:', Math.min(totalScore, 100) + '%')
+    console.log('=====================================')
+    
+    // Show alert with diagnosis
+    const missingFields = Object.entries(checks)
+      .filter(([_, check]) => check.status === '❌')
+      .map(([field, check]) => `${field}: ${check.required}`)
+    
+    if (missingFields.length > 0) {
+      alert(`Profile completion diagnosis:\n\nMissing or incomplete fields:\n${missingFields.join('\n')}\n\nCurrent score: ${totalScore}/100`)
+    } else {
+      alert(`Profile completion diagnosis:\n\nAll fields are complete!\nCurrent score: ${totalScore}/100\n\nIf you're still seeing 95%, try refreshing the page or the completion calculation may need to be updated.`)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
       {/* Header */}
@@ -1768,6 +2711,7 @@ export default function TutorDashboard() {
           {[
             { id: 'overview', name: 'Overview', icon: '📊' },
             { id: 'sessions', name: 'Sessions', icon: '📅' },
+            { id: 'documents', name: 'Documents', icon: '📄' },
             { id: 'payments', name: 'Payments', icon: '💰' }
             // { id: 'performance', name: 'Performance', icon: '📈' } // Commented out for MVP
           ].map((tab) => (
@@ -1928,6 +2872,25 @@ export default function TutorDashboard() {
                     {isUpdatingProfile ? 'Updating...' : 'Update Profile'}
                   </button>
                 </div>
+                
+                {/* Enhanced Profile Link */}
+                <div className="pt-4 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProfileModal(false)
+                      setShowEnhancedProfileModal(true)
+                      loadEnhancedProfileData()
+                    }}
+                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+                  >
+                    <AcademicCapIcon className="w-4 h-4 inline mr-2" />
+                    Complete Full Profile & Get Verified
+                  </button>
+                  <p className="text-xs text-gray-500 mt-2 text-center">
+                    Upload documents and complete all profile fields to reach 100% completion
+                  </p>
+                </div>
               </div>
             </form>
           </motion.div>
@@ -2045,6 +3008,368 @@ export default function TutorDashboard() {
                 </button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Enhanced Profile Completion Modal */}
+      {showEnhancedProfileModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-medium text-gray-900">Complete Your Profile</h3>
+              <button
+                onClick={() => setShowEnhancedProfileModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="px-6 py-4">
+              {/* Progress Indicator */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700">Profile Completion</span>
+                  <span className="text-sm font-medium text-blue-600">
+                    {tutorData?.profile_completion_percentage || 0}% Complete
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                    style={{ width: `${tutorData?.profile_completion_percentage || 0}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              {/* Form Sections */}
+              <div className="space-y-8">
+                {/* Basic Information */}
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center">
+                    <UserIcon className="w-5 h-5 mr-2 text-blue-600" />
+                    Basic Information
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Bio
+                      </label>
+                      <textarea
+                        value={enhancedProfileFormData.bio}
+                        onChange={(e) => setEnhancedProfileFormData({...enhancedProfileFormData, bio: e.target.value})}
+                        rows={4}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Tell students and parents about your teaching experience, qualifications, and approach..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Subjects
+                      </label>
+                      <input
+                        type="text"
+                        value={enhancedProfileFormData.subjects}
+                        onChange={(e) => setEnhancedProfileFormData({...enhancedProfileFormData, subjects: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Mathematics, Physics, Chemistry (comma-separated)"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Education & Experience */}
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center">
+                    <AcademicCapIcon className="w-5 h-5 mr-2 text-green-600" />
+                    Education & Experience
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Years of Experience
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        value={enhancedProfileFormData.yearsOfExperience}
+                        onChange={(e) => setEnhancedProfileFormData({...enhancedProfileFormData, yearsOfExperience: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="5"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Education Level
+                      </label>
+                      <select
+                        value={enhancedProfileFormData.educationLevel}
+                        onChange={(e) => setEnhancedProfileFormData({...enhancedProfileFormData, educationLevel: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      >
+                        <option value="">Select Education Level</option>
+                        <option value="High School">High School</option>
+                        <option value="Bachelor's Degree">Bachelor's Degree</option>
+                        <option value="Master's Degree">Master's Degree</option>
+                        <option value="PhD">PhD</option>
+                        <option value="Professional Certification">Professional Certification</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Institution Name
+                      </label>
+                      <input
+                        type="text"
+                        value={enhancedProfileFormData.institutionName}
+                        onChange={(e) => setEnhancedProfileFormData({...enhancedProfileFormData, institutionName: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="University of Sierra Leone"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Graduation Year
+                      </label>
+                      <input
+                        type="number"
+                        min="1950"
+                        max={new Date().getFullYear() + 5}
+                        value={enhancedProfileFormData.graduationYear}
+                        onChange={(e) => setEnhancedProfileFormData({...enhancedProfileFormData, graduationYear: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="2020"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Professional Title
+                      </label>
+                      <input
+                        type="text"
+                        value={enhancedProfileFormData.professionalTitle}
+                        onChange={(e) => setEnhancedProfileFormData({...enhancedProfileFormData, professionalTitle: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="Mathematics Teacher"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Languages Spoken
+                      </label>
+                      <input
+                        type="text"
+                        value={enhancedProfileFormData.languagesSpoken}
+                        onChange={(e) => setEnhancedProfileFormData({...enhancedProfileFormData, languagesSpoken: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="English, Krio, Temne (comma-separated)"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* File Uploads */}
+                <div className="border border-gray-200 rounded-lg p-4">
+                  <h4 className="text-md font-semibold text-gray-900 mb-4 flex items-center">
+                    <DocumentTextIcon className="w-5 h-5 mr-2 text-purple-600" />
+                    Documents & Credentials
+                  </h4>
+                  
+                  {/* Profile Picture */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Profile Picture
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      {tutorData?.profile_picture_url ? (
+                        <img 
+                          src={tutorData.profile_picture_url} 
+                          alt="Profile" 
+                          className="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
+                        />
+                      ) : (
+                        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center border-2 border-dashed border-gray-300">
+                          <PhotoIcon className="w-8 h-8 text-gray-400" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              setSelectedFiles({...selectedFiles, profilePicture: file})
+                            }
+                          }}
+                          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          {FILE_UPLOAD_LIMITS.PROFILE_PICTURE.description} - Max {Math.round(FILE_UPLOAD_LIMITS.PROFILE_PICTURE.max_size / 1024 / 1024)}MB
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CV Upload */}
+                  <div className="mb-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Curriculum Vitae (CV)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      {tutorData?.cv_url ? (
+                        <div className="w-20 h-20 bg-green-100 rounded-lg flex items-center justify-center border-2 border-green-200">
+                          <DocumentTextIcon className="w-8 h-8 text-green-600" />
+                        </div>
+                      ) : (
+                        <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300">
+                          <DocumentTextIcon className="w-8 h-8 text-gray-400" />
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <input
+                          type="file"
+                          accept=".pdf,.doc,.docx"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              setSelectedFiles({...selectedFiles, cv: file})
+                            }
+                          }}
+                          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          {FILE_UPLOAD_LIMITS.CV.description} - Max {Math.round(FILE_UPLOAD_LIMITS.CV.max_size / 1024 / 1024)}MB
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Certificates */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Certificates & Credentials
+                    </label>
+                    <div className="space-y-3">
+                      {tutorData?.certificates_data?.map((cert, index) => (
+                        <div key={index} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                          <DocumentTextIcon className="w-5 h-5 text-gray-500" />
+                          <span className="text-sm text-gray-700">{cert.filename}</span>
+                          <span className="text-xs text-gray-500">({Math.round(cert.size / 1024)}KB)</span>
+                        </div>
+                      ))}
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        multiple
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || [])
+                          setSelectedFiles({...selectedFiles, certificates: files})
+                        }}
+                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {FILE_UPLOAD_LIMITS.CERTIFICATES.description} - Max {Math.round(FILE_UPLOAD_LIMITS.CERTIFICATES.max_size / 1024 / 1024)}MB each
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-3 pt-6 border-t border-gray-200 mt-8">
+                <button
+                  type="button"
+                  onClick={() => setShowEnhancedProfileModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateEnhancedProfile()}
+                  disabled={isUpdatingEnhancedProfile}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isUpdatingEnhancedProfile ? 'Updating...' : 'Update Profile'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Profile Completion Guide Modal */}
+      {showCompletionGuide && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-medium text-gray-900">Profile Completion Guide</h3>
+              <button
+                onClick={() => setShowCompletionGuide(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="px-6 py-4">
+              <div className="space-y-6">
+                {VERIFICATION_STEPS.map((step, index) => (
+                  <div key={step.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-md font-semibold text-gray-900 flex items-center">
+                        <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-medium mr-3">
+                          {index + 1}
+                        </span>
+                        {step.name}
+                      </h4>
+                      <span className="text-sm font-medium text-blue-600">{step.points} points</span>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3">{step.description}</p>
+                    {step.validation_rules && (
+                      <div className="text-xs text-gray-500">
+                        <p>Requirements:</p>
+                        <ul className="list-disc list-inside mt-1 space-y-1">
+                          {step.validation_rules.min_length && (
+                            <li>Minimum {step.validation_rules.min_length} characters</li>
+                          )}
+                          {step.validation_rules.required_fields && (
+                            <li>Required fields: {step.validation_rules.required_fields.join(', ')}</li>
+                          )}
+                          {step.validation_rules.allowed_types && (
+                            <li>Allowed file types: {step.validation_rules.allowed_types.join(', ')}</li>
+                          )}
+                          {step.validation_rules.max_size && (
+                            <li>Maximum file size: {Math.round(step.validation_rules.max_size / 1024 / 1024)}MB</li>
+                          )}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h4 className="text-sm font-semibold text-blue-900 mb-2">💡 Tips for Success</h4>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• Complete all required fields to reach 100%</li>
+                  <li>• Upload clear, high-quality documents</li>
+                  <li>• Provide detailed information about your experience</li>
+                  <li>• Keep your availability schedule up to date</li>
+                </ul>
+              </div>
+            </div>
           </motion.div>
         </div>
       )}

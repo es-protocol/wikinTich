@@ -5,20 +5,29 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 // Function to get the correct redirect URL for email verification
 export const getEmailRedirectUrl = () => {
-  if (typeof window !== 'undefined') {
-    const origin = window.location.origin
-    
-    // If we're on localhost, use localhost
-    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-      return `${origin}/auth/callback`
+  // Check if we're in development mode
+  const isDevelopment = process.env.NODE_ENV === 'development' || 
+                       process.env.NEXT_PUBLIC_VERCEL_ENV !== 'production'
+  
+  let redirectUrl: string
+  
+  if (isDevelopment) {
+    // In development, try to detect the actual port being used
+    if (typeof window !== 'undefined') {
+      // Client-side: use the current origin
+      redirectUrl = `${window.location.origin}/auth/callback`
+    } else {
+      // Server-side: use environment variable or default to 3000
+      const port = process.env.PORT || '3000'
+      redirectUrl = `http://localhost:${port}/auth/callback`
     }
-    
-    // If we're not on localhost, use production URL
-    return 'https://wikin-tich.vercel.app/auth/callback'
+  } else {
+    // For production
+    redirectUrl = 'https://wikin-tich.vercel.app/auth/callback'
   }
   
-  // Server-side: always use production URL
-  return 'https://wikin-tich.vercel.app/auth/callback'
+  console.log('🔗 Generated redirect URL:', redirectUrl, 'isDevelopment:', isDevelopment)
+  return redirectUrl
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

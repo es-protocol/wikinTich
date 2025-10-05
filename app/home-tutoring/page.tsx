@@ -1,13 +1,19 @@
-'use client'
+'use client' //This page runs in the browser
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { checkRateLimit, validateEmail, validatePhone, sanitizeInput } from '@/lib/security'
+import { storeRegistrationData } from '@/lib/registration-storage'
+import { ERROR_MESSAGES, REGISTRATION_CONSTANTS, REGISTRATION_TYPES, ROUTES } from '@/lib/constants'
+import { createErrorState, clearErrorState, getErrorMessage } from '@/lib/error-handling'
 
 export default function HomeTutoringRequest() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [csrfToken, setCsrfToken] = useState('')
+  const [error, setError] = useState(clearErrorState())
   const [formData, setFormData] = useState({
     // Parent Information
     parentName: '',
@@ -26,6 +32,22 @@ export default function HomeTutoringRequest() {
     additionalRequirements: ''
   })
 
+  // Fetch CSRF token from server on mount
+  useEffect(() => {
+    const fetchCsrf = async () => {
+      try {
+        const res = await fetch('/api/csrf', { method: 'GET', credentials: 'include' })
+        if (!res.ok) return
+        const json = await res.json() //convert response to json
+        if (json?.token) setCsrfToken(json.token) //if the json response has a token property
+        //store that token in react's memory so the page can use it
+      } catch {
+        // If CSRF cannot be fetched, submission will fail server-side; no-op here
+      }
+    }
+    fetchCsrf() //run the fuunction we just created  
+  }, [])
+//when someone types in the form we update the right box with the new text
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({
@@ -33,59 +55,55 @@ export default function HomeTutoringRequest() {
       [name]: value
     }))
   }
-
+//when the form is submitted
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault() 
     setIsSubmitting(true)
 
     try {
-      // Use Supabase Auth for real email verification
-      const { data, error } = await supabase.auth.signUp({
-        email: formData.parentEmail,
-        password: 'temporary_password_123', // Temporary password that will be changed
-        options: {
-          data: {
-            full_name: formData.parentName,
-            phone: formData.parentPhone,
-            role: 'parent',
-            // Store student info temporarily for after verification
-            student_name: formData.studentName,
-            student_age: formData.studentAge,
-            grade_level: formData.gradeLevel,
-            subjects: formData.subjects,
-            preferred_schedule: formData.preferredSchedule,
-            location: formData.location,
-            additional_requirements: formData.additionalRequirements
-          },
-          emailRedirectTo: getEmailRedirectUrl()
-        }
+      setError(clearErrorState())
+      
+      // Input validation
+      if (!validateEmail(formData.parentEmail)) {
+        setError(createErrorState(ERROR_MESSAGES.INVALID_EMAIL))
+        setIsSubmitting(false)
+        return
+      }
+
+      if (!validatePhone(formData.parentPhone)) {
+        setError(createErrorState(ERROR_MESSAGES.INVALID_PHONE))
+        setIsSubmitting(false)
+        return
+      }
+
+      // Rate limiting check. This is only triggered when the user tries to request an OTP/Magic link in my case more than 3 times in 15 minutes
+      
+      //There is smarter I can do this. In addition to what I have I could also track submission state
+      const rateLimitKey = `otp_${formData.parentEmail}` //creates a unique identifier for tracking this specific email's OTP request
+      if (!checkRateLimit(rateLimitKey, REGISTRATION_CONSTANTS.MAX_ATTEMPTS, REGISTRATION_CONSTANTS.RATE_LIMIT_WINDOW_MS)) {
+        setError(createErrorState(ERROR_MESSAGES.RATE_LIMIT_EXCEEDED))
+        setIsSubmitting(false)
+        return
+      }
+
+      // Submit securely to server which validates CSRF and performs OTP + storage
+      const response = await fetch('/api/home-tutoring/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ csrf_token: csrfToken, formData })
       })
 
-      if (error) {
-        throw error
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'unknown_error' }))
+        throw new Error(err.error || 'unknown_error')
       }
 
-      if (data.user) {
-        // Store the temporary data for after verification
-        localStorage.setItem('pendingParentData', JSON.stringify({
-          parentName: formData.parentName,
-          parentPhone: formData.parentPhone,
-          parentEmail: formData.parentEmail,
-          studentName: formData.studentName,
-          studentAge: formData.studentAge,
-          gradeLevel: formData.gradeLevel,
-          subjects: formData.subjects,
-          preferredSchedule: formData.preferredSchedule,
-          location: formData.location,
-          additionalRequirements: formData.additionalRequirements
-        }))
-
-        // Redirect to verification page
-        router.push(`/verify-email?email=${formData.parentEmail}`)
-      }
+      // Redirect to verification page
+      window.location.href = `${ROUTES.VERIFY_EMAIL}?email=${formData.parentEmail}`
     } catch (error) {
       console.error('Error submitting request:', error)
-      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`)
+      setError(createErrorState(getErrorMessage(error)))
     } finally {
       setIsSubmitting(false)
     }
@@ -115,6 +133,15 @@ export default function HomeTutoringRequest() {
           className="bg-white rounded-2xl shadow-lg p-8"
         >
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* CSRF Protection */}
+            <input type="hidden" name="csrf_token" value={csrfToken} />
+            
+            {/* Error Display */}
+            {error.hasError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-red-600 text-sm">{error.message}</p>
+              </div>
+            )}
             {/* Parent Information */}
             <div className="border-b border-gray-200 pb-6">
               <h2 className="text-2xl font-semibold text-gray-900 mb-4">
@@ -288,7 +315,7 @@ export default function HomeTutoringRequest() {
         {/* Back to Home */}
         <div className="text-center mt-8">
           <a
-            href="/"
+            href={ROUTES.HOME}
             className="text-secondary-600 hover:text-secondary-700 font-medium"
           >
             ← Back to Home

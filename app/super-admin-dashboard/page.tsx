@@ -19,6 +19,7 @@ import {
   ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
+import { aiMatchingService, AIRecommendationWithDetails } from '@/lib/ai-matching-service'
 
 interface SuperAdminProfile {
   id: string
@@ -31,11 +32,8 @@ interface SystemStats {
   totalTutors: number
   totalStudents: number
   totalRequests: number
-  totalSchools: number
   pendingTutors: number
   pendingRequests: number
-  totalInstitutionRequests: number
-  pendingInstitutionRequests: number
   totalRevenue: number
   averageRating: number
 }
@@ -73,32 +71,6 @@ interface HomeTutoringRequest {
   }
 }
 
-interface InstitutionRequest {
-  id: string
-  institution_name: string
-  contact_person: string
-  email: string
-  phone: string
-  address: string
-  institution_type: string
-  student_count: number
-  subjects: string
-  teacher_count: number
-  start_date: string
-  additional_info: string
-  status: string
-  created_at: string
-  admin_id: string
-  experience_level: string
-  duration: string
-  additional_requirements: string
-  profiles: {
-    full_name: string
-    email: string
-    phone: string
-  }
-  school_id?: string // Added for existing school
-}
 
 interface Student {
   id: string
@@ -125,11 +97,9 @@ export default function SuperAdminDashboard() {
   const [tutors, setTutors] = useState<Tutor[]>([])
   const [requests, setRequests] = useState<HomeTutoringRequest[]>([])
   const [students, setStudents] = useState<Student[]>([])
-  const [institutionRequests, setInstitutionRequests] = useState<InstitutionRequest[]>([])
   const [isLoadingTutors, setIsLoadingTutors] = useState(false)
   const [isLoadingRequests, setIsLoadingRequests] = useState(false)
   const [isLoadingStudents, setIsLoadingStudents] = useState(false)
-  const [isLoadingInstitutionRequests, setIsLoadingInstitutionRequests] = useState(false)
 
   // Matching states
   const [showMatchModal, setShowMatchModal] = useState(false)
@@ -137,25 +107,16 @@ export default function SuperAdminDashboard() {
   const [availableTutors, setAvailableTutors] = useState<Tutor[]>([])
   const [selectedTutorId, setSelectedTutorId] = useState('')
   const [isMatching, setIsMatching] = useState(false)
+  
+  // AI Matching states
+  const [aiRecommendations, setAiRecommendations] = useState<AIRecommendationWithDetails[]>([])
+  const [isLoadingAiRecommendations, setIsLoadingAiRecommendations] = useState(false)
+  const [aiServiceAvailable, setAiServiceAvailable] = useState(false)
 
-  // Institution request review states
-  const [showReviewModal, setShowReviewModal] = useState(false)
-  const [selectedInstitutionRequest, setSelectedInstitutionRequest] = useState<InstitutionRequest | null>(null)
-  const [reviewNotes, setReviewNotes] = useState('')
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
-
-  // Tutor assignment states
-  const [showTutorAssignmentModal, setShowTutorAssignmentModal] = useState(false)
-  const [selectedInstitutionForAssignment, setSelectedInstitutionForAssignment] = useState<InstitutionRequest | null>(null)
-  const [availableTutorsForInstitution, setAvailableTutorsForInstitution] = useState<Tutor[]>([])
-  const [selectedTutorForInstitution, setSelectedTutorForInstitution] = useState('')
-  const [isLoadingTutorsForInstitution, setIsLoadingTutorsForInstitution] = useState(false)
-  const [isAssigningTutor, setIsAssigningTutor] = useState(false)
 
   // Filter states
   const [tutorFilter, setTutorFilter] = useState('all') // all, verified, pending
   const [requestFilter, setRequestFilter] = useState('all') // all, pending, matched
-  const [institutionRequestFilter, setInstitutionRequestFilter] = useState('all') // all, pending, approved, rejected
   const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
@@ -168,7 +129,6 @@ export default function SuperAdminDashboard() {
       fetchTutors()
       fetchRequests()
       fetchStudents()
-      fetchInstitutionRequests()
     }
   }, [userProfile])
 
@@ -177,12 +137,6 @@ export default function SuperAdminDashboard() {
       fetchTutors()
     }
   }, [tutorFilter, searchTerm])
-
-  useEffect(() => {
-    if (userProfile) {
-      fetchInstitutionRequests()
-    }
-  }, [institutionRequestFilter])
 
   const checkSuperAdminStatus = async () => {
     try {
@@ -259,21 +213,6 @@ export default function SuperAdminDashboard() {
         .select('*', { count: 'exact', head: true })
         .eq('status', 'pending')
 
-      // Fetch total schools
-      const { count: totalSchools } = await supabase
-        .from('schools')
-        .select('*', { count: 'exact', head: true })
-
-      // Fetch total institution requests
-      const { count: totalInstitutionRequests } = await supabase
-        .from('institution_requests')
-        .select('*', { count: 'exact', head: true })
-
-      // Fetch pending institution requests
-      const { count: pendingInstitutionRequests } = await supabase
-        .from('institution_requests')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending')
 
       // Calculate average rating
       const { data: ratings } = await supabase
@@ -298,11 +237,8 @@ export default function SuperAdminDashboard() {
         totalTutors: totalTutors || 0,
         totalStudents: totalStudents || 0,
         totalRequests: totalRequests || 0,
-        totalSchools: totalSchools || 0,
         pendingTutors: pendingTutors || 0,
         pendingRequests: pendingRequests || 0,
-        totalInstitutionRequests: totalInstitutionRequests || 0,
-        pendingInstitutionRequests: pendingInstitutionRequests || 0,
         totalRevenue: totalRevenue,
         averageRating: averageRating
       })
@@ -420,45 +356,6 @@ export default function SuperAdminDashboard() {
     }
   }
 
-  const fetchInstitutionRequests = async () => {
-    try {
-      setIsLoadingInstitutionRequests(true)
-      
-      let query = supabase
-        .from('institution_requests')
-        .select(`
-          *,
-          profiles (
-            full_name,
-            email,
-            phone
-          )
-        `)
-        .order('created_at', { ascending: false })
-
-      // Apply filters
-      if (institutionRequestFilter === 'pending') {
-        query = query.eq('status', 'pending')
-      } else if (institutionRequestFilter === 'approved') {
-        query = query.eq('status', 'approved')
-      } else if (institutionRequestFilter === 'rejected') {
-        query = query.eq('status', 'rejected')
-      }
-
-      const { data, error } = await query
-
-      if (error) {
-        console.error('Error fetching institution requests:', error)
-        return
-      }
-
-      setInstitutionRequests(data || [])
-    } catch (error) {
-      console.error('Error fetching institution requests:', error)
-    } finally {
-      setIsLoadingInstitutionRequests(false)
-    }
-  }
 
   const verifyTutor = async (tutorId: string, verified: boolean) => {
     try {
@@ -523,16 +420,7 @@ export default function SuperAdminDashboard() {
       console.log('Status updated successfully')
 
       // Refresh data
-      await fetchInstitutionRequests()
       await fetchSystemStats()
-
-      // If approved, automatically open tutor assignment modal
-      if (status === 'approved') {
-        const approvedRequest = institutionRequests.find(r => r.id === requestId)
-        if (approvedRequest) {
-          openTutorAssignmentModal(approvedRequest)
-        }
-      }
 
       alert(`Institution request ${status} successfully!`)
     } catch (error) {
@@ -541,49 +429,15 @@ export default function SuperAdminDashboard() {
     }
   }
 
-  const openReviewModal = (request: InstitutionRequest, action: 'review' | 'approve' | 'reject') => {
-    setSelectedInstitutionRequest(request)
-    setReviewNotes('')
-    setShowReviewModal(true)
-  }
-
-  const openTutorAssignmentModal = async (institutionRequest: InstitutionRequest) => {
-    setSelectedInstitutionForAssignment(institutionRequest)
-    setSelectedTutorForInstitution('')
-    setShowTutorAssignmentModal(true)
-    
-    // Fetch available tutors (verified tutors)
-    setIsLoadingTutorsForInstitution(true)
-    try {
-      const { data: tutors, error } = await supabase
-        .from('tutors')
-        .select(`
-          *,
-          profiles (
-            full_name,
-            email,
-            phone
-          )
-        `)
-        .eq('is_verified', true)
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error fetching available tutors:', error)
-        return
-      }
-
-      setAvailableTutorsForInstitution(tutors || [])
-    } catch (error) {
-      console.error('Error fetching tutors:', error)
-    } finally {
-      setIsLoadingTutorsForInstitution(false)
-    }
-  }
 
   const openMatchModal = async (request: HomeTutoringRequest) => {
     setSelectedRequest(request)
     setSelectedTutorId('')
+    setAiRecommendations([])
+    
+    // Check if AI service is available
+    const isAiAvailable = await aiMatchingService.checkServiceHealth()
+    setAiServiceAvailable(isAiAvailable)
     
     // Fetch available tutors (verified tutors)
     const { data: tutors, error } = await supabase
@@ -605,6 +459,22 @@ export default function SuperAdminDashboard() {
     }
 
     setAvailableTutors(tutors || [])
+    
+    // Get AI recommendations if service is available
+    if (isAiAvailable) {
+      setIsLoadingAiRecommendations(true)
+      try {
+        const recommendations = await aiMatchingService.getRecommendations(request.id)
+        setAiRecommendations(recommendations)
+        console.log('AI Recommendations:', recommendations)
+      } catch (error) {
+        console.error('Error getting AI recommendations:', error)
+        setAiRecommendations([])
+      } finally {
+        setIsLoadingAiRecommendations(false)
+      }
+    }
+    
     setShowMatchModal(true)
   }
 
@@ -686,111 +556,6 @@ export default function SuperAdminDashboard() {
     }
   }
 
-  const assignTutorToInstitution = async () => {
-    if (!selectedInstitutionForAssignment || !selectedTutorForInstitution) {
-      alert('Please select a tutor to assign')
-      return
-    }
-
-    try {
-      setIsAssigningTutor(true)
-
-      console.log('=== DEBUGGING TUTOR ASSIGNMENT ===')
-      console.log('Selected institution:', selectedInstitutionForAssignment)
-      console.log('Selected tutor ID:', selectedTutorForInstitution)
-      console.log('Admin ID from institution:', selectedInstitutionForAssignment.admin_id)
-      console.log('School ID from institution:', selectedInstitutionForAssignment.school_id)
-
-      if (!selectedInstitutionForAssignment.admin_id) {
-        console.error('ERROR: No admin_id found in institution request!')
-        alert('Cannot assign tutor: Institution request is missing admin information')
-        return
-      }
-
-      if (!selectedInstitutionForAssignment.school_id) {
-        console.error('ERROR: No school_id found in institution request!')
-        alert('Cannot assign tutor: Institution request is missing school information')
-        return
-      }
-
-      // Use the existing school record from the institution request
-      const schoolId = selectedInstitutionForAssignment.school_id
-      console.log('Using existing school ID:', schoolId)
-
-      // 2. Create a school_teacher assignment
-      const { error: assignmentError } = await supabase
-        .from('school_teacher')
-        .insert({
-          school_id: schoolId,
-          tutor_id: selectedTutorForInstitution,
-          start_date: new Date().toISOString().split('T')[0],
-          status: 'active'
-        })
-
-      if (assignmentError) {
-        console.error('Error creating teacher assignment:', assignmentError)
-        alert('Failed to create teacher assignment')
-        return
-      }
-
-      // 3. Update the institution request status (school_id is already set)
-      const { error: updateError } = await supabase
-        .from('institution_requests')
-        .update({
-          status: 'approved' // Keep as approved since tutor is now assigned
-        })
-        .eq('id', selectedInstitutionForAssignment.id)
-
-      if (updateError) {
-        console.error('Error updating institution request:', updateError)
-        alert('Failed to update institution request')
-        return
-      }
-
-      // 4. Send notification to the assigned tutor
-      const selectedTutor = availableTutorsForInstitution.find(t => t.id === selectedTutorForInstitution)
-      if (selectedTutor) {
-        await supabase
-          .from('tutor_notifications')
-          .insert({
-            tutor_id: selectedTutorForInstitution,
-            title: 'New Institution Assignment',
-            message: `You have been assigned to ${selectedInstitutionForAssignment.institution_name}. Please check your dashboard for details.`,
-            notification_type: 'institution',
-            category: 'institution'
-          })
-      }
-
-      // 5. Send notification to school admin
-      if (selectedInstitutionForAssignment.admin_id) {
-        await supabase
-          .from('school_admin_notifications')
-          .insert({
-            admin_id: selectedInstitutionForAssignment.admin_id,
-            school_id: schoolId,
-            title: 'Tutor Assigned',
-            message: `A tutor has been assigned to your institution. You can now view tutor details in your dashboard.`,
-            notification_type: 'teacher'
-          })
-      }
-
-      // Close modal and refresh data
-      setShowTutorAssignmentModal(false)
-      setSelectedInstitutionForAssignment(null)
-      setSelectedTutorForInstitution('')
-      
-      // Refresh data
-      await fetchInstitutionRequests()
-      await fetchSystemStats()
-
-      alert('Tutor assigned successfully! The school admin can now see the tutor in their dashboard.')
-    } catch (error) {
-      console.error('Error assigning tutor:', error)
-      alert('Failed to assign tutor to institution')
-    } finally {
-      setIsAssigningTutor(false)
-    }
-  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -905,27 +670,6 @@ export default function SuperAdminDashboard() {
                 </p>
               </motion.div>
 
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="bg-white rounded-2xl shadow-lg p-6"
-              >
-                <div className="flex items-center">
-                  <div className="p-3 bg-indigo-100 rounded-lg">
-                    <AcademicCapIcon className="w-6 h-6 text-indigo-600" />
-                  </div>
-                  <div className="ml-4">
-                    <p className="text-sm font-medium text-gray-600">Institution Requests</p>
-                    <p className="text-2xl font-bold text-gray-900">{systemStats?.totalInstitutionRequests || 0}</p>
-                  </div>
-                </div>
-                {systemStats?.pendingInstitutionRequests && systemStats.pendingInstitutionRequests > 0 && (
-                  <p className="text-sm text-orange-600 mt-2">
-                    {systemStats.pendingInstitutionRequests} pending review
-                  </p>
-                )}
-              </motion.div>
             </div>
 
             {/* Quick Actions */}
@@ -965,16 +709,6 @@ export default function SuperAdminDashboard() {
                   </div>
                 </button>
 
-                <button
-                  onClick={() => setActiveSection('institution-requests')}
-                  className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <AcademicCapIcon className="w-5 h-5 text-indigo-600 mr-3" />
-                  <div className="text-left">
-                    <p className="font-medium text-gray-900">Review Institutions</p>
-                    <p className="text-sm text-gray-500">Process institution requests</p>
-                  </div>
-                </button>
               </div>
             </div>
           </div>
@@ -1286,151 +1020,6 @@ export default function SuperAdminDashboard() {
           </div>
         )
 
-      case 'institution-requests':
-        return (
-          <div className="space-y-6">
-            {/* Header */}
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-gray-900">Institution Requests</h2>
-            </div>
-
-            {/* Filter Tabs */}
-            <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-              {[
-                { id: 'all', name: 'All' },
-                { id: 'pending', name: 'Pending' },
-                { id: 'approved', name: 'Approved' },
-                { id: 'rejected', name: 'Rejected' }
-              ].map((filter) => (
-                <button
-                  key={filter.id}
-                  onClick={() => setInstitutionRequestFilter(filter.id)}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    institutionRequestFilter === filter.id
-                      ? 'bg-white text-blue-600 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  {filter.name}
-                </button>
-              ))}
-            </div>
-
-            {/* Institution Requests List */}
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-              {isLoadingInstitutionRequests ? (
-                <div className="p-8 text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Loading institution requests...</p>
-                </div>
-              ) : institutionRequests.length === 0 ? (
-                <div className="p-8 text-center">
-                  <p className="text-gray-500">No institution requests found.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Institution
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Contact Person
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Requirements
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Submitted
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {institutionRequests.map((request) => (
-                        <tr key={request.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {request.institution_name}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {request.institution_type}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {request.contact_person}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {request.email}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">
-                              <div><strong>Subjects:</strong> {request.subjects}</div>
-                              <div><strong>Teachers:</strong> {request.teacher_count}</div>
-                              <div><strong>Students:</strong> {request.student_count}</div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              request.status === 'pending' 
-                                ? 'bg-yellow-100 text-yellow-800'
-                                : request.status === 'approved'
-                                ? 'bg-green-100 text-green-800'
-                                : request.status === 'rejected'
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {formatDate(request.created_at)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            {request.status === 'pending' && (
-                              <div className="flex space-x-2">
-                                <button 
-                                  onClick={() => openReviewModal(request, 'review')}
-                                  className="text-blue-600 hover:text-blue-900"
-                                >
-                                  Review
-                                </button>
-                                <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'approved')}
-                                  className="text-green-600 hover:text-green-900"
-                                >
-                                  Approve
-                                </button>
-                                <button 
-                                  onClick={() => updateInstitutionRequestStatus(request.id, 'rejected')}
-                                  className="text-red-600 hover:text-red-900"
-                                >
-                                  Reject
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )
 
       default:
         return (
@@ -1508,8 +1097,7 @@ export default function SuperAdminDashboard() {
               { id: 'overview', name: 'Overview', icon: ChartBarIcon },
               { id: 'tutors', name: 'Tutors', icon: AcademicCapIcon },
               { id: 'requests', name: 'Requests', icon: ClockIcon },
-              { id: 'students', name: 'Students', icon: UserGroupIcon },
-              { id: 'institution-requests', name: 'Institution Requests', icon: AcademicCapIcon }
+              { id: 'students', name: 'Students', icon: UserGroupIcon }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1559,9 +1147,65 @@ export default function SuperAdminDashboard() {
                </div>
              </div>
 
+             {/* AI Recommendations Section */}
+             {aiServiceAvailable && (
+               <div className="mb-6">
+                 <div className="flex items-center justify-between mb-3">
+                   <h4 className="font-medium text-gray-900 flex items-center">
+                     🤖 AI Recommendations
+                     {isLoadingAiRecommendations && (
+                       <div className="ml-2 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                     )}
+                   </h4>
+                   <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
+                     AI Service Active
+                   </span>
+                 </div>
+                 
+                 {isLoadingAiRecommendations ? (
+                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                     <div className="text-blue-600">Getting AI recommendations...</div>
+                   </div>
+                 ) : aiRecommendations.length > 0 ? (
+                   <div className="space-y-3">
+                     {aiRecommendations.map((rec, index) => (
+                       <div key={rec.tutorId} className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                         <div className="flex justify-between items-start mb-2">
+                           <h5 className="font-medium text-gray-900">{rec.tutorName}</h5>
+                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                             rec.compatibilityScore >= 0.8 ? 'bg-green-100 text-green-800' :
+                             rec.compatibilityScore >= 0.6 ? 'bg-yellow-100 text-yellow-800' :
+                             'bg-red-100 text-red-800'
+                           }`}>
+                             {Math.round(rec.compatibilityScore * 100)}% Match
+                           </span>
+                         </div>
+                         <div className="text-sm text-gray-600 space-y-1">
+                           <p><strong>Subjects:</strong> {rec.subjects.join(', ')}</p>
+                           <p><strong>Rating:</strong> {rec.rating || 'N/A'}/5 ⭐</p>
+                           <p><strong>Experience:</strong> {rec.experience || 'N/A'} years</p>
+                           <p><strong>Reasoning:</strong> {rec.reasoning.join(', ')}</p>
+                         </div>
+                         <button
+                           onClick={() => setSelectedTutorId(rec.tutorId)}
+                           className="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                         >
+                           Select This Tutor
+                         </button>
+                       </div>
+                     ))}
+                   </div>
+                 ) : (
+                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
+                     <div className="text-yellow-600">No AI recommendations found. Try manual selection below.</div>
+                   </div>
+                 )}
+               </div>
+             )}
+
              <div className="mb-6">
                <label className="block text-sm font-medium text-gray-700 mb-2">
-                 Select a Tutor:
+                 {aiServiceAvailable ? 'Or Select Manually:' : 'Select a Tutor:'}
                </label>
                <select
                  value={selectedTutorId}
@@ -1596,148 +1240,6 @@ export default function SuperAdminDashboard() {
          </div>
        )}
 
-       {/* Institution Request Review Modal */}
-       {showReviewModal && selectedInstitutionRequest && (
-         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-           <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
-             <div className="flex justify-between items-center mb-6">
-               <h3 className="text-lg font-semibold text-gray-900">
-                 Review Institution Request
-               </h3>
-               <button
-                 onClick={() => setShowReviewModal(false)}
-                 className="text-gray-400 hover:text-gray-600"
-               >
-                 <XCircleIcon className="w-6 h-6" />
-               </button>
-             </div>
-
-             <div className="mb-6">
-               <h4 className="font-medium text-gray-900 mb-2">Request Details:</h4>
-               <div className="bg-gray-50 rounded-lg p-4">
-                 <p><strong>Institution:</strong> {selectedInstitutionRequest.institution_name}</p>
-                 <p><strong>Contact Person:</strong> {selectedInstitutionRequest.contact_person}</p>
-                 <p><strong>Email:</strong> {selectedInstitutionRequest.email}</p>
-                 <p><strong>Phone:</strong> {selectedInstitutionRequest.phone}</p>
-                 <p><strong>Address:</strong> {selectedInstitutionRequest.address}</p>
-                 <p><strong>Type:</strong> {selectedInstitutionRequest.institution_type}</p>
-                 <p><strong>Subjects:</strong> {selectedInstitutionRequest.subjects}</p>
-                 <p><strong>Teachers:</strong> {selectedInstitutionRequest.teacher_count}</p>
-                 <p><strong>Students:</strong> {selectedInstitutionRequest.student_count}</p>
-                 <p><strong>Start Date:</strong> {formatDate(selectedInstitutionRequest.start_date)}</p>
-                 <p><strong>Duration:</strong> {selectedInstitutionRequest.duration}</p>
-                 <p><strong>Additional Info:</strong> {selectedInstitutionRequest.additional_info}</p>
-                 <p><strong>Additional Requirements:</strong> {selectedInstitutionRequest.additional_requirements}</p>
-               </div>
-             </div>
-
-             <div className="mb-6">
-               <label className="block text-sm font-medium text-gray-700 mb-2">
-                 Review Notes:
-               </label>
-               <textarea
-                 value={reviewNotes}
-                 onChange={(e) => setReviewNotes(e.target.value)}
-                 rows={4}
-                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
-               ></textarea>
-             </div>
-
-             <div className="flex justify-end space-x-3">
-               <button
-                 onClick={() => setShowReviewModal(false)}
-                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-               >
-                 Cancel
-               </button>
-               <button
-                 onClick={() => {
-                   updateInstitutionRequestStatus(selectedInstitutionRequest.id, 'approved')
-                   setShowReviewModal(false)
-                   setSelectedInstitutionRequest(null)
-                   setReviewNotes('')
-                 }}
-                 disabled={isUpdatingStatus}
-                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-               >
-                 Approve
-               </button>
-             </div>
-           </div>
-         </div>
-       )}
-
-       {/* Tutor Assignment Modal */}
-       {showTutorAssignmentModal && selectedInstitutionForAssignment && (
-         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-           <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
-             <div className="flex justify-between items-center mb-6">
-               <h3 className="text-lg font-semibold text-gray-900">
-                 Assign Tutor to Institution
-               </h3>
-               <button
-                 onClick={() => setShowTutorAssignmentModal(false)}
-                 className="text-gray-400 hover:text-gray-600"
-               >
-                 <XCircleIcon className="w-6 h-6" />
-               </button>
-             </div>
-
-             <div className="mb-6">
-               <h4 className="font-medium text-gray-900 mb-2">Institution Details:</h4>
-               <div className="bg-gray-50 rounded-lg p-4">
-                 <p><strong>Institution:</strong> {selectedInstitutionForAssignment.institution_name}</p>
-                 <p><strong>Contact Person:</strong> {selectedInstitutionForAssignment.contact_person}</p>
-                 <p><strong>Email:</strong> {selectedInstitutionForAssignment.email}</p>
-                 <p><strong>Phone:</strong> {selectedInstitutionForAssignment.phone}</p>
-                 <p><strong>Address:</strong> {selectedInstitutionForAssignment.address}</p>
-                 <p><strong>Type:</strong> {selectedInstitutionForAssignment.institution_type}</p>
-                 <p><strong>Subjects:</strong> {selectedInstitutionForAssignment.subjects}</p>
-                 <p><strong>Teachers:</strong> {selectedInstitutionForAssignment.teacher_count}</p>
-                 <p><strong>Students:</strong> {selectedInstitutionForAssignment.student_count}</p>
-                 <p><strong>Start Date:</strong> {formatDate(selectedInstitutionForAssignment.start_date)}</p>
-                 <p><strong>Duration:</strong> {selectedInstitutionForAssignment.duration}</p>
-                 <p><strong>Additional Info:</strong> {selectedInstitutionForAssignment.additional_info}</p>
-                 <p><strong>Additional Requirements:</strong> {selectedInstitutionForAssignment.additional_requirements}</p>
-               </div>
-             </div>
-
-             <div className="mb-6">
-               <label className="block text-sm font-medium text-gray-700 mb-2">
-                 Select a Tutor:
-               </label>
-               <select
-                 value={selectedTutorForInstitution}
-                 onChange={(e) => setSelectedTutorForInstitution(e.target.value)}
-                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
-               >
-                 <option value="">Choose a tutor...</option>
-                 {availableTutorsForInstitution.map((tutor) => (
-                   <option key={tutor.id} value={tutor.id}>
-                     {tutor.profiles.full_name} - {Array.isArray(tutor.subjects) ? tutor.subjects.join(', ') : tutor.subjects}
-                   </option>
-                 ))}
-               </select>
-             </div>
-
-             <div className="flex justify-end space-x-3">
-               <button
-                 onClick={() => setShowTutorAssignmentModal(false)}
-                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-               >
-                 Cancel
-               </button>
-               <button
-                 onClick={assignTutorToInstitution}
-                 disabled={!selectedTutorForInstitution || isAssigningTutor}
-                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-               >
-                 {isAssigningTutor ? 'Assigning...' : 'Assign Tutor'}
-               </button>
-             </div>
-           </div>
-         </div>
-       )}
      </div>
    )
  } 

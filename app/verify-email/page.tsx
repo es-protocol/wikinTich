@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { CheckCircleIcon, XCircleIcon, ClockIcon } from '@heroicons/react/24/outline'
 import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
+import { ROUTES } from '@/lib/constants'
+import { checkRateLimit } from '@/lib/security'
 
 export default function VerifyEmailPage() {
   const router = useRouter()
@@ -16,12 +18,9 @@ export default function VerifyEmailPage() {
   const [resendCount, setResendCount] = useState(0)
 
   useEffect(() => {
-    // Get email from URL params or localStorage
+    // Get email from URL params
     const emailParam = searchParams.get('email')
-    const storedParentEmail = localStorage.getItem('pendingParentData') ? JSON.parse(localStorage.getItem('pendingParentData')!).parentEmail : null
-    const storedInstitutionEmail = localStorage.getItem('pendingInstitutionData') ? JSON.parse(localStorage.getItem('pendingInstitutionData')!).contactEmail : null
-    const storedTutorEmail = localStorage.getItem('pendingTutorData') ? JSON.parse(localStorage.getItem('pendingTutorData')!).email : null
-    const currentEmail = emailParam || storedParentEmail || storedInstitutionEmail || storedTutorEmail || ''
+    const currentEmail = emailParam || ''
     
     if (currentEmail) {
       setEmail(currentEmail)
@@ -52,14 +51,11 @@ export default function VerifyEmailPage() {
             // User is verified and authenticated
             setVerificationStatus('success')
             
-            // Clear pending emails
-            localStorage.removeItem('pendingParentData')
-            localStorage.removeItem('pendingInstitutionData')
-            localStorage.removeItem('pendingTutorData')
+            // Don't clear localStorage yet - password setup needs it
             
             // Redirect to password setup after a short delay
             setTimeout(() => {
-              router.push(`/set-password?email=${data.user!.email}`)
+              router.push(`${ROUTES.SET_PASSWORD}?email=${data.user!.email}`)
             }, 2000)
           }
         } else {
@@ -88,14 +84,18 @@ export default function VerifyEmailPage() {
         setErrorMessage('Maximum resend attempts reached. Please contact support.')
         return
       }
+
+      // Additional rate limiting check
+      const rateLimitKey = `resend_${email}`
+      if (!checkRateLimit(rateLimitKey, 3, 15 * 60 * 1000)) {
+        setErrorMessage('Too many resend attempts. Please wait 15 minutes.')
+        return
+      }
       
       setResendStatus('sending')
       
-      // Get the correct email from pending data
-      const storedParentEmail = localStorage.getItem('pendingParentData') ? JSON.parse(localStorage.getItem('pendingParentData')!).parentEmail : null
-      const storedInstitutionEmail = localStorage.getItem('pendingInstitutionData') ? JSON.parse(localStorage.getItem('pendingInstitutionData')!).contactEmail : null
-      const storedTutorEmail = localStorage.getItem('pendingTutorData') ? JSON.parse(localStorage.getItem('pendingTutorData')!).email : null
-      const emailToUse = email || storedParentEmail || storedInstitutionEmail || storedTutorEmail
+      // Use the email from URL or state
+      const emailToUse = email
       
       if (!emailToUse) {
         throw new Error('No email found for verification')
@@ -299,7 +299,7 @@ export default function VerifyEmailPage() {
           className="text-center mt-6"
         >
           <button
-            onClick={() => router.push('/')}
+            onClick={() => router.push(ROUTES.HOME)}
             className="text-primary-600 hover:text-primary-700 font-medium"
           >
             ← Back to Home

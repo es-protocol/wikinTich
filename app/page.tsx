@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { BuildingOffice2Icon, HomeIcon } from '@heroicons/react/24/outline'
+import { HomeIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 
 export default function HomePage() {
@@ -51,43 +51,16 @@ export default function HomePage() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="text-lg sm:text-xl text-gray-600 max-w-3xl mx-auto px-2"
           >
-            Choose your pathway to quality education. Whether you're an institution seeking teachers or a student needing home tutoring, we've got you covered.
+            Connect with qualified tutors for personalized home tutoring sessions. Get the academic support your child needs in Sierra Leone.
           </motion.p>
         </div>
 
-        {/* Two Main Pathways */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 max-w-4xl mx-auto">
-          {/* Institutions Pathway */}
+        {/* Home Tutoring Pathway */}
+        <div className="max-w-2xl mx-auto">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6, delay: 0.4 }}
-            whileHover={{ scale: 1.02 }}
-            className="group"
-          >
-            <Link href="/institutions" className="block">
-              <div className="bg-white rounded-2xl shadow-lg p-5 sm:p-6 lg:p-8 h-full border-2 border-transparent group-hover:border-primary-200 transition-all duration-300">
-                <div className="text-center">
-                  <div className="mx-auto w-20 h-20 sm:w-24 sm:h-24 bg-primary-100 rounded-full flex items-center justify-center mb-4 sm:mb-6 group-hover:bg-primary-200 transition-colors duration-300">
-                    <BuildingOffice2Icon className="w-10 h-10 sm:w-12 sm:h-12 text-primary-600" />
-                  </div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3 sm:mb-4">Institutions</h2>
-                  <p className="text-sm sm:text-base text-gray-600 mb-4 sm:mb-6">
-                    Request qualified teachers for your educational institution. We'll match you with the best educators for your needs.
-                  </p>
-                  <div className="bg-primary-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-medium group-hover:bg-primary-700 transition-colors duration-300 text-sm sm:text-base">
-                    Request for Teachers
-                  </div>
-                </div>
-              </div>
-            </Link>
-          </motion.div>
-
-          {/* Home Tutoring Pathway */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
             whileHover={{ scale: 1.02 }}
             className="group"
           >

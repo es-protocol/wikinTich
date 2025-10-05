@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { EyeIcon, EyeSlashIcon, KeyIcon } from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
+import { generateCSRFToken } from '@/lib/security'
+import { usePasswordSetup } from '@/lib/hooks/usePasswordSetup'
+import { ROUTES } from '@/lib/constants'
 
 export default function SetPasswordPage() {
   const router = useRouter()
@@ -12,30 +15,33 @@ export default function SetPasswordPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
+  const { isLoading, error, success, setError, submit } = usePasswordSetup()
+  const [csrfToken, setCsrfToken] = useState('')
 
   useEffect(() => {
+    // Generate CSRF token
+    setCsrfToken(generateCSRFToken())
+    
     const emailParam = searchParams.get('email')
     const accessToken = searchParams.get('access_token')
     const refreshToken = searchParams.get('refresh_token')
     
-    console.log('SetPassword page loaded with:', { emailParam, accessToken: !!accessToken, refreshToken: !!refreshToken })
+    console.log('🔍 Set-password page loaded with:', { emailParam, accessToken: !!accessToken, refreshToken: !!refreshToken })
     
     if (emailParam) {
-      console.log('Setting email from URL param:', emailParam)
+      console.log('📧 Setting email from URL param:', emailParam)
       setEmail(emailParam)
     } else if (accessToken && refreshToken) {
-      console.log('Handling verification with tokens')
       // This is a direct verification callback from Supabase
+      console.log('🔗 Handling verification callback')
       handleVerification(accessToken, refreshToken)
     } else if (!email && !accessToken && !refreshToken) {
       // Only redirect if we have absolutely nothing
-      console.log('No parameters found, redirecting to home')
-      router.push('/')
+      console.log('❌ No email or tokens found, redirecting to home')
+      router.push(ROUTES.HOME)
     }
   }, [searchParams]) // Remove router from dependencies to prevent redirect loop
 
@@ -63,285 +69,7 @@ export default function SetPasswordPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsLoading(true)
-    setError('')
-
-    // Validation
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters long')
-      setIsLoading(false)
-      return
-    }
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      setIsLoading(false)
-      return
-    }
-
-    try {
-      // Check for both parent and institution data
-      const pendingParentDataStr = localStorage.getItem('pendingParentData')
-      const pendingInstitutionDataStr = localStorage.getItem('pendingInstitutionData')
-      const pendingTutorDataStr = localStorage.getItem('pendingTutorData')
-      
-      if (!pendingParentDataStr && !pendingInstitutionDataStr && !pendingTutorDataStr) {
-        throw new Error('Registration data not found. Please start over.')
-      }
-
-      if (pendingParentDataStr) {
-        // Handle parent registration
-        const pendingData = JSON.parse(pendingParentDataStr)
-
-        // 1. Create the user in auth_users table
-        const { error: authError } = await supabase
-          .from('auth_users')
-          .insert({
-            email: email,
-            password_hash: password, // TODO: Hash this in production
-            role: 'parent',
-            is_active: true
-          })
-
-        if (authError) {
-          throw authError
-        }
-
-        // 2. Create the parent profile
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            email: email,
-            full_name: pendingData.parentName,
-            phone: pendingData.parentPhone,
-            role: 'parent',
-            // Email verification is handled by Supabase Auth
-          })
-          .select('id')
-          .single()
-
-        if (profileError) {
-          throw profileError
-        }
-
-        // 3. Create the student record
-        const studentAge = pendingData.studentAge ? parseInt(pendingData.studentAge) : null
-        const { data: student, error: studentError } = await supabase
-          .from('students')
-          .insert({
-            parent_id: profile.id,
-            name: pendingData.studentName,
-            age: studentAge,
-            grade_level: pendingData.gradeLevel
-          })
-          .select('id')
-          .single()
-
-        if (studentError) {
-          throw studentError
-        }
-
-        // 4. Create the home tutoring request
-        const { error: requestError } = await supabase
-          .from('home_tutoring_requests')
-          .insert({
-            parent_id: profile.id,
-            student_id: student.id,
-            student_name: pendingData.studentName,
-            student_age: studentAge,
-            grade_level: pendingData.gradeLevel,
-            subjects: pendingData.subjects,
-            preferred_schedule: pendingData.preferredSchedule,
-            location: pendingData.location,
-            additional_requirements: pendingData.additionalRequirements
-          })
-
-        if (requestError) {
-          throw requestError
-        }
-
-        // 5. Clear the stored data
-        localStorage.removeItem('pendingParentData')
-
-        setSuccess(true)
-
-        // Redirect to login after a short delay
-        setTimeout(() => {
-          router.push('/login')
-        }, 3000)
-
-      } else if (pendingInstitutionDataStr) {
-        // Handle institution registration
-        const pendingData = JSON.parse(pendingInstitutionDataStr)
-
-        // 1. Create the user in auth_users table
-        const { error: authError } = await supabase
-          .from('auth_users')
-          .insert({
-            email: email,
-            password_hash: password, // TODO: Hash this in production
-            role: 'school_admin',
-            is_active: true
-          })
-
-        if (authError) {
-          throw authError
-        }
-
-        // 2. Create the school admin profile
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            email: email,
-            full_name: pendingData.contactName,
-            phone: pendingData.contactPhone,
-            role: 'school_admin',
-            // Email verification is handled by Supabase Auth
-          })
-          .select('id')
-          .single()
-
-        if (profileError) {
-          throw profileError
-        }
-
-        // 3. Create the school record
-        const { data: school, error: schoolError } = await supabase
-          .from('schools')
-          .insert({
-            name: pendingData.schoolName,
-            type: pendingData.schoolType,
-            address: pendingData.schoolAddress,
-            phone: pendingData.schoolPhone,
-            email: pendingData.schoolEmail,
-            admin_id: profile.id
-          })
-          .select('id')
-          .single()
-
-        if (schoolError) {
-          throw schoolError
-        }
-
-        // 4. Create the institution request
-        const { error: requestError } = await supabase
-          .from('institution_requests')
-          .insert({
-            school_id: school.id,
-            admin_id: profile.id,
-            institution_name: pendingData.schoolName,
-            institution_type: pendingData.schoolType,
-            contact_person: pendingData.contactName,
-            email: pendingData.contactEmail,
-            phone: pendingData.contactPhone,
-            address: pendingData.schoolAddress,
-            subjects: pendingData.subjects,
-            experience_level: pendingData.experienceLevel,
-            duration: pendingData.duration,
-            teacher_count: parseInt(pendingData.teacherCount),
-            student_count: parseInt(pendingData.studentCount),
-            additional_requirements: pendingData.additionalRequirements
-          })
-
-        if (requestError) {
-          throw requestError
-        }
-
-        // 5. Clear the stored data
-        localStorage.removeItem('pendingInstitutionData')
-
-        setSuccess(true)
-
-        // Redirect to login after a short delay
-        setTimeout(() => {
-          router.push('/login')
-        }, 3000)
-
-      } else if (pendingTutorDataStr) {
-        // Handle tutor registration
-        const pendingData = JSON.parse(pendingTutorDataStr)
-
-        // 1. Create the user in auth_users table
-        const { error: authError } = await supabase
-          .from('auth_users')
-          .insert({
-            email: email,
-            password_hash: password, // TODO: Hash this in production
-            role: 'tutor',
-            is_active: true
-          })
-
-        if (authError) {
-          throw authError
-        }
-
-        // 2. Create the tutor profile
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            email: email,
-            full_name: pendingData.fullName,
-            phone: pendingData.phone,
-            role: 'tutor',
-            // Email verification is handled by Supabase Auth
-          })
-          .select('id')
-          .single()
-
-        if (profileError) {
-          throw profileError
-        }
-
-        // 3. Create the tutor record
-        const { data: tutor, error: tutorError } = await supabase
-          .from('tutors')
-          .insert({
-            profile_id: profile.id,
-            bio: pendingData.bio,
-            subjects: pendingData.subjects,
-            availability: pendingData.availability,
-            phone: pendingData.phone,
-            email: email
-          })
-          .select('id')
-          .single()
-
-        if (tutorError) {
-          throw tutorError
-        }
-
-        // 4. Create the qualification record
-        const { error: qualificationError } = await supabase
-          .from('tutor_qualifications')
-          .insert({
-            tutor_id: tutor.id,
-            qualification_type: pendingData.qualificationType,
-            title: pendingData.qualificationTitle,
-            institution: pendingData.institution,
-            year_obtained: parseInt(pendingData.yearObtained)
-          })
-
-        if (qualificationError) {
-          throw qualificationError
-        }
-
-        // 5. Clear the stored data
-        localStorage.removeItem('pendingTutorData')
-
-        setSuccess(true)
-
-        // Redirect to login after a short delay
-        setTimeout(() => {
-          router.push('/login')
-        }, 3000)
-      }
-
-    } catch (error) {
-      console.error('Password setup error:', error)
-      setError('Failed to set password. Please try again.')
-    } finally {
-      setIsLoading(false)
-    }
+    await submit(email, password, confirmPassword, (path) => router.push(path))
   }
 
   if (success) {
@@ -361,7 +89,7 @@ export default function SetPasswordPage() {
               Account Setup Complete! 🎉
             </h2>
             <p className="text-gray-600 mb-6">
-              Your WikinTich account has been created successfully. Redirecting you to login...
+              The Tutor Link account has been created successfully. Redirecting to login...
             </p>
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
           </motion.div>
@@ -386,7 +114,7 @@ export default function SetPasswordPage() {
               Set Your Password
             </h2>
             <p className="text-gray-600">
-              Create a secure password for your WikinTich account
+              Create a secure password for the Tutor Link account
             </p>
             <p className="text-sm text-gray-500 mt-2">
               Email: <strong>{email}</strong>
@@ -401,6 +129,9 @@ export default function SetPasswordPage() {
           className="bg-white rounded-2xl shadow-lg p-8"
         >
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* CSRF Protection */}
+            <input type="hidden" name="csrf_token" value={csrfToken} />
+            
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <p className="text-red-600 text-sm">{error}</p>
@@ -437,7 +168,7 @@ export default function SetPasswordPage() {
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                Must be at least 8 characters long
+                Must be at least 8 characters with uppercase, lowercase, number, and special character
               </p>
             </div>
 
@@ -505,7 +236,7 @@ export default function SetPasswordPage() {
           className="text-center mt-6"
         >
           <button
-            onClick={() => router.push('/')}
+            onClick={() => router.push(ROUTES.HOME)}
             className="text-primary-600 hover:text-primary-700 font-medium"
           >
             ← Back to Home

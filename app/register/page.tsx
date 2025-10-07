@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { BuildingOffice2Icon, HomeIcon, AcademicCapIcon } from '@heroicons/react/24/outline'
+import { HomeIcon, AcademicCapIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 
 export default function RegisterPage() {
@@ -51,39 +51,13 @@ export default function RegisterPage() {
           </motion.p>
         </div>
 
-        {/* Three Registration Options */}
-        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {/* Institution Option */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            whileHover={{ scale: 1.02 }}
-            className="group"
-          >
-            <Link href="/institutions" className="block">
-              <div className="bg-white rounded-2xl shadow-lg p-8 h-full border-2 border-transparent group-hover:border-primary-200 transition-all duration-300">
-                <div className="text-center">
-                  <div className="mx-auto w-24 h-24 bg-primary-100 rounded-full flex items-center justify-center mb-6 group-hover:bg-primary-200 transition-colors duration-300">
-                    <BuildingOffice2Icon className="w-12 h-12 text-primary-600" />
-                  </div>
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">Institution</h2>
-                  <p className="text-gray-600 mb-6">
-                    Register your educational institution to request qualified teachers and manage your teaching staff.
-                  </p>
-                  <div className="bg-primary-600 text-white px-6 py-3 rounded-lg font-medium group-hover:bg-primary-700 transition-colors duration-300">
-                    Register Institution
-                  </div>
-                </div>
-              </div>
-            </Link>
-          </motion.div>
-
+        {/* Two Registration Options */}
+        <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
           {/* Parent/Student Option */}
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
+            transition={{ duration: 0.6, delay: 0.4 }}
             whileHover={{ scale: 1.02 }}
             className="group"
           >
@@ -109,7 +83,7 @@ export default function RegisterPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6, delay: 0.8 }}
+            transition={{ duration: 0.6, delay: 0.6 }}
             whileHover={{ scale: 1.02 }}
             className="group"
           >

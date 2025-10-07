@@ -6,6 +6,7 @@ import { EyeIcon, EyeSlashIcon, AcademicCapIcon } from '@heroicons/react/24/outl
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
+import { ROUTES } from '@/lib/constants'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -27,16 +28,16 @@ export default function LoginPage() {
         // Redirect based on user role
         switch (role) {
           case 'parent':
-            router.push('/dashboard-with-children')
+            router.push(ROUTES.DASHBOARD_PARENT)
             break
           case 'tutor':
-            router.push('/tutor-dashboard')
+            router.push(ROUTES.DASHBOARD_TUTOR)
             break
           case 'school_admin':
-            router.push('/school-admin-dashboard')
+            router.push(ROUTES.DASHBOARD_SCHOOL_ADMIN)
             break
           default:
-            router.push('/')
+            router.push(ROUTES.HOME)
         }
       } else {
         setError(result.error || 'Login failed. Please try again.')
@@ -63,7 +64,7 @@ export default function LoginPage() {
               Welcome Back
             </h2>
             <p className="text-sm sm:text-base text-gray-600">
-              Sign in to your WikinTich account
+              Sign in to the Tutor Link account
             </p>
           </div>
         </motion.div>
@@ -168,7 +169,7 @@ export default function LoginPage() {
           {/* Links */}
           <div className="mt-5 sm:mt-6 text-center space-y-2">
             <Link 
-              href="/register" 
+              href={ROUTES.REGISTER} 
               className="block text-primary-600 hover:text-primary-700 font-medium text-sm"
             >
               Don't have an account? Register here
@@ -189,7 +190,7 @@ export default function LoginPage() {
           className="text-center"
         >
           <Link
-            href="/"
+            href={ROUTES.HOME}
             className="text-primary-600 hover:text-primary-700 font-medium text-sm sm:text-base"
           >
             ← Back to Home

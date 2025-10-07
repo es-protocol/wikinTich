@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, Fragment, FormEvent } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/lib/auth-context'
 import { 
   UserIcon, 
@@ -27,6 +27,15 @@ import {
   ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
+import { sanitizeInput } from '@/lib/security'
+import {
+  ProfileHeaderSkeleton,
+  StudentCardSkeleton,
+  SessionCardSkeleton,
+  RequestCardSkeleton,
+  StatCardSkeleton,
+  EmptyState
+} from '@/app/components/SkeletonLoader'
 
 interface Student {
   id: string
@@ -543,12 +552,18 @@ export default function DashboardWithChildren() {
 
   useEffect(() => {
     if (userProfile) {
-      fetchTutoringRequests()
-      fetchSessions()
-      fetchTutorData()
-      fetchStudentProgress()
-      fetchSessionReports()
-      fetchParentNotifications()
+      // Run all data fetching in parallel for faster loading
+      Promise.all([
+        fetchTutoringRequests(),
+        fetchSessions(),
+        fetchTutorData(),
+        fetchStudentProgress(),
+        fetchSessionReports(),
+        fetchParentNotifications()
+      ]).catch((error) => {
+        console.error('Error loading dashboard data:', error)
+        // Individual functions already handle their own errors
+      })
     }
   }, [userProfile, selectedStudent])
 
@@ -678,10 +693,10 @@ export default function DashboardWithChildren() {
         .from('students')
         .insert([{
           parent_id: userProfile.id,
-          name: newChildForm.name,
+          name: sanitizeInput(newChildForm.name),
           age: parseInt(newChildForm.age),
-          grade_level: newChildForm.grade_level,
-          school_name: newChildForm.school_name
+          grade_level: sanitizeInput(newChildForm.grade_level),
+          school_name: sanitizeInput(newChildForm.school_name)
         }])
         .select()
 
@@ -726,10 +741,10 @@ export default function DashboardWithChildren() {
           student_name: selectedStudent.name,
           student_age: selectedStudent.age,
           grade_level: selectedStudent.grade_level,
-          subjects: newRequestForm.subjects,
-          preferred_schedule: newRequestForm.preferred_schedule,
+          subjects: sanitizeInput(newRequestForm.subjects),
+          preferred_schedule: sanitizeInput(newRequestForm.preferred_schedule),
           location: newRequestForm.location,
-          additional_requirements: newRequestForm.additional_requirements,
+          additional_requirements: sanitizeInput(newRequestForm.additional_requirements),
           status: 'pending'
         }])
         .select()
@@ -817,7 +832,7 @@ export default function DashboardWithChildren() {
           duration_hours: durationHours,
           amount: 70000, // Default amount
           status: 'scheduled', // Use 'scheduled' status for new sessions
-          notes: newSessionForm.notes,
+          notes: sanitizeInput(newSessionForm.notes),
           created_by: 'parent' // Add this field to track who created the session
         }])
         .select()
@@ -960,10 +975,10 @@ export default function DashboardWithChildren() {
       const { error } = await supabase
         .from('students')
         .update({
-          name: editChildForm.name,
+          name: sanitizeInput(editChildForm.name),
           age: parseInt(editChildForm.age),
-          grade_level: editChildForm.grade_level,
-          school_name: editChildForm.school_name,
+          grade_level: sanitizeInput(editChildForm.grade_level),
+          school_name: sanitizeInput(editChildForm.school_name),
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedChildForEdit.id)
@@ -1109,8 +1124,8 @@ export default function DashboardWithChildren() {
       const { error } = await supabase
         .from('profiles')
         .update({
-          full_name: profileForm.full_name,
-          phone: profileForm.phone
+          full_name: sanitizeInput(profileForm.full_name),
+          phone: sanitizeInput(profileForm.phone)
         })
         .eq('id', userProfile.id)
 
@@ -1400,7 +1415,7 @@ export default function DashboardWithChildren() {
         .update({
           status: action === 'accept' ? 'accepted' : 'rejected',
           responded_at: new Date().toISOString(),
-          response_notes: notes
+          response_notes: sanitizeInput(notes)
         })
         .eq('id', proposalId)
 
@@ -1604,9 +1619,10 @@ export default function DashboardWithChildren() {
               </div>
               
               {isLoadingStudents ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Loading children...</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <StudentCardSkeleton />
+                  <StudentCardSkeleton />
+                  <StudentCardSkeleton />
                 </div>
               ) : students.length === 0 ? (
                 <div className="text-center py-8">
@@ -2012,15 +2028,16 @@ export default function DashboardWithChildren() {
             </div>
             <div className="p-6">
               {!selectedStudent ? (
-                <div className="text-center py-8">
-                  <UserIcon className="w-12 h-12 text-gray-400 mx-auto" />
-                  <p className="mt-2 text-gray-600">Please select a child to view requests</p>
-                  <p className="text-sm text-gray-500">Use the child selector in the header above</p>
-                </div>
+                <EmptyState
+                  icon={UserIcon}
+                  title="No child selected"
+                  description="Please select a child to view their tutoring requests"
+                />
               ) : isLoadingRequests ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Loading requests...</p>
+                <div className="space-y-4">
+                  <RequestCardSkeleton />
+                  <RequestCardSkeleton />
+                  <RequestCardSkeleton />
                 </div>
               ) : getFilteredRequests().length === 0 ? (
                 <div className="text-center py-8">
@@ -2125,15 +2142,16 @@ export default function DashboardWithChildren() {
             </div>
             <div className="p-6">
               {!selectedStudent ? (
-                <div className="text-center py-8">
-                  <UserIcon className="w-12 h-12 text-gray-400 mx-auto" />
-                  <p className="mt-2 text-gray-600">Please select a child to view sessions</p>
-                  <p className="text-sm text-gray-500">Use the child selector in the header above</p>
-                </div>
+                <EmptyState
+                  icon={UserIcon}
+                  title="No child selected"
+                  description="Please select a child to view their sessions"
+                />
               ) : isLoadingSessions ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Loading sessions...</p>
+                <div className="space-y-4">
+                  <SessionCardSkeleton />
+                  <SessionCardSkeleton />
+                  <SessionCardSkeleton />
                 </div>
               ) : getFilteredSessions().length === 0 ? (
                 <div className="text-center py-8">

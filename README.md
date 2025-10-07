@@ -1,56 +1,32 @@
-# WikinTich - Educational Platform for Sierra Leone
+# Tutor Link - Development Setup Guide
 
-A comprehensive educational platform connecting institutions and students with qualified teachers and tutors in Sierra Leone.
+## 🎯 **PROJECT OVERVIEW**
 
-## 🎯 Overview
+Tutor Link is a comprehensive tutoring platform that connects parents with qualified tutors for home tutoring services. The platform includes parent registration, tutor applications, admin dashboards, and messaging functionality.
 
-WikinTich is a multi-dashboard educational platform designed to bridge the gap between educational institutions, students, and qualified educators in Sierra Leone. The platform addresses the critical disconnect in the educational ecosystem by providing a unified digital solution.
+## 🏗️ **TECHNOLOGY STACK**
 
-## 🚀 Current Status
+- **Frontend**: Next.js 14, React 18, TypeScript
+- **Styling**: Tailwind CSS
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **Deployment**: Vercel
+- **Package Manager**: npm
 
-### ✅ **Completed Features**
-- **Complete Database Architecture**: 25+ tables with proper relationships
-- **Multi-Dashboard Platform**: 
-  - Parent/Student Dashboard with child management and session scheduling
-  - Tutor Dashboard with bidirectional scheduling and profile management
-  - Super Admin Dashboard with matching capabilities
-  - School Admin Dashboard with institution management
-- **Core Functionality**: 
-  - Bidirectional session scheduling (parent-tutor approval system)
-  - Student progress tracking and reporting
-  - Profile management for all user roles
-  - Real-time UI updates and notifications
-- **Authentication System**: 
-  - Complete user registration and email verification
-  - Password-based login system
-  - Role-based access control
-  - Session management with proper logout
+## 🚀 **DEVELOPMENT ENVIRONMENT SETUP**
 
-### 🔄 **In Progress**
-- Communication system (in-app messaging)
-- Payment integration
-- Advanced analytics and reporting
+### **Prerequisites**
+- Node.js 18+ 
+- npm 9+
+- Git
+- Code editor (VS Code recommended)
 
-### 📋 **Planned Features**
-- Mobile app development
-- Advanced search and filtering
-- Location-based matching
-
-## 🛠 Tech Stack
-
-- **Frontend**: Next.js 14 with TypeScript
-- **Styling**: Tailwind CSS + Framer Motion
-- **Backend**: Supabase (PostgreSQL)
-- **Authentication**: Email verification + password-based login system
-- **Icons**: Heroicons
-- **Font**: Inter
-
-## 📦 Installation
+### **Installation Steps**
 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd wikinTich
+   cd Tutor-Link
    ```
 
 2. **Install dependencies**
@@ -58,146 +34,164 @@ WikinTich is a multi-dashboard educational platform designed to bridge the gap b
    npm install
    ```
 
-3. **Set up environment variables**
-   Create a `.env.local` file with your Supabase credentials:
+3. **Environment Setup**
+   - Copy `.env.example` to `.env.local`
+   - Add your Supabase credentials:
    ```env
    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+   CSRF_SECRET=your_csrf_secret
    ```
 
-4. **Set up database**
-   Run the database setup scripts in order:
-   ```bash
-   # Run database chunks 1-5
-   # Then run sample data chunks 1-3
-   ```
-
-5. **Run the development server**
+4. **Start development server**
    ```bash
    npm run dev
    ```
 
-6. **Open your browser**
-   Navigate to [http://localhost:3000](http://localhost:3000)
+5. **Open in browser**
+   - Navigate to `http://localhost:3000`
 
-## 🏗 Project Structure
+## 📁 **PROJECT STRUCTURE**
 
 ```
-wikinTich/
-├── app/                    # Next.js app directory
-│   ├── dashboard-with-children/  # Parent/Student Dashboard
-│   ├── tutor-dashboard/          # Tutor Dashboard
-│   ├── super-admin-dashboard/    # Super Admin Dashboard
-│   ├── super-admin-login/        # Super Admin Login
-│   └── verify-email/             # Email verification
-├── lib/                   # Utility functions and database operations
-├── database_chunk_*.sql   # Database schema files
-├── sample_data_chunk_*.sql # Sample data files
-├── *.md                   # Project documentation
-└── package.json           # Dependencies and scripts
+Tutor-Link/
+├── app/                          # Next.js App Router
+│   ├── api/                      # API routes
+│   ├── home-tutoring/           # Parent registration flow
+│   ├── apply-tutor/             # Tutor application flow
+│   ├── tutor-dashboard/         # Tutor dashboard
+│   ├── super-admin-dashboard/   # Admin dashboard
+│   └── ...
+├── lib/                         # Utility libraries
+│   ├── constants.ts             # Application constants
+│   ├── security.ts              # Security utilities
+│   ├── error-handling.ts        # Error handling utilities
+│   ├── loading-states.ts        # Loading state utilities
+│   └── supabase.ts              # Supabase configuration
+├── components/                  # Reusable components
+├── database/                    # Database schemas and migrations
+└── docs/                        # Documentation
 ```
 
-## 👥 User Roles & Dashboards
+## 🎨 **CODE STANDARDS & CONVENTIONS**
 
-### Parent/Student Dashboard (`/dashboard-with-children`)
-- **Child Management**: Add, edit, delete children profiles
-- **Tutoring Requests**: Create and manage tutoring requests
-- **Session Scheduling**: Bidirectional scheduling with tutors
-- **Progress Tracking**: View student progress and session reports
-- **Profile Management**: Update parent profile information
+### **TypeScript Standards**
+- Use TypeScript for all new files
+- Define interfaces for all data structures
+- Use strict type checking
+- Avoid `any` type - use proper typing
 
-### Tutor Dashboard (`/tutor-dashboard`)
-- **Session Management**: View assigned sessions and propose new ones
-- **Bidirectional Scheduling**: Propose sessions to parents
-- **Payment Tracking**: View earnings and payment history
-- **Performance Metrics**: Track ratings and attendance
-- **Profile Management**: Update tutor profile and qualifications
+### **React Standards**
+- Use functional components with hooks
+- Follow React best practices
+- Use proper state management
+- Implement proper error boundaries
 
-### Super Admin Dashboard (`/super-admin-dashboard`)
-- **System Overview**: Platform statistics and metrics
-- **Tutor Verification**: Verify and approve tutor applications
-- **Request Matching**: Match tutors with student requests
-- **User Management**: Manage all platform users
-- **System Monitoring**: Track platform performance
+### **File Naming**
+- Use kebab-case for files: `message-list.tsx`
+- Use PascalCase for components: `MessageList`
+- Use camelCase for functions: `handleSubmit`
 
-### School Admin Dashboard (Structure Ready)
-- **Teacher Management**: Manage assigned teachers
-- **Performance Tracking**: Monitor teacher performance
-- **School Reports**: Generate educational reports
+### **Import Organization**
+```typescript
+// 1. React imports
+import { useState, useEffect } from 'react'
 
-## 📊 Database Schema
+// 2. Third-party imports
+import { motion } from 'framer-motion'
 
-The platform uses a comprehensive PostgreSQL database with 25+ tables including:
-- User profiles and authentication
-- Student and tutor management
-- Session scheduling and tracking
-- Progress monitoring and reporting
-- Payment and financial tracking
-- Notification and communication systems
+// 3. Internal imports
+import { supabase } from '@/lib/supabase'
+import { ERROR_MESSAGES } from '@/lib/constants'
+```
 
-## 🎨 Design System
+## 🔧 **DEVELOPMENT WORKFLOW**
 
-### Colors
-- **Primary**: Blue shades (#0ea5e9)
-- **Secondary**: Yellow shades (#eab308)
-- **Success**: Green shades (#22c55e)
-- **Warning**: Orange shades (#f97316)
-- **Error**: Red shades (#ef4444)
+### **Git Workflow**
+1. Create feature branch: `git checkout -b feature/messaging-ui`
+2. Make changes and commit: `git commit -m "Add message list component"`
+3. Push branch: `git push origin feature/messaging-ui`
+4. Create pull request for review
 
-### Typography
-- **Font**: Inter
-- **Weights**: 300, 400, 500, 600, 700
+### **Code Quality**
+- Run linting: `npm run lint`
+- Fix formatting: `npm run format`
+- Type checking: `npm run type-check`
 
-## 🔧 Development
+### **Testing**
+- Write tests for new components
+- Test user interactions
+- Verify responsive design
+- Check accessibility compliance
 
-### Available Scripts
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint
+## 📚 **IMPORTANT DOCUMENTS**
 
-### Code Style
-- TypeScript for type safety
-- Tailwind CSS for styling
-- Component-based architecture
-- Responsive design principles
+- **MESSAGING_TASK_BRIEF.md** - Specific messaging development tasks
+- **TECHNICAL_SPECIFICATIONS.md** - Database schema and API details
+- **DESIGN_GUIDELINES.md** - UI/UX standards and patterns
+- **CLEAN_CODE_REFACTORING_DOCUMENTATION.md** - Code quality standards
 
-## 📚 Documentation
+## 🚨 **CRITICAL RULES**
 
-- `DEVELOPMENT_STATUS.md` - Overall project status
-- `CODE_STATUS.md` - Current code implementation status
-- `DASHBOARD_COMPARISON.md` - Feature comparison across dashboards
-- `TUTOR_DASHBOARD_STATUS.md` - Detailed tutor dashboard status
-- `KNOWN_BUGS.md` - Documented issues and bugs
-- `NEXT_DEVELOPMENT_PLAN.md` - Upcoming development phases
+### **DO NOT:**
+- Modify database schemas without approval
+- Change existing API endpoints
+- Break existing functionality
+- Use `localStorage` for sensitive data
+- Commit sensitive information (API keys, passwords)
 
-## 🌍 Localization
+### **DO:**
+- Follow existing code patterns
+- Use established constants and utilities
+- Test your changes thoroughly
+- Document your code
+- Ask questions when unsure
 
-The platform is designed specifically for Sierra Leone with:
-- Local names and context in sample data
-- Mobile money integration (planned)
-- Local educational system considerations
-- No hourly rates (session-based pricing)
+## 🆘 **TROUBLESHOOTING**
 
-## 🔒 Security Considerations
+### **Common Issues**
 
-- Secure authentication system
-- Data validation and sanitization
-- Role-based access control
-- User verification processes
-- Secure database operations
+**Port already in use:**
+```bash
+# Kill process on port 3000
+npx kill-port 3000
+# Or use different port
+npm run dev -- -p 3001
+```
 
-## 🚀 Deployment
+**Supabase connection issues:**
+- Check environment variables
+- Verify Supabase project is active
+- Check network connectivity
 
-The platform can be deployed to:
-- Vercel (recommended for Next.js)
-- AWS
-- Local servers in Sierra Leone
+**Build errors:**
+```bash
+# Clear Next.js cache
+rm -rf .next
+npm run dev
+```
 
-## 📞 Support
+## 📞 **SUPPORT & COMMUNICATION**
 
-For technical support or questions about WikinTich, please contact the development team.
+- **Questions**: Ask in team chat or create GitHub issue
+- **Code reviews**: All changes require review before merge
+- **Documentation**: Update docs when adding new features
+- **Testing**: Test thoroughly before submitting PR
+
+## 🎯 **GETTING STARTED**
+
+1. Read this README completely
+2. Review MESSAGING_TASK_BRIEF.md for your specific tasks
+3. Check TECHNICAL_SPECIFICATIONS.md for technical details
+4. Follow DESIGN_GUIDELINES.md for UI/UX standards
+5. Start with small, testable changes
+6. Ask questions early and often
 
 ---
 
-**WikinTich** - Empowering education in Sierra Leone 🇸🇱 
+**Happy coding! 🚀**
+
+**Last Updated**: December 2024  
+**Version**: 1.0  
+**Maintainer**: Development Team

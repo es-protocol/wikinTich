@@ -3,6 +3,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { supabase } from './supabase'
 import { useRouter } from 'next/navigation'
+import { verifyPassword } from './security'
+import { isAccountLocked, recordFailedAttempt, clearFailedAttempts } from './account-lockout'
 
 // User interface
 interface User {
@@ -63,6 +65,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true)
       
+      // Check if account is locked
+      const lockoutCheck = await isAccountLocked(email)
+      if (lockoutCheck.isLocked) {
+        const lockedUntil = new Date(lockoutCheck.lockedUntil!)
+        const timeRemaining = Math.ceil((lockedUntil.getTime() - Date.now()) / (1000 * 60))
+        return {
+          success: false,
+          error: `Account is temporarily locked due to too many failed attempts. Please try again in ${timeRemaining} minutes.`
+        }
+      }
+      
       // First, check if user exists in auth_users table (don't filter by role initially)
       const { data: authUser, error: authError } = await supabase
         .from('auth_users')
@@ -72,15 +85,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single()
 
       if (authError || !authUser) {
+        // Record failed attempt
+        await recordFailedAttempt(email)
         return { 
           success: false, 
           error: 'Invalid email or password. Please check your credentials.' 
         }
       }
 
-      // TODO: In production, we'll use proper password hashing
-      // For now, we'll do a simple comparison (this is NOT secure for production)
-      if (authUser.password_hash !== password) {
+      // Verify password using bcrypt
+      const isPasswordValid = await verifyPassword(password, authUser.password_hash)
+      
+      if (!isPasswordValid) {
+        // Record failed attempt
+        await recordFailedAttempt(email)
         return { 
           success: false, 
           error: 'Invalid email or password. Please check your credentials.' 
@@ -95,6 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .single()
 
       if (profileError || !profile) {
+        // Record failed attempt
+        await recordFailedAttempt(email)
         return { 
           success: false, 
           error: 'User profile not found. Please contact support.' 
@@ -103,6 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // If role was specified, verify it matches the user's actual role
       if (role && profile.role !== role) {
+        // Record failed attempt
+        await recordFailedAttempt(email)
         return { 
           success: false, 
           error: `This account is registered as a ${profile.role.replace('_', ' ')}. Please select the correct role.` 
@@ -118,6 +140,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         phone: profile.phone,
         is_active: profile.is_active || true
       }
+
+      // Clear failed attempts on successful login
+      await clearFailedAttempts(email)
 
       // Update last login
       await supabase

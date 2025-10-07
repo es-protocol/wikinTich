@@ -1,0 +1,150 @@
+import { supabase } from './supabase'
+import { REGISTRATION_CONSTANTS, REGISTRATION_TYPES } from './constants'
+
+export interface PendingRegistrationData {
+  // Parent data
+  parentName?: string
+  parentPhone?: string
+  parentEmail?: string
+  studentName?: string
+  studentAge?: string
+  gradeLevel?: string
+  subjects?: string
+  preferredSchedule?: string
+  location?: string
+  additionalRequirements?: string
+  
+  // Tutor data
+  fullName?: string
+  phone?: string
+  email?: string
+  bio?: string
+  availability?: string
+  qualificationType?: string
+  qualificationTitle?: string
+  institution?: string
+  yearObtained?: string
+}
+
+export interface PendingRegistration {
+  id: string
+  email: string
+  registration_data: PendingRegistrationData
+  registration_type: typeof REGISTRATION_TYPES.PARENT | typeof REGISTRATION_TYPES.TUTOR
+  expires_at: string
+  created_at: string
+  updated_at: string
+}
+
+// Store registration data server-side
+export const storeRegistrationData = async (
+  email: string,
+  data: PendingRegistrationData,
+  type: typeof REGISTRATION_TYPES.PARENT | typeof REGISTRATION_TYPES.TUTOR
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    // Set expiration to 24 hours from now
+    const expiresAt = new Date(Date.now() + REGISTRATION_CONSTANTS.EXPIRATION_MS).toISOString()
+    
+    const { data: result, error } = await supabase
+      .from('pending_registrations')
+      .upsert({
+        email,
+        registration_data: data,
+        registration_type: type,
+        expires_at: expiresAt
+      })
+      .select()
+
+    if (error) {
+      console.error('Error storing registration data:', error)
+      return { success: false, error: error.message }
+    }
+
+    // Check if we actually got data back (upsert succeeded)
+    if (!result || result.length === 0) {
+      console.error('No data returned from upsert operation')
+      return { success: false, error: 'No data returned from database operation' }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error storing registration data:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }
+  }
+}
+
+// Retrieve registration data server-side
+export const getRegistrationData = async (
+  email: string
+): Promise<{ success: boolean; data?: PendingRegistration; error?: string }> => {
+  try {
+    const { data, error } = await supabase
+      .from('pending_registrations')
+      .select('*')
+      .eq('email', email)
+      .gt('expires_at', new Date().toISOString()) // Only get non-expired records
+      .single()
+
+    if (error) {
+      console.error('Error retrieving registration data:', error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true, data }
+  } catch (error) {
+    console.error('Error retrieving registration data:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }
+  }
+}
+
+// Delete registration data after successful account creation
+export const deleteRegistrationData = async (
+  email: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase
+      .from('pending_registrations')
+      .delete()
+      .eq('email', email)
+
+    if (error) {
+      console.error('Error deleting registration data:', error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error deleting registration data:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }
+  }
+}
+
+// Clean up expired registrations (can be called periodically)
+export const cleanupExpiredRegistrations = async (): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase.rpc('cleanup_expired_registrations')
+
+    if (error) {
+      console.error('Error cleaning up expired registrations:', error)
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('Error cleaning up expired registrations:', error)
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    }
+  }
+}

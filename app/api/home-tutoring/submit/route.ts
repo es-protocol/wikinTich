@@ -2,7 +2,7 @@ import crypto from 'crypto'
 import { NextResponse } from 'next/server'
 import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 import { storeRegistrationData } from '@/lib/registration-storage'
-import { validateEmail, validatePhone, sanitizeInput } from '@/lib/security'
+import { validateEmail, validatePhone, validateEmailDetailed, validatePhoneDetailed, validateCountryCode, sanitizeInput } from '@/lib/security'
 import { ERROR_MESSAGES, REGISTRATION_TYPES } from '@/lib/constants'
 
 const COOKIE_NAME = 'csrf_sig'
@@ -64,12 +64,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'bad_csrf' }, { status: 400 })
   }
 
-  // Basic validation
-  if (!validateEmail(formData?.parentEmail)) {
-    return NextResponse.json({ error: ERROR_MESSAGES.INVALID_EMAIL }, { status: 400 })
+  // Server-side validation with detailed error messages
+  
+  // Validate country code
+  const countryCodeValidation = validateCountryCode(formData?.countryCode)
+  if (!countryCodeValidation.isValid) {
+    return NextResponse.json({ error: countryCodeValidation.message }, { status: 400 })
   }
-  if (!validatePhone(formData?.parentPhone)) {
-    return NextResponse.json({ error: ERROR_MESSAGES.INVALID_PHONE }, { status: 400 })
+
+  // Validate email with detailed messages
+  const emailValidation = validateEmailDetailed(formData?.parentEmail)
+  if (!emailValidation.isValid) {
+    return NextResponse.json({ error: emailValidation.message }, { status: 400 })
+  }
+
+  // Validate phone with country-specific rules
+  const phoneValidation = validatePhoneDetailed(formData?.parentPhone, formData?.countryCode)
+  if (!phoneValidation.isValid) {
+    return NextResponse.json({ error: phoneValidation.message }, { status: 400 })
   }
 
   // TODO: server-side rate limit (email+IP)
@@ -100,6 +112,7 @@ export async function POST(req: Request) {
   const registrationData = {
     parentName: sanitizeInput(formData.parentName),
     parentPhone: sanitizeInput(formData.parentPhone),
+    countryCode: formData.countryCode, // Store validated country code
     parentEmail: formData.parentEmail,
     studentName: sanitizeInput(formData.studentName),
     studentAge: formData.studentAge,

@@ -38,6 +38,41 @@ export const VALIDATION_CONSTANTS = {
   MAX_PHONE_LENGTH: 15
 } as const
 
+// Supported countries for phone numbers
+export const COUNTRY_CODES = {
+  SIERRA_LEONE: {
+    name: 'Sierra Leone',
+    code: '+232',
+    flag: '🇸🇱',
+    minDigits: 8,
+    maxDigits: 10,
+    format: '+232 XX XXX XXXX'
+  },
+  LIBERIA: {
+    name: 'Liberia',
+    code: '+231',
+    flag: '🇱🇷',
+    minDigits: 7,
+    maxDigits: 9,
+    format: '+231 XX XXX XXX'
+  },
+  THE_GAMBIA: {
+    name: 'The Gambia',
+    code: '+220',
+    flag: '🇬🇲',
+    minDigits: 7,
+    maxDigits: 7,
+    format: '+220 XXX XXXX'
+  }
+} as const
+
+// Array of supported countries for dropdowns
+export const SUPPORTED_COUNTRIES = [
+  COUNTRY_CODES.SIERRA_LEONE,
+  COUNTRY_CODES.LIBERIA,
+  COUNTRY_CODES.THE_GAMBIA
+] as const
+
 // Rate limiting constants
 export const RATE_LIMIT_CONSTANTS = {
   DEFAULT_MAX_REQUESTS: 5,

@@ -512,7 +512,9 @@ export default function DashboardWithChildren() {
         return
       }
 
-      const response = await fetch(`/api/dashboard?userId=${user.id}&type=profile`)
+      const response = await fetch(`/api/dashboard?userId=${user.id}&type=profile`, {
+        credentials: 'include' // Include session cookie
+      })
       const result = await response.json()
 
       if (!response.ok) {
@@ -583,7 +585,9 @@ export default function DashboardWithChildren() {
       
       if (!userProfile) return
 
-      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=students`)
+      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=students`, {
+        credentials: 'include' // Include session cookie
+      })
       const result = await response.json()
 
       if (!response.ok) {
@@ -610,7 +614,9 @@ export default function DashboardWithChildren() {
       
       if (!userProfile) return
 
-      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=requests`)
+      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=requests`, {
+        credentials: 'include' // Include session cookie
+      })
       const result = await response.json()
 
       if (!response.ok) {
@@ -638,7 +644,9 @@ export default function DashboardWithChildren() {
       
       if (!userProfile) return
 
-      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=sessions`)
+      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=sessions`, {
+        credentials: 'include' // Include session cookie
+      })
       const result = await response.json()
 
       if (!response.ok) {
@@ -1281,7 +1289,9 @@ export default function DashboardWithChildren() {
     try {
       if (!userProfile) return
       
-      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=notifications`)
+      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=notifications`, {
+        credentials: 'include' // Include session cookie
+      })
       const result = await response.json()
 
       if (!response.ok) {

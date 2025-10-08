@@ -174,19 +174,20 @@ export default function HomeTutoringRequest() {
         return
       }
 
+      // TEMPORARILY DISABLED: Rate limiting check for debugging RLS issues
       // Rate limiting check. This is only triggered when the user tries to request an OTP/Magic link in my case more than 3 times in 15 minutes
       
       //There is smarter I can do this. In addition to what I have I could also track submission state
-      const rateLimitKey = `otp_${formData.parentEmail}` //creates a unique identifier for tracking this specific email's OTP request
-      if (!checkRateLimit(rateLimitKey, REGISTRATION_CONSTANTS.MAX_ATTEMPTS, REGISTRATION_CONSTANTS.RATE_LIMIT_WINDOW_MS)) {
-        const resetTime = getRateLimitResetTime(rateLimitKey)
-        if (resetTime) {
-          setRateLimitCountdown(resetTime)
-        }
-        setError(createErrorState(ERROR_MESSAGES.RATE_LIMIT_EXCEEDED))
-        setIsSubmitting(false)
-        return
-      }
+      // const rateLimitKey = `otp_${formData.parentEmail}` //creates a unique identifier for tracking this specific email's OTP request
+      // if (!checkRateLimit(rateLimitKey, REGISTRATION_CONSTANTS.MAX_ATTEMPTS, REGISTRATION_CONSTANTS.RATE_LIMIT_WINDOW_MS)) {
+      //   const resetTime = getRateLimitResetTime(rateLimitKey)
+      //   if (resetTime) {
+      //     setRateLimitCountdown(resetTime)
+      //   }
+      //   setError(createErrorState(ERROR_MESSAGES.RATE_LIMIT_EXCEEDED))
+      //   setIsSubmitting(false)
+      //   return
+      // }
 
       // Submit securely to server which validates CSRF and performs OTP + storage
       const response = await fetch('/api/home-tutoring/submit', {

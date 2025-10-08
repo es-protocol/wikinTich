@@ -3,6 +3,7 @@
 import { useState, useEffect, Fragment, FormEvent } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '@/lib/auth-context'
+import { supabase } from '@/lib/supabase'
 import { 
   UserIcon, 
   AcademicCapIcon, 

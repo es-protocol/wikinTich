@@ -28,7 +28,7 @@ export function createSessionCookie(sessionData: SessionData): string {
   const sessionDataString = JSON.stringify(sessionData)
   
   // Create HMAC signature for session data
-  const hmac = crypto.createHmac('sha256', SESSION_SECRET)
+  const hmac = crypto.createHmac('sha256', SESSION_SECRET!)
   hmac.update(sessionDataString)
   const signature = hmac.digest('hex')
   
@@ -53,7 +53,7 @@ export function parseSessionCookie(cookieValue: string): SessionData | null {
     const sessionDataString = Buffer.from(encodedData, 'base64').toString('utf8')
     
     // Verify HMAC signature
-    const hmac = crypto.createHmac('sha256', SESSION_SECRET)
+    const hmac = crypto.createHmac('sha256', SESSION_SECRET!)
     hmac.update(sessionDataString)
     const expectedSignature = hmac.digest('hex')
     

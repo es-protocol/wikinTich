@@ -86,6 +86,10 @@ export const getRegistrationData = async (
   email: string
 ): Promise<{ success: boolean; data?: PendingRegistration; error?: string }> => {
   try {
+    if (!supabaseAdmin) {
+      return { success: false, error: 'Database service unavailable' }
+    }
+    
     const { data, error } = await supabaseAdmin
       .from('pending_registrations')
       .select('*')
@@ -113,6 +117,10 @@ export const deleteRegistrationData = async (
   email: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
+    if (!supabaseAdmin) {
+      return { success: false, error: 'Database service unavailable' }
+    }
+    
     const { error } = await supabaseAdmin
       .from('pending_registrations')
       .delete()
@@ -136,6 +144,10 @@ export const deleteRegistrationData = async (
 // Clean up expired registrations (can be called periodically)
 export const cleanupExpiredRegistrations = async (): Promise<{ success: boolean; error?: string }> => {
   try {
+    if (!supabaseAdmin) {
+      return { success: false, error: 'Database service unavailable' }
+    }
+    
     const { error } = await supabaseAdmin.rpc('cleanup_expired_registrations')
 
     if (error) {

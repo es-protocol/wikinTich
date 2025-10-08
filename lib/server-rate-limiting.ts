@@ -39,6 +39,11 @@ export async function checkServerSideRateLimit(
   error?: string 
 }> {
   try {
+    if (!supabaseAdmin) {
+      console.warn('Supabase admin client not available, allowing request')
+      return { allowed: true }
+    }
+    
     const ip = getClientIP(request)
     const now = Date.now()
     const windowStart = Math.floor(now / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_WINDOW_MS
@@ -147,6 +152,11 @@ export async function checkServerSideRateLimit(
 // Clean up old rate limit records (can be called periodically)
 export async function cleanupOldRateLimits(): Promise<{ success: boolean; error?: string }> {
   try {
+    if (!supabaseAdmin) {
+      console.warn('Supabase admin client not available for cleanup')
+      return { success: false, error: 'Database service unavailable' }
+    }
+    
     const cutoffTime = new Date(Date.now() - (24 * 60 * 60 * 1000)) // 24 hours ago
     
     const { error } = await supabaseAdmin

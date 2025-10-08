@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 import { storeRegistrationData } from '@/lib/registration-storage'
 import { validateEmail, validatePhone, validateEmailDetailed, validatePhoneDetailed, validateCountryCode, sanitizeInput } from '@/lib/security'
@@ -31,7 +31,7 @@ function timingSafeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ab, bb)
 }
 //Post Handler:  
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   if (!process.env.CSRF_SECRET) {//Require CSRF secret to be set in the environment variables
     return NextResponse.json({ error: 'server_misconfigured' }, { status: 500 })
   }

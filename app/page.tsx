@@ -8,11 +8,13 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
       {/* Header */}
-      <header className="bg-white shadow-sm">
+      <header className="bg-white shadow-sm fixed top-0 left-0 right-0 z-50">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-4 sm:py-6 space-y-3 sm:space-y-0">
             <div className="flex items-center">
-              <h1 className="text-xl sm:text-2xl font-bold text-primary-600">Tutor Link</h1>
+              <Link href="/" className="text-xl sm:text-2xl font-bold text-primary-600 hover:text-primary-700 transition-colors duration-200">
+                Tutor Link
+              </Link>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-4">
               <Link href="/login" className="text-primary-600 hover:text-primary-700 font-medium text-sm sm:text-base">
@@ -24,16 +26,13 @@ export default function HomePage() {
               <Link href="/register" className="bg-primary-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-primary-700 font-medium text-sm sm:text-base">
                 Register
               </Link>
-              <Link href="/super-admin-login" className="text-gray-600 hover:text-gray-700 font-medium text-xs sm:text-sm">
-                Admin
-              </Link>
             </div>
           </div>
         </div>
       </header>
 
       {/* Hero Section */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-8 sm:py-16">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-8 sm:py-16 pt-20 sm:pt-24">
         <div className="text-center mb-12 sm:mb-16">
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}

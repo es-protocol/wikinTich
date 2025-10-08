@@ -168,12 +168,15 @@ export default function LoginPage() {
 
           {/* Links */}
           <div className="mt-5 sm:mt-6 text-center space-y-2">
-            <Link 
-              href={ROUTES.REGISTER} 
-              className="block text-primary-600 hover:text-primary-700 font-medium text-sm"
-            >
-              Don't have an account? Register here
-            </Link>
+            <p className="text-sm text-gray-600">
+              Don't have an account?{' '}
+              <Link 
+                href={ROUTES.REGISTER} 
+                className="text-primary-600 hover:text-primary-700 font-medium"
+              >
+                Register here
+              </Link>
+            </p>
             <Link 
               href="/forgot-password" 
               className="block text-gray-600 hover:text-gray-700 text-sm"

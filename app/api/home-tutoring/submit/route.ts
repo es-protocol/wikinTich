@@ -30,10 +30,9 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 //Post Handler:  
 export async function POST(req: Request) {
-  // TEMPORARILY DISABLED: CSRF secret check for debugging
-  // if (!process.env.CSRF_SECRET) {//Require CSRF secret to be set in the environment variables
-  //   return NextResponse.json({ error: 'server_misconfigured' }, { status: 500 })
-  // }
+  if (!process.env.CSRF_SECRET) {//Require CSRF secret to be set in the environment variables
+    return NextResponse.json({ error: 'server_misconfigured' }, { status: 500 })
+  }
 //Check if the request is coming from a local or production environment 
   const origin = req.headers.get('origin') || ''
   const isLocal = origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')
@@ -57,7 +56,7 @@ export async function POST(req: Request) {
   }
 //Recompute the expected signature from the received token using server secret 
   const expected = crypto
-    .createHmac('sha256', process.env.CSRF_SECRET || 'temp-secret-for-debugging')
+    .createHmac('sha256', process.env.CSRF_SECRET)
     .update(csrf_token)
     .digest('base64url')
 //Timing-safe compare with the cookie signature. If mismatch reject

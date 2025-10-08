@@ -6,14 +6,13 @@ const ONE_HOUR = 60 * 60 //1 hour Lifetime
 
 //This is the Get Handler for the CSRF Token endpoint
 export async function GET() {
-  // TEMPORARILY DISABLED: CSRF secret check for debugging
-  // if (!process.env.CSRF_SECRET) { //If the CSRF Secret is not set, return an error
-  //   return NextResponse.json({ error: 'server_misconfigured' }, { status: 500 })
-  // }
+  if (!process.env.CSRF_SECRET) { //If the CSRF Secret is not set, return an error
+    return NextResponse.json({ error: 'server_misconfigured' }, { status: 500 })
+  }
 //Creat a strong random token for the page - It's like a ticket the form will carry 
   const rawToken = crypto.randomBytes(32).toString('base64url')
   const hmac = crypto
-    .createHmac('sha256', process.env.CSRF_SECRET || 'temp-secret-for-debugging')
+    .createHmac('sha256', process.env.CSRF_SECRET)
     .update(rawToken)
     .digest('base64url')
 

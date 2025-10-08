@@ -6,7 +6,12 @@ const ONE_HOUR = 60 * 60 //1 hour Lifetime
 
 //This is the Get Handler for the CSRF Token endpoint
 export async function GET() {
+  // DEBUG: Log environment variable status
+  console.log('CSRF_SECRET exists:', !!process.env.CSRF_SECRET)
+  console.log('CSRF_SECRET length:', process.env.CSRF_SECRET?.length)
+  
   if (!process.env.CSRF_SECRET) { //If the CSRF Secret is not set, return an error
+    console.log('CSRF_SECRET is missing!')
     return NextResponse.json({ error: 'server_misconfigured' }, { status: 500 })
   }
 //Creat a strong random token for the page - It's like a ticket the form will carry 

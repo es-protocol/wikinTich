@@ -6,9 +6,12 @@ const SESSION_COOKIE_NAME = 'tutor_link_session'
 const SESSION_SECRET = process.env.SESSION_SECRET
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000 // 24 hours
 
-// Validate required environment variables
-if (!SESSION_SECRET) {
-  throw new Error('SESSION_SECRET environment variable is required')
+// Helper to validate SESSION_SECRET at runtime (not at import time)
+function getSessionSecret(): string {
+  if (!SESSION_SECRET) {
+    throw new Error('SESSION_SECRET environment variable is required')
+  }
+  return SESSION_SECRET
 }
 
 // Session data interface
@@ -24,11 +27,12 @@ export interface SessionData {
 
 // Create secure session cookie
 export function createSessionCookie(sessionData: SessionData): string {
+  const secret = getSessionSecret()
   const sessionToken = crypto.randomBytes(32).toString('hex')
   const sessionDataString = JSON.stringify(sessionData)
   
   // Create HMAC signature for session data
-  const hmac = crypto.createHmac('sha256', SESSION_SECRET!)
+  const hmac = crypto.createHmac('sha256', secret)
   hmac.update(sessionDataString)
   const signature = hmac.digest('hex')
   
@@ -41,6 +45,7 @@ export function createSessionCookie(sessionData: SessionData): string {
 // Parse and validate session cookie
 export function parseSessionCookie(cookieValue: string): SessionData | null {
   try {
+    const secret = getSessionSecret()
     const parts = cookieValue.split(':')
     
     if (parts.length !== 3) {
@@ -53,7 +58,7 @@ export function parseSessionCookie(cookieValue: string): SessionData | null {
     const sessionDataString = Buffer.from(encodedData, 'base64').toString('utf8')
     
     // Verify HMAC signature
-    const hmac = crypto.createHmac('sha256', SESSION_SECRET!)
+    const hmac = crypto.createHmac('sha256', secret)
     hmac.update(sessionDataString)
     const expectedSignature = hmac.digest('hex')
     

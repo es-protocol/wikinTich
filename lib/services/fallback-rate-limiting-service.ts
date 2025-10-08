@@ -101,11 +101,15 @@ export function cleanupInMemoryRateLimits(): void {
   const now = Date.now()
   const cutoff = now - (24 * 60 * 60 * 1000) // 24 hours
   
-  for (const [key, entry] of rateLimitStore.entries()) {
+  const keysToDelete: string[] = []
+  
+  rateLimitStore.forEach((entry, key) => {
     if (entry.lastRequest < cutoff) {
-      rateLimitStore.delete(key)
+      keysToDelete.push(key)
     }
-  }
+  })
+  
+  keysToDelete.forEach(key => rateLimitStore.delete(key))
 }
 
 /**

@@ -127,11 +127,15 @@ export function cleanupOldLockoutEntries(): void {
   const now = Date.now()
   const cutoff = now - (24 * 60 * 60 * 1000) // 24 hours
   
-  for (const [email, entry] of lockoutStore.entries()) {
+  const emailsToDelete: string[] = []
+  
+  lockoutStore.forEach((entry, email) => {
     if (entry.lastAttempt < cutoff) {
-      lockoutStore.delete(email)
+      emailsToDelete.push(email)
     }
-  }
+  })
+  
+  emailsToDelete.forEach(email => lockoutStore.delete(email))
 }
 
 /**

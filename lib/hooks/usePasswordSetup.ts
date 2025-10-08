@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { validatePasswordComplexity } from '@/lib/security'
 import { ERROR_MESSAGES, ROUTES, UI_CONSTANTS } from '@/lib/constants'
+import { devLog } from '@/lib/utils/logger'
 
 export const usePasswordSetup = () => {
   const [isLoading, setIsLoading] = useState(false)
@@ -8,26 +9,26 @@ export const usePasswordSetup = () => {
   const [success, setSuccess] = useState(false)
 
   const submit = async (email: string, password: string, confirmPassword: string, onSuccessRedirect: (path: string) => void) => {
-    console.log('🚀 Password setup submit called with email:', email)
+    devLog('Password setup submit called')
     setIsLoading(true)
     setError('')
 
     const complexity = validatePasswordComplexity(password)
     if (!complexity.isValid) {
-      console.log('❌ Password complexity failed:', complexity.errors)
+      devLog('Password complexity validation failed')
       setIsLoading(false)
       setError(complexity.errors.join('. '))
       return
     }
 
     if (password !== confirmPassword) {
-      console.log('❌ Password mismatch')
+      devLog('Password mismatch')
       setIsLoading(false)
       setError(ERROR_MESSAGES.PASSWORD_MISMATCH)
       return
     }
 
-    console.log('✅ Validation passed, calling create account API')
+    devLog('Validation passed, calling create account API')
     
     const response = await fetch('/api/create-account', {
       method: 'POST',
@@ -38,10 +39,10 @@ export const usePasswordSetup = () => {
     })
     
     const result = await response.json()
-    console.log('📋 Account creation result:', result)
+    devLog('Account creation result received')
     
     if (!response.ok || !result.success) {
-      console.log('❌ Account creation failed:', result.error)
+      devLog('Account creation failed')
       setIsLoading(false)
       setError(result.error || ERROR_MESSAGES.UNEXPECTED_ERROR)
       return

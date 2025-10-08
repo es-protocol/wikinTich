@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { devLog, devError } from '@/lib/utils/logger'
 
 export default function AuthCallback() {
   const router = useRouter()
@@ -19,7 +20,7 @@ export default function AuthCallback() {
         const refreshToken = params.get('refresh_token')
         const email = params.get('email')
         
-        console.log('Auth callback received:', { accessToken: !!accessToken, refreshToken: !!refreshToken, email })
+        devLog('Auth callback received with tokens and email')
 
         if (accessToken && refreshToken) {
           // Set the session
@@ -29,7 +30,7 @@ export default function AuthCallback() {
           })
 
           if (error) {
-            console.error('Session error:', error)
+            devError('Session error:', error)
             router.push('/verify-email?error=session_failed')
             return
           }
@@ -42,7 +43,7 @@ export default function AuthCallback() {
               
               if (!response.ok || !result.data) {
                 // No registration data found, redirect to registration form
-                console.log('No registration data found, redirecting to registration form')
+                devLog('No registration data found, redirecting to registration form')
                 router.push('/home-tutoring?error=incomplete_registration')
                 return
               }
@@ -51,7 +52,7 @@ export default function AuthCallback() {
               router.push(`/set-password?email=${data.user.email}`)
               return
             } catch (error) {
-              console.error('Error fetching registration data:', error)
+              devError('Error fetching registration data:', error)
               router.push('/home-tutoring?error=incomplete_registration')
               return
             }
@@ -59,10 +60,10 @@ export default function AuthCallback() {
         }
 
         // If we get here, something went wrong
-        console.error('No valid tokens found in callback')
+        devError('No valid tokens found in callback')
         router.push('/verify-email?error=no_tokens')
       } catch (error) {
-        console.error('Auth callback error:', error)
+        devError('Auth callback error:', error)
         router.push('/verify-email?error=callback_failed')
       }
     }

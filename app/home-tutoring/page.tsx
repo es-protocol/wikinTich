@@ -14,7 +14,6 @@ import { DEBOUNCE_DELAYS } from '@/lib/utils/debounce'
 export default function HomeTutoringRequest() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [csrfToken, setCsrfToken] = useState('')
   const [error, setError] = useState(clearErrorState())
   const [countryCode, setCountryCode] = useState('+232') // Default to Sierra Leone
   
@@ -51,22 +50,6 @@ export default function HomeTutoringRequest() {
     location: 'home_visit',
     additionalRequirements: ''
   })
-
-  // Fetch CSRF token from server on mount
-  useEffect(() => {
-    const fetchCsrf = async () => {
-      try {
-        const res = await fetch('/api/csrf', { method: 'GET', credentials: 'include' })
-        if (!res.ok) return
-        const json = await res.json() //convert response to json
-        if (json?.token) setCsrfToken(json.token) //if the json response has a token property
-        //store that token in react's memory so the page can use it
-      } catch {
-        // If CSRF cannot be fetched, submission will fail server-side; no-op here
-      }
-    }
-    fetchCsrf() //run the fuunction we just created  
-  }, [])
 
   // Rate limit countdown timer
   useEffect(() => {
@@ -188,12 +171,24 @@ export default function HomeTutoringRequest() {
       }
 
       // Submit securely to server which validates CSRF and performs OTP + storage
+      // Fetch CSRF token securely on-demand (server-side only)
+      const csrfResponse = await fetch('/api/csrf', { 
+        method: 'GET', 
+        credentials: 'include' 
+      })
+      
+      if (!csrfResponse.ok) {
+        throw new Error('Failed to get security token')
+      }
+      
+      const csrfData = await csrfResponse.json()
+      
       const response = await fetch('/api/home-tutoring/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ 
-          csrf_token: csrfToken, 
+          csrf_token: csrfData.token, 
           formData: {
             ...formData,
             countryCode // Include selected country code
@@ -249,9 +244,6 @@ export default function HomeTutoringRequest() {
           className="bg-white rounded-2xl shadow-lg p-8"
         >
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* CSRF Protection */}
-            <input type="hidden" name="csrf_token" value={csrfToken} />
-            
             {/* Error Display */}
             {error.hasError && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">

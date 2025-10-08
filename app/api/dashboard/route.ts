@@ -1,12 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { getSessionFromRequest } from '@/lib/session-management'
+import { applySecurityHeaders } from '@/lib/services/security-headers-service'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 
+/**
+ * GET handler for dashboard data endpoint
+ * 
+ * Security Features:
+ * - Session-based authentication (must be logged in)
+ * - Authorization check (can only access own data)
+ * - Rate limiting to prevent enumeration
+ * - Security headers
+ * 
+ * Clean Code Principles:
+ * - Single Responsibility: Only fetches dashboard data for authenticated users
+ * - Security: Defense-in-depth with multiple layers
+ */
 export async function GET(req: NextRequest) {
   try {
     // Check if supabaseAdmin is available
     if (!supabaseAdmin) {
       console.error('❌ Supabase admin client not available')
-      return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
+      const errorResponse = NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
+      return applySecurityHeaders(errorResponse)
+    }
+
+    // CRITICAL: Verify session - must be logged in
+    const session = getSessionFromRequest(req)
+    if (!session) {
+      const unauthorizedResponse = NextResponse.json({ 
+        error: 'Unauthorized - Please login first' 
+      }, { status: 401 })
+      return applySecurityHeaders(unauthorizedResponse)
     }
 
     const { searchParams } = new URL(req.url)
@@ -14,26 +40,56 @@ export async function GET(req: NextRequest) {
     const dataType = searchParams.get('type')
 
     if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+      const errorResponse = NextResponse.json({ error: 'User ID is required' }, { status: 400 })
+      return applySecurityHeaders(errorResponse)
     }
 
+    // CRITICAL: Authorization check - can only access own data
+    if (session.userId !== userId) {
+      const forbiddenResponse = NextResponse.json({ 
+        error: 'Forbidden - You can only access your own data' 
+      }, { status: 403 })
+      return applySecurityHeaders(forbiddenResponse)
+    }
+
+    // Rate limiting to prevent abuse
+    const rateLimitCheck = await checkServerSideRateLimit(req, session.email)
+    if (!rateLimitCheck.allowed) {
+      const rateLimitResponse = NextResponse.json({ 
+        error: rateLimitCheck.error || 'Too many requests',
+        resetTime: rateLimitCheck.resetTime
+      }, { status: 429 })
+      return applySecurityHeaders(rateLimitResponse)
+    }
+
+    // Fetch data based on type
+    let result: NextResponse
     switch (dataType) {
       case 'profile':
-        return await fetchUserProfile(userId)
+        result = await fetchUserProfile(userId)
+        break
       case 'students':
-        return await fetchStudents(userId)
+        result = await fetchStudents(userId)
+        break
       case 'requests':
-        return await fetchTutoringRequests(userId)
+        result = await fetchTutoringRequests(userId)
+        break
       case 'sessions':
-        return await fetchSessions(userId)
+        result = await fetchSessions(userId)
+        break
       case 'notifications':
-        return await fetchNotifications(userId)
+        result = await fetchNotifications(userId)
+        break
       default:
-        return NextResponse.json({ error: 'Invalid data type' }, { status: 400 })
+        result = NextResponse.json({ error: 'Invalid data type' }, { status: 400 })
     }
+
+    return applySecurityHeaders(result)
+
   } catch (error) {
-    console.error('Dashboard API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('⚠️ Dashboard API error:', error)
+    const errorResponse = NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return applySecurityHeaders(errorResponse)
   }
 }
 

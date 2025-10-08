@@ -3,19 +3,42 @@ import { supabaseAdmin } from '@/lib/supabase'
 import { verifyPassword } from '@/lib/security'
 import { isAccountLocked, recordFailedAttempt, clearFailedAttempts } from '@/lib/account-lockout'
 import { setSessionCookie, SessionData } from '@/lib/session-management'
+import { applySecurityHeaders } from '@/lib/services/security-headers-service'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 
+/**
+ * POST handler for login endpoint
+ * 
+ * Security Features:
+ * - Rate limiting to prevent brute force attacks
+ * - Account lockout after failed attempts
+ * - Secure password verification
+ * - Security headers
+ */
 export async function POST(req: NextRequest) {
   try {
     // Check if supabaseAdmin is available
     if (!supabaseAdmin) {
       console.error('❌ Supabase admin client not available')
-      return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
+      const errorResponse = NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
+      return applySecurityHeaders(errorResponse)
     }
 
     const { email, password, role } = await req.json()
 
     if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
+      const errorResponse = NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
+      return applySecurityHeaders(errorResponse)
+    }
+
+    // Rate limiting to prevent brute force attacks
+    const rateLimitCheck = await checkServerSideRateLimit(req, email)
+    if (!rateLimitCheck.allowed) {
+      const rateLimitResponse = NextResponse.json({ 
+        error: rateLimitCheck.error || 'Too many login attempts. Please try again later.',
+        resetTime: rateLimitCheck.resetTime
+      }, { status: 429 })
+      return applySecurityHeaders(rateLimitResponse)
     }
 
     // Check if account is locked
@@ -23,9 +46,10 @@ export async function POST(req: NextRequest) {
     if (lockoutCheck.isLocked) {
       const lockedUntil = new Date(lockoutCheck.lockedUntil!)
       const timeRemaining = Math.ceil((lockedUntil.getTime() - Date.now()) / (1000 * 60))
-      return NextResponse.json({
+      const lockoutResponse = NextResponse.json({
         error: `Account is temporarily locked due to too many failed attempts. Please try again in ${timeRemaining} minutes.`
       }, { status: 423 })
+      return applySecurityHeaders(lockoutResponse)
     }
     
     // First, check if user exists in auth_users table
@@ -39,9 +63,10 @@ export async function POST(req: NextRequest) {
     if (authError || !authUser) {
       // Record failed attempt
       await recordFailedAttempt(email)
-      return NextResponse.json({ 
+      const errorResponse = NextResponse.json({ 
         error: 'Invalid email or password. Please check your credentials.' 
       }, { status: 401 })
+      return applySecurityHeaders(errorResponse)
     }
 
     // Verify password using bcrypt
@@ -50,9 +75,10 @@ export async function POST(req: NextRequest) {
     if (!isPasswordValid) {
       // Record failed attempt
       await recordFailedAttempt(email)
-      return NextResponse.json({ 
+      const errorResponse = NextResponse.json({ 
         error: 'Invalid email or password. Please check your credentials.' 
       }, { status: 401 })
+      return applySecurityHeaders(errorResponse)
     }
 
     // Get user profile from profiles table
@@ -65,18 +91,20 @@ export async function POST(req: NextRequest) {
     if (profileError || !profile) {
       // Record failed attempt
       await recordFailedAttempt(email)
-      return NextResponse.json({ 
+      const errorResponse = NextResponse.json({ 
         error: 'User profile not found. Please contact support.' 
       }, { status: 404 })
+      return applySecurityHeaders(errorResponse)
     }
 
     // If role was specified, verify it matches the user's actual role
     if (role && profile.role !== role) {
       // Record failed attempt
       await recordFailedAttempt(email)
-      return NextResponse.json({ 
+      const errorResponse = NextResponse.json({ 
         error: `This account is registered as a ${profile.role.replace('_', ' ')}. Please select the correct role.` 
       }, { status: 403 })
+      return applySecurityHeaders(errorResponse)
     }
 
     // Clear failed attempts on successful login
@@ -115,12 +143,13 @@ export async function POST(req: NextRequest) {
     // Set secure session cookie
     setSessionCookie(response, sessionData)
 
-    return response
+    return applySecurityHeaders(response)
     
   } catch (error) {
-    console.error('Login API error:', error)
-    return NextResponse.json({ 
+    console.error('⚠️ Login API error:', error)
+    const errorResponse = NextResponse.json({ 
       error: 'An unexpected error occurred. Please try again.' 
     }, { status: 500 })
+    return applySecurityHeaders(errorResponse)
   }
 }

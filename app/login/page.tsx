@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
 import { ROUTES } from '@/lib/constants'
+import { devError } from '@/lib/utils/logger'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -43,7 +44,7 @@ export default function LoginPage() {
         setError(result.error || 'Login failed. Please try again.')
       }
     } catch (error) {
-      console.error('Login error:', error)
+      devError('Login error:', error)
       setError('An unexpected error occurred. Please try again.')
     }
   }

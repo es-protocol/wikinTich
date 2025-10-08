@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { supabase } from './supabase'
 import { useRouter } from 'next/navigation'
+import { devError } from '@/lib/utils/logger'
 
 // User interface
 interface User {
@@ -59,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // No valid session found
       setUser(null)
     } catch (error) {
-      console.error('Auth check error:', error)
+      devError('Auth check error:', error)
       setUser(null)
     } finally {
       setIsLoading(false)
@@ -95,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true }
       
     } catch (error) {
-      console.error('Login error:', error)
+      devError('Login error:', error)
       return { 
         success: false, 
         error: 'An unexpected error occurred. Please try again.' 
@@ -114,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: 'include'
       })
     } catch (error) {
-      console.error('Logout error:', error)
+      devError('Logout error:', error)
     } finally {
       // Clear user state and redirect
       setUser(null)

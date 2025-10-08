@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
+import { devError } from '@/lib/utils/logger'
 
 // Session management constants
 const SESSION_COOKIE_NAME = 'tutor_link_session'
@@ -76,7 +77,7 @@ export function parseSessionCookie(cookieValue: string): SessionData | null {
     
     return sessionData
   } catch (error) {
-    console.error('Error parsing session cookie:', error)
+    devError('Error parsing session cookie:', error)
     return null
   }
 }

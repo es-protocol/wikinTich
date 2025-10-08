@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { PASSWORD_CONSTANTS, VALIDATION_CONSTANTS, RATE_LIMIT_CONSTANTS, COUNTRY_CODES } from './constants'
+import { sanitizeTextInput, sanitizeEmail, sanitizePhoneNumber, sanitizeNumericInput } from './services/input-sanitization-service'
 
 // Password hashing utilities
 export const hashPassword = async (password: string): Promise<string> => {
@@ -40,14 +41,20 @@ export const validatePasswordComplexity = (password: string): { isValid: boolean
   }
 }
 
-// Input sanitization
+/**
+ * Input sanitization - now using comprehensive sanitization service
+ * 
+ * Clean Code Principles:
+ * - Single Responsibility: Delegates to specialized service
+ * - Maintainability: Centralized sanitization logic
+ * - Security: Comprehensive protection against multiple attack vectors
+ */
 export const sanitizeInput = (input: string): string => {
-  return input
-    .trim()
-    .replace(/[<>]/g, '') // Remove potential HTML tags
-    .replace(/['"]/g, '') // Remove quotes to prevent injection
-    .substring(0, VALIDATION_CONSTANTS.MAX_INPUT_LENGTH) // Limit length
+  return sanitizeTextInput(input)
 }
+
+// Export specialized sanitization functions for better code clarity
+export { sanitizeEmail, sanitizePhoneNumber, sanitizeNumericInput } from './services/input-sanitization-service'
 
 // Validation result type
 export interface ValidationResult {

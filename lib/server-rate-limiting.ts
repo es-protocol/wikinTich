@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { checkInMemoryRateLimit } from '@/lib/services/fallback-rate-limiting-service'
 
 // Rate limiting constants
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
@@ -28,7 +29,14 @@ function getClientIP(request: NextRequest): string {
   return 'unknown'
 }
 
-// Check rate limit for email + IP combination
+/**
+ * Check rate limit for email + IP combination
+ * 
+ * Clean Code Principles:
+ * - Reliability: Falls back to in-memory rate limiting on database errors
+ * - Security: Never fails open (always enforces limits)
+ * - Single Responsibility: Only checks rate limits
+ */
 export async function checkServerSideRateLimit(
   request: NextRequest, 
   email: string
@@ -38,18 +46,18 @@ export async function checkServerSideRateLimit(
   remainingRequests?: number;
   error?: string 
 }> {
+  const ip = getClientIP(request)
+  const rateLimitKey = `${email}:${ip}`
+  
   try {
+    // If supabaseAdmin is not available, use fallback in-memory rate limiting
     if (!supabaseAdmin) {
-      console.warn('Supabase admin client not available, allowing request')
-      return { allowed: true }
+      console.warn('⚠️ Supabase admin client not available, using in-memory rate limiting')
+      return checkInMemoryRateLimit(rateLimitKey)
     }
     
-    const ip = getClientIP(request)
     const now = Date.now()
     const windowStart = Math.floor(now / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_WINDOW_MS
-    
-    // Create unique key for this email + IP combination
-    const rateLimitKey = `${email}:${ip}`
     
     // Check existing rate limit record
     const { data: existingRecord, error: fetchError } = await supabaseAdmin
@@ -59,8 +67,8 @@ export async function checkServerSideRateLimit(
       .single()
     
     if (fetchError && fetchError.code !== 'PGRST116') {
-      console.error('Error fetching rate limit:', fetchError)
-      return { allowed: true } // Allow on error to prevent blocking legitimate users
+      console.error('⚠️ Error fetching rate limit, falling back to in-memory:', fetchError)
+      return checkInMemoryRateLimit(rateLimitKey)
     }
     
     if (!existingRecord) {
@@ -78,8 +86,8 @@ export async function checkServerSideRateLimit(
         })
       
       if (insertError) {
-        console.error('Error creating rate limit record:', insertError)
-        return { allowed: true }
+        console.error('⚠️ Error creating rate limit record, falling back to in-memory:', insertError)
+        return checkInMemoryRateLimit(rateLimitKey)
       }
       
       return { 
@@ -102,8 +110,8 @@ export async function checkServerSideRateLimit(
         .eq('key', rateLimitKey)
       
       if (updateError) {
-        console.error('Error updating rate limit:', updateError)
-        return { allowed: true }
+        console.error('⚠️ Error updating rate limit, falling back to in-memory:', updateError)
+        return checkInMemoryRateLimit(rateLimitKey)
       }
       
       return { 
@@ -134,8 +142,8 @@ export async function checkServerSideRateLimit(
       .eq('key', rateLimitKey)
     
     if (incrementError) {
-      console.error('Error incrementing rate limit:', incrementError)
-      return { allowed: true }
+      console.error('⚠️ Error incrementing rate limit, falling back to in-memory:', incrementError)
+      return checkInMemoryRateLimit(rateLimitKey)
     }
     
     return { 
@@ -144,8 +152,8 @@ export async function checkServerSideRateLimit(
     }
     
   } catch (error) {
-    console.error('Rate limit check error:', error)
-    return { allowed: true } // Allow on error
+    console.error('⚠️ Rate limit check error, falling back to in-memory:', error)
+    return checkInMemoryRateLimit(rateLimitKey)
   }
 }
 

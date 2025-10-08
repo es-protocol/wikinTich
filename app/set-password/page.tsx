@@ -5,9 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { EyeIcon, EyeSlashIcon, KeyIcon } from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
-import { generateCSRFToken } from '@/lib/security'
 import { usePasswordSetup } from '@/lib/hooks/usePasswordSetup'
 import { ROUTES } from '@/lib/constants'
+import { devLog, devError } from '@/lib/utils/logger'
 
 export default function SetPasswordPage() {
   const router = useRouter()
@@ -19,28 +19,24 @@ export default function SetPasswordPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const { isLoading, error, success, setError, submit } = usePasswordSetup()
-  const [csrfToken, setCsrfToken] = useState('')
 
   useEffect(() => {
-    // Generate CSRF token
-    setCsrfToken(generateCSRFToken())
-    
     const emailParam = searchParams.get('email')
     const accessToken = searchParams.get('access_token')
     const refreshToken = searchParams.get('refresh_token')
     
-    console.log('🔍 Set-password page loaded with:', { emailParam, accessToken: !!accessToken, refreshToken: !!refreshToken })
+    devLog('Set-password page loaded with email and tokens')
     
     if (emailParam) {
-      console.log('📧 Setting email from URL param:', emailParam)
+      devLog('Setting email from URL param')
       setEmail(emailParam)
     } else if (accessToken && refreshToken) {
       // This is a direct verification callback from Supabase
-      console.log('🔗 Handling verification callback')
+      devLog('Handling verification callback')
       handleVerification(accessToken, refreshToken)
     } else if (!email && !accessToken && !refreshToken) {
       // Only redirect if we have absolutely nothing
-      console.log('❌ No email or tokens found, redirecting to home')
+      devLog('No email or tokens found, redirecting to home')
       router.push(ROUTES.HOME)
     }
   }, [searchParams]) // Remove router from dependencies to prevent redirect loop
@@ -62,7 +58,7 @@ export default function SetPasswordPage() {
         // Don't redirect - let the user set their password
       }
     } catch (error) {
-      console.error('Verification error:', error)
+      devError('Verification error:', error)
       setError('Verification failed. Please try again.')
     }
   }
@@ -129,9 +125,6 @@ export default function SetPasswordPage() {
           className="bg-white rounded-2xl shadow-lg p-8"
         >
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* CSRF Protection */}
-            <input type="hidden" name="csrf_token" value={csrfToken} />
-            
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <p className="text-red-600 text-sm">{error}</p>

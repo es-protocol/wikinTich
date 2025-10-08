@@ -1,5 +1,10 @@
 import { supabase } from './supabase'
 import { LOCKOUT_CONSTANTS } from './constants'
+import { 
+  isAccountLockedInMemory, 
+  recordFailedAttemptInMemory, 
+  clearFailedAttemptsInMemory 
+} from './services/fallback-account-lockout-service'
 
 export interface FailedAttempt {
   id: string
@@ -12,7 +17,13 @@ export interface FailedAttempt {
   updated_at: string
 }
 
-// Check if account is locked
+/**
+ * Check if account is locked
+ * 
+ * Clean Code Principles:
+ * - Reliability: Falls back to in-memory lockout on database errors
+ * - Security: Never fails open (always enforces lockout)
+ */
 export const isAccountLocked = async (email: string): Promise<{ isLocked: boolean; lockedUntil?: string; remainingAttempts?: number }> => {
   try {
     const { data, error } = await supabase
@@ -22,8 +33,8 @@ export const isAccountLocked = async (email: string): Promise<{ isLocked: boolea
       .single()
 
     if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
-      console.error('Error checking account lockout:', error)
-      return { isLocked: false }
+      console.error('⚠️ Error checking account lockout, falling back to in-memory:', error)
+      return isAccountLockedInMemory(email)
     }
 
     if (!data) {
@@ -47,12 +58,18 @@ export const isAccountLocked = async (email: string): Promise<{ isLocked: boolea
     }
 
   } catch (error) {
-    console.error('Error checking account lockout:', error)
-    return { isLocked: false }
+    console.error('⚠️ Error checking account lockout, falling back to in-memory:', error)
+    return isAccountLockedInMemory(email)
   }
 }
 
-// Record a failed login attempt
+/**
+ * Record a failed login attempt
+ * 
+ * Clean Code Principles:
+ * - Reliability: Falls back to in-memory tracking on database errors
+ * - Security: Never fails open (always tracks attempts)
+ */
 export const recordFailedAttempt = async (email: string): Promise<{ success: boolean; isLocked: boolean; lockedUntil?: string }> => {
   try {
     // Get current failed attempts
@@ -63,8 +80,8 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
       .single()
 
     if (fetchError && fetchError.code !== 'PGRST116') {
-      console.error('Error fetching failed attempts:', fetchError)
-      return { success: false, isLocked: false }
+      console.error('⚠️ Error fetching failed attempts, falling back to in-memory:', fetchError)
+      return recordFailedAttemptInMemory(email)
     }
 
     const now = new Date()
@@ -84,8 +101,8 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
         })
 
       if (insertError) {
-        console.error('Error inserting failed attempt:', insertError)
-        return { success: false, isLocked: false }
+        console.error('⚠️ Error inserting failed attempt, falling back to in-memory:', insertError)
+        return recordFailedAttemptInMemory(email)
       }
 
       return { success: true, isLocked: false }
@@ -114,8 +131,8 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
       .eq('email', email)
 
     if (updateError) {
-      console.error('Error updating failed attempt:', updateError)
-      return { success: false, isLocked: false }
+      console.error('⚠️ Error updating failed attempt, falling back to in-memory:', updateError)
+      return recordFailedAttemptInMemory(email)
     }
 
     return { 
@@ -125,12 +142,18 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
     }
 
   } catch (error) {
-    console.error('Error recording failed attempt:', error)
-    return { success: false, isLocked: false }
+    console.error('⚠️ Error recording failed attempt, falling back to in-memory:', error)
+    return recordFailedAttemptInMemory(email)
   }
 }
 
-// Clear failed attempts on successful login
+/**
+ * Clear failed attempts on successful login
+ * 
+ * Clean Code Principles:
+ * - Reliability: Falls back to in-memory clearing on database errors
+ * - Best Practice: Always clears attempts on successful login
+ */
 export const clearFailedAttempts = async (email: string): Promise<{ success: boolean }> => {
   try {
     const { error } = await supabase
@@ -139,14 +162,16 @@ export const clearFailedAttempts = async (email: string): Promise<{ success: boo
       .eq('email', email)
 
     if (error) {
-      console.error('Error clearing failed attempts:', error)
-      return { success: false }
+      console.error('⚠️ Error clearing failed attempts, falling back to in-memory:', error)
+      return clearFailedAttemptsInMemory(email)
     }
 
+    // Also clear in-memory to keep both in sync
+    clearFailedAttemptsInMemory(email)
     return { success: true }
   } catch (error) {
-    console.error('Error clearing failed attempts:', error)
-    return { success: false }
+    console.error('⚠️ Error clearing failed attempts, falling back to in-memory:', error)
+    return clearFailedAttemptsInMemory(email)
   }
 }
 

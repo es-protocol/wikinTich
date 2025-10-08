@@ -21,7 +21,7 @@ export default function RegisterPage() {
               <Link href="/login" className="text-primary-600 hover:text-primary-700 font-medium">
                 Login
               </Link>
-              <Link href="/apply-tutor" className="text-secondary-600 hover:text-secondary-700 font-medium">
+              <Link href="/apply-tutor/under-construction" className="text-secondary-600 hover:text-secondary-700 font-medium">
                 Apply to be a Tutor
               </Link>
             </div>

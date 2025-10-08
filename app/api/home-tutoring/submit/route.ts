@@ -30,9 +30,10 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 //Post Handler:  
 export async function POST(req: Request) {
-  if (!process.env.CSRF_SECRET) {//Require CSRF secret to be set in the environment variables
-    return NextResponse.json({ error: 'server_misconfigured' }, { status: 500 })
-  }
+  // TEMPORARILY DISABLED: CSRF secret check for debugging
+  // if (!process.env.CSRF_SECRET) {//Require CSRF secret to be set in the environment variables
+  //   return NextResponse.json({ error: 'server_misconfigured' }, { status: 500 })
+  // }
 //Check if the request is coming from a local or production environment 
   const origin = req.headers.get('origin') || ''
   const isLocal = origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')

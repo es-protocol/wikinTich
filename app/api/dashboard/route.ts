@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Rate limiting to prevent abuse
-    const rateLimitCheck = await checkServerSideRateLimit(req, session.email)
+    const rateLimitCheck = await checkServerSideRateLimit(req, session.email, 'dashboard')
     if (!rateLimitCheck.allowed) {
       const rateLimitResponse = NextResponse.json({ 
         error: rateLimitCheck.error || 'Too many requests',

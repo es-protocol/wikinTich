@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Rate limiting to prevent brute force attacks
-    const rateLimitCheck = await checkServerSideRateLimit(req, email)
+    const rateLimitCheck = await checkServerSideRateLimit(req, email, 'login')
     if (!rateLimitCheck.allowed) {
       const rateLimitResponse = NextResponse.json({ 
         error: rateLimitCheck.error || 'Too many login attempts. Please try again later.',

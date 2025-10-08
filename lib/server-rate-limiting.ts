@@ -2,9 +2,18 @@ import { NextRequest } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { checkInMemoryRateLimit } from '@/lib/services/fallback-rate-limiting-service'
 
-// Rate limiting constants
+// Rate limiting constants - action-specific limits
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
-const MAX_REQUESTS_PER_WINDOW = 5 // 5 requests per 15 minutes
+
+// Different limits for different actions (more user-friendly)
+const RATE_LIMITS = {
+  registration: 3, // 3 registration submissions per 15 minutes
+  login: 10, // 10 login attempts per 15 minutes (account lockout handles security)
+  dashboard: 100, // 100 dashboard requests per 15 minutes (normal usage)
+} as const
+
+// Legacy constant for backward compatibility
+const MAX_REQUESTS_PER_WINDOW = 5 // Default fallback
 const MAX_REQUESTS_PER_HOUR = 20 // 20 requests per hour
 
 // Rate limit entry interface
@@ -30,16 +39,18 @@ function getClientIP(request: NextRequest): string {
 }
 
 /**
- * Check rate limit for email + IP combination
+ * Check rate limit for email + IP combination with action context
  * 
  * Clean Code Principles:
  * - Reliability: Falls back to in-memory rate limiting on database errors
  * - Security: Never fails open (always enforces limits)
  * - Single Responsibility: Only checks rate limits
+ * - Action Context: Different limits for different actions (login vs registration)
  */
 export async function checkServerSideRateLimit(
   request: NextRequest, 
-  email: string
+  email: string,
+  action: 'registration' | 'login' | 'dashboard' = 'registration'
 ): Promise<{ 
   allowed: boolean; 
   resetTime?: number; 
@@ -47,7 +58,11 @@ export async function checkServerSideRateLimit(
   error?: string 
 }> {
   const ip = getClientIP(request)
-  const rateLimitKey = `${email}:${ip}`
+  // Include action in key to separate rate limits for different actions
+  const rateLimitKey = `${action}:${email}:${ip}`
+  
+  // Get action-specific limit
+  const maxRequests = RATE_LIMITS[action] || MAX_REQUESTS_PER_WINDOW
   
   try {
     // If supabaseAdmin is not available, use fallback in-memory rate limiting
@@ -92,7 +107,7 @@ export async function checkServerSideRateLimit(
       
       return { 
         allowed: true, 
-        remainingRequests: MAX_REQUESTS_PER_WINDOW - 1 
+        remainingRequests: maxRequests - 1 
       }
     }
     
@@ -116,12 +131,12 @@ export async function checkServerSideRateLimit(
       
       return { 
         allowed: true, 
-        remainingRequests: MAX_REQUESTS_PER_WINDOW - 1 
+        remainingRequests: maxRequests - 1 
       }
     }
     
     // Check if limit exceeded
-    if (existingRecord.request_count >= MAX_REQUESTS_PER_WINDOW) {
+    if (existingRecord.request_count >= maxRequests) {
       const resetTime = recordWindowStart + RATE_LIMIT_WINDOW_MS
       const timeRemaining = Math.ceil((resetTime - now) / 1000)
       
@@ -148,7 +163,7 @@ export async function checkServerSideRateLimit(
     
     return { 
       allowed: true, 
-      remainingRequests: MAX_REQUESTS_PER_WINDOW - (existingRecord.request_count + 1)
+      remainingRequests: maxRequests - (existingRecord.request_count + 1)
     }
     
   } catch (error) {

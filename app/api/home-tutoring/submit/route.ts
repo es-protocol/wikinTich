@@ -102,8 +102,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: formValidation.error }, { status: 400 })
     }
 
-    // Server-side rate limiting
-    const rateLimitCheck = await checkServerSideRateLimit(req, formData.parentEmail)
+    // Server-side rate limiting for registration
+    const rateLimitCheck = await checkServerSideRateLimit(req, formData.parentEmail, 'registration')
     if (!rateLimitCheck.allowed) {
       return NextResponse.json({ 
         error: rateLimitCheck.error || 'Rate limit exceeded',

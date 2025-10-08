@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Rate limiting to prevent enumeration attacks
-    const rateLimitCheck = await checkServerSideRateLimit(req, email)
+    const rateLimitCheck = await checkServerSideRateLimit(req, email, 'registration')
     if (!rateLimitCheck.allowed) {
       const rateLimitResponse = NextResponse.json({ 
         error: rateLimitCheck.error || 'Too many requests',

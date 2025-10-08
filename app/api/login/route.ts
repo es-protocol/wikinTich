@@ -6,6 +6,12 @@ import { setSessionCookie, SessionData } from '@/lib/session-management'
 
 export async function POST(req: NextRequest) {
   try {
+    // Check if supabaseAdmin is available
+    if (!supabaseAdmin) {
+      console.error('❌ Supabase admin client not available')
+      return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
+    }
+
     const { email, password, role } = await req.json()
 
     if (!email || !password) {

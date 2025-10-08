@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   }
 //Recompute the expected signature from the received token using server secret 
   const expected = crypto
-    .createHmac('sha256', process.env.CSRF_SECRET)
+    .createHmac('sha256', process.env.CSRF_SECRET || 'temp-secret-for-debugging')
     .update(csrf_token)
     .digest('base64url')
 //Timing-safe compare with the cookie signature. If mismatch reject

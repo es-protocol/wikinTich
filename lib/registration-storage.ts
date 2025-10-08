@@ -43,7 +43,11 @@ export const storeRegistrationData = async (
   type: typeof REGISTRATION_TYPES.PARENT | typeof REGISTRATION_TYPES.TUTOR
 ): Promise<{ success: boolean; error?: string }> => {
   try {
+    console.log('🔍 Storage debug - supabaseAdmin available:', !!supabaseAdmin)
+    console.log('🔍 Storage debug - SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ Set' : '❌ Missing')
+    
     if (!supabaseAdmin) {
+      console.error('❌ Supabase admin client not available - SUPABASE_SERVICE_ROLE_KEY missing')
       return { success: false, error: 'Service role key not configured' }
     }
 

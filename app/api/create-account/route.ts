@@ -1,35 +1,31 @@
-import { supabase } from '@/lib/supabase'
+import { NextRequest, NextResponse } from 'next/server'
+import { supabaseAdmin } from '@/lib/supabase'
 import { hashPassword, sanitizeInput } from '@/lib/security'
 import { getRegistrationData, deleteRegistrationData } from '@/lib/registration-storage'
 import { ERROR_MESSAGES } from '@/lib/constants'
 
-export interface ServiceResult {
-  success: boolean
-  error?: string
-}
-
-// Creates a parent account using pending registration data
-export const createParentAccountFromPending = async (
-  email: string,
-  plainPassword: string
-): Promise<ServiceResult> => {
+export async function POST(req: NextRequest) {
   try {
-    console.log('🔍 Looking for registration data for email:', email)
-    
-    // Use API route to get registration data (server-side)
-    const response = await fetch(`/api/registration-data?email=${encodeURIComponent(email)}`)
-    const result = await response.json()
-    
-    if (!response.ok || !result.data) {
-      console.error('❌ Registration data not found for email:', email)
-      return { success: false, error: ERROR_MESSAGES.REGISTRATION_DATA_NOT_FOUND }
+    const { email, password } = await req.json()
+
+    if (!email || !password) {
+      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
     }
 
-    const pendingData = result.data.registration_data
+    console.log('🔍 Looking for registration data for email:', email)
+    const registrationResult = await getRegistrationData(email)
+    console.log('📋 Registration result:', registrationResult)
+    
+    if (!registrationResult.success || !registrationResult.data) {
+      console.error('❌ Registration data not found for email:', email)
+      return NextResponse.json({ error: ERROR_MESSAGES.REGISTRATION_DATA_NOT_FOUND }, { status: 404 })
+    }
+
+    const pendingData = registrationResult.data.registration_data
 
     // 1) auth_users
-    const passwordHash = await hashPassword(plainPassword)
-    const { error: authError } = await supabase
+    const passwordHash = await hashPassword(password)
+    const { error: authError } = await supabaseAdmin
       .from('auth_users')
       .insert({
         email,
@@ -39,11 +35,11 @@ export const createParentAccountFromPending = async (
       })
 
     if (authError) {
-      return { success: false, error: authError.message }
+      return NextResponse.json({ error: authError.message }, { status: 500 })
     }
 
     // 2) profiles
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .insert({
         email,
@@ -55,12 +51,12 @@ export const createParentAccountFromPending = async (
       .single()
 
     if (profileError || !profile) {
-      return { success: false, error: profileError?.message || 'Profile creation failed' }
+      return NextResponse.json({ error: profileError?.message || 'Profile creation failed' }, { status: 500 })
     }
 
     // 3) students
     const studentAge = pendingData.studentAge ? parseInt(pendingData.studentAge) : null
-    const { data: student, error: studentError } = await supabase
+    const { data: student, error: studentError } = await supabaseAdmin
       .from('students')
       .insert({
         parent_id: profile.id,
@@ -72,11 +68,11 @@ export const createParentAccountFromPending = async (
       .single()
 
     if (studentError || !student) {
-      return { success: false, error: studentError?.message || 'Student creation failed' }
+      return NextResponse.json({ error: studentError?.message || 'Student creation failed' }, { status: 500 })
     }
 
     // 4) home_tutoring_requests
-    const { error: requestError } = await supabase
+    const { error: requestError } = await supabaseAdmin
       .from('home_tutoring_requests')
       .insert({
         parent_id: profile.id,
@@ -91,22 +87,15 @@ export const createParentAccountFromPending = async (
       })
 
     if (requestError) {
-      return { success: false, error: requestError.message }
+      return NextResponse.json({ error: requestError.message }, { status: 500 })
     }
 
     // 5) cleanup pending
-    const deleteResponse = await fetch(`/api/registration-data/delete?email=${encodeURIComponent(email)}`, {
-      method: 'DELETE'
-    })
-    
-    if (!deleteResponse.ok) {
-      console.warn('Failed to cleanup registration data, but account was created successfully')
-    }
+    await deleteRegistrationData(email)
 
-    return { success: true }
+    return NextResponse.json({ success: true })
   } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+    console.error('Error in create account API:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
-
-

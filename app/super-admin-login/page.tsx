@@ -141,14 +141,6 @@ export default function SuperAdminLogin() {
             </div>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-500">
-              Temporary credentials for development
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              Email: wikindoam@gmail.com | Password: bobismyfather
-            </p>
-          </div>
         </motion.div>
 
         <motion.div

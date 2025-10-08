@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { validatePasswordComplexity } from '@/lib/security'
 import { ERROR_MESSAGES, ROUTES, UI_CONSTANTS } from '@/lib/constants'
-import { createParentAccountFromPending } from '@/lib/services/registration-service'
 
 export const usePasswordSetup = () => {
   const [isLoading, setIsLoading] = useState(false)
@@ -28,11 +27,20 @@ export const usePasswordSetup = () => {
       return
     }
 
-    console.log('✅ Validation passed, calling createParentAccountFromPending')
-    const result = await createParentAccountFromPending(email, password)
+    console.log('✅ Validation passed, calling create account API')
+    
+    const response = await fetch('/api/create-account', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password })
+    })
+    
+    const result = await response.json()
     console.log('📋 Account creation result:', result)
     
-    if (!result.success) {
+    if (!response.ok || !result.success) {
       console.log('❌ Account creation failed:', result.error)
       setIsLoading(false)
       setError(result.error || ERROR_MESSAGES.UNEXPECTED_ERROR)

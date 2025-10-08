@@ -3,7 +3,6 @@
 import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { getRegistrationData } from '@/lib/registration-storage'
 
 export default function AuthCallback() {
   const router = useRouter()
@@ -36,19 +35,26 @@ export default function AuthCallback() {
           }
 
           if (data.user?.email) {
-            // Check if we have server-side registration data
-            const registrationResult = await getRegistrationData(data.user.email)
-            
-            if (!registrationResult.success || !registrationResult.data) {
-              // No registration data found, redirect to registration form
-              console.log('No registration data found, redirecting to registration form')
+            // Check if we have server-side registration data via API
+            try {
+              const response = await fetch(`/api/registration-data?email=${encodeURIComponent(data.user.email)}`)
+              const result = await response.json()
+              
+              if (!response.ok || !result.data) {
+                // No registration data found, redirect to registration form
+                console.log('No registration data found, redirecting to registration form')
+                router.push('/home-tutoring?error=incomplete_registration')
+                return
+              }
+              
+              // Registration data found, redirect to set-password
+              router.push(`/set-password?email=${data.user.email}`)
+              return
+            } catch (error) {
+              console.error('Error fetching registration data:', error)
               router.push('/home-tutoring?error=incomplete_registration')
               return
             }
-            
-            // Registration data found, redirect to set-password
-            router.push(`/set-password?email=${data.user.email}`)
-            return
           }
         }
 

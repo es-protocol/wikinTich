@@ -2,6 +2,13 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+// Debug environment variables
+console.log('🔍 Environment check:')
+console.log('SUPABASE_URL:', supabaseUrl ? '✅ Set' : '❌ Missing')
+console.log('SUPABASE_ANON_KEY:', supabaseAnonKey ? '✅ Set' : '❌ Missing')
+console.log('SUPABASE_SERVICE_ROLE_KEY:', supabaseServiceKey ? '✅ Set' : '❌ Missing')
 
 // Function to get the correct redirect URL for email verification
 export const getEmailRedirectUrl = () => {
@@ -30,6 +37,7 @@ export const getEmailRedirectUrl = () => {
   return redirectUrl
 }
 
+// Client-side Supabase client (uses anonymous key)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -37,3 +45,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true
   }
 })
+
+// Server-side Supabase client (uses service role key - bypasses RLS)
+export const supabaseAdmin = supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    })
+  : null

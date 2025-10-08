@@ -26,7 +26,6 @@ import {
   UserPlusIcon,
   ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline'
-import { supabase } from '@/lib/supabase'
 import { sanitizeInput } from '@/lib/security'
 import {
   ProfileHeaderSkeleton,
@@ -512,25 +511,15 @@ export default function DashboardWithChildren() {
         return
       }
 
-      // Fetch user profile from database
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('email', user.email)
-        .eq('role', 'parent')
-        .single()
+      const response = await fetch(`/api/dashboard?userId=${user.id}&type=profile`)
+      const result = await response.json()
 
-      if (error) {
-        console.error('Error fetching profile:', error)
+      if (!response.ok) {
+        console.error('Error fetching user profile:', result.error)
         return
       }
 
-      if (!profile) {
-        console.error('Profile not found')
-        return
-      }
-
-      setUserProfile(profile)
+      setUserProfile(result.data)
       setIsLoading(false)
       
     } catch (error) {
@@ -591,22 +580,21 @@ export default function DashboardWithChildren() {
     try {
       setIsLoadingStudents(true)
       
-      const { data: studentsData, error } = await supabase
-        .from('students')
-        .select('*')
-        .eq('parent_id', userProfile.id)
-        .order('name', { ascending: true })
+      if (!userProfile) return
 
-      if (error) {
-        console.error('Error fetching students:', error)
+      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=students`)
+      const result = await response.json()
+
+      if (!response.ok) {
+        console.error('Error fetching students:', result.error)
         return
       }
 
-      setStudents(studentsData || [])
+      setStudents(result.data || [])
       
       // Auto-select first child if available
-      if (studentsData && studentsData.length > 0 && !selectedStudent) {
-        setSelectedStudent(studentsData[0])
+      if (result.data && result.data.length > 0 && !selectedStudent) {
+        setSelectedStudent(result.data[0])
       }
     } catch (error) {
       console.error('Error fetching students:', error)
@@ -619,25 +607,23 @@ export default function DashboardWithChildren() {
     try {
       setIsLoadingRequests(true)
       
-      let query = supabase
-        .from('home_tutoring_requests')
-        .select('*')
-        .eq('parent_id', userProfile.id)
-        .order('created_at', { ascending: false })
+      if (!userProfile) return
 
-      // Filter by selected student if one is selected
-      if (selectedStudent) {
-        query = query.eq('student_id', selectedStudent.id)
-      }
+      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=requests`)
+      const result = await response.json()
 
-      const { data: requests, error } = await query
-
-      if (error) {
-        console.error('Error fetching tutoring requests:', error)
+      if (!response.ok) {
+        console.error('Error fetching tutoring requests:', result.error)
         return
       }
 
-      setTutoringRequests(requests || [])
+      // Filter by selected student if one is selected
+      let filteredRequests = result.data || []
+      if (selectedStudent) {
+        filteredRequests = filteredRequests.filter((req: any) => req.student_id === selectedStudent.id)
+      }
+
+      setTutoringRequests(filteredRequests)
     } catch (error) {
       console.error('Error fetching tutoring requests:', error)
     } finally {
@@ -649,34 +635,29 @@ export default function DashboardWithChildren() {
     try {
       setIsLoadingSessions(true)
       
-      let query = supabase
-        .from('home_tutoring_sessions')
-        .select(`
-          *,
-          home_tutoring_requests!inner(parent_id)
-        `)
-        .eq('home_tutoring_requests.parent_id', userProfile.id)
-        .order('session_date', { ascending: false })
+      if (!userProfile) return
 
-      // Filter by selected student if one is selected
-      if (selectedStudent) {
-        query = query.eq('student_id', selectedStudent.id)
-      }
+      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=sessions`)
+      const result = await response.json()
 
-      const { data: sessionsData, error } = await query
-
-      if (error) {
-        console.error('Error fetching sessions:', error)
+      if (!response.ok) {
+        console.error('Error fetching sessions:', result.error)
         return
       }
 
-      console.log('Debug: fetchSessions returned data:', sessionsData)
-      console.log('Debug: Number of sessions:', sessionsData?.length || 0)
-      if (sessionsData && sessionsData.length > 0) {
-        console.log('Debug: First session status:', sessionsData[0].status)
+      // Filter by selected student if one is selected
+      let filteredSessions = result.data || []
+      if (selectedStudent) {
+        filteredSessions = filteredSessions.filter((session: any) => session.student_id === selectedStudent.id)
       }
 
-      setSessions(sessionsData || [])
+      console.log('Debug: fetchSessions returned data:', filteredSessions)
+      console.log('Debug: Number of sessions:', filteredSessions?.length || 0)
+      if (filteredSessions && filteredSessions.length > 0) {
+        console.log('Debug: First session status:', filteredSessions[0].status)
+      }
+
+      setSessions(filteredSessions)
     } catch (error) {
       console.error('Error fetching sessions:', error)
     } finally {
@@ -1299,42 +1280,39 @@ export default function DashboardWithChildren() {
     try {
       if (!userProfile) return
       
-      const { data: notifications, error } = await supabase
-        .from('parent_notifications')
-        .select('*')
-        .eq('parent_id', userProfile.id)
-        .order('created_at', { ascending: false })
-        .limit(50) // Limit to last 50 notifications
+      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=notifications`)
+      const result = await response.json()
 
-      if (error) {
-        console.error('Error fetching parent notifications:', error)
-      } else {
-        // Transform notifications to match the local state format
-        const transformedNotifications = (notifications || []).map(notif => {
-          let type: 'session_proposed' | 'session_approved' | 'session_rejected' | 'session_scheduled' = 'session_approved'
-          
-          // Map notification titles to types
-          if (notif.title?.includes('Approved')) {
-            type = 'session_approved'
-          } else if (notif.title?.includes('Rejected')) {
-            type = 'session_rejected'
-          } else if (notif.title?.includes('Scheduled')) {
-            type = 'session_scheduled'
-          } else if (notif.title?.includes('Proposed')) {
-            type = 'session_proposed'
-          }
-          
-          return {
-            id: notif.id,
-            type,
-            message: notif.message,
-            sessionId: undefined, // Could be extracted from message if needed
-            timestamp: new Date(notif.created_at),
-            is_read: notif.is_read || false // Use existing is_read field or default to false
-          }
-        })
-        setNotifications(transformedNotifications)
+      if (!response.ok) {
+        console.error('Error fetching parent notifications:', result.error)
+        return
       }
+
+      // Transform notifications to match the local state format
+      const transformedNotifications = (result.data || []).map((notif: any) => {
+        let type: 'session_proposed' | 'session_approved' | 'session_rejected' | 'session_scheduled' = 'session_approved'
+        
+        // Map notification titles to types
+        if (notif.title?.includes('Approved')) {
+          type = 'session_approved'
+        } else if (notif.title?.includes('Rejected')) {
+          type = 'session_rejected'
+        } else if (notif.title?.includes('Scheduled')) {
+          type = 'session_scheduled'
+        } else if (notif.title?.includes('Proposed')) {
+          type = 'session_proposed'
+        }
+        
+        return {
+          id: notif.id,
+          type,
+          message: notif.message,
+          sessionId: undefined, // Could be extracted from message if needed
+          timestamp: new Date(notif.created_at),
+          is_read: notif.is_read || false // Use existing is_read field or default to false
+        }
+      })
+      setNotifications(transformedNotifications)
     } catch (error) {
       console.error('Error fetching parent notifications:', error)
     }

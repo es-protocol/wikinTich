@@ -13,8 +13,8 @@ export const TIME_CONSTANTS = {
 export const REGISTRATION_CONSTANTS = {
   EXPIRATION_HOURS: 24,
   EXPIRATION_MS: 24 * TIME_CONSTANTS.HOUR,
-  MAX_ATTEMPTS: 3,
-  RATE_LIMIT_WINDOW_MS: 15 * TIME_CONSTANTS.MINUTE
+  MAX_ATTEMPTS: 5, // Match server-side rate limiting (5 requests per 15 minutes)
+  RATE_LIMIT_WINDOW_MS: 15 * TIME_CONSTANTS.MINUTE // 15 minutes
 } as const
 
 // Account lockout constants

@@ -174,10 +174,9 @@ export default function HomeTutoringRequest() {
         return
       }
 
-      // Rate limiting check. This is only triggered when the user tries to request an OTP/Magic link in my case more than 3 times in 15 minutes
-      
-      //There is smarter I can do this. In addition to what I have I could also track submission state
-      const rateLimitKey = `otp_${formData.parentEmail}` //creates a unique identifier for tracking this specific email's OTP request
+      // Client-side rate limiting check (UX enhancement)
+      // This provides immediate feedback and reduces server load
+      const rateLimitKey = `otp_${formData.parentEmail}`
       if (!checkRateLimit(rateLimitKey, REGISTRATION_CONSTANTS.MAX_ATTEMPTS, REGISTRATION_CONSTANTS.RATE_LIMIT_WINDOW_MS)) {
         const resetTime = getRateLimitResetTime(rateLimitKey)
         if (resetTime) {
@@ -204,6 +203,15 @@ export default function HomeTutoringRequest() {
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({ error: 'unknown_error' }))
+        
+        // Handle server-side rate limiting
+        if (response.status === 429 && err.resetTime) {
+          setRateLimitCountdown(err.resetTime * 1000) // Convert seconds to milliseconds
+          setError(createErrorState(err.error || ERROR_MESSAGES.RATE_LIMIT_EXCEEDED))
+          setIsSubmitting(false)
+          return
+        }
+        
         throw new Error(err.error || 'unknown_error')
       }
 

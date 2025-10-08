@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 import { storeRegistrationData } from '@/lib/registration-storage'
 import { validateEmail, validatePhone, validateEmailDetailed, validatePhoneDetailed, validateCountryCode, sanitizeInput } from '@/lib/security'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
+import { isOriginAllowed, getCORSHeaders } from '@/lib/cors-config'
 import { ERROR_MESSAGES, REGISTRATION_TYPES } from '@/lib/constants'
 
 const COOKIE_NAME = 'csrf_sig'
@@ -33,11 +35,9 @@ export async function POST(req: Request) {
   if (!process.env.CSRF_SECRET) {//Require CSRF secret to be set in the environment variables
     return NextResponse.json({ error: 'server_misconfigured' }, { status: 500 })
   }
-//Check if the request is coming from a local or production environment 
+//Check if the request is coming from an allowed origin
   const origin = req.headers.get('origin') || ''
-  const isLocal = origin.startsWith('http://localhost') || origin.startsWith('http://127.0.0.1')
-  const isProd = origin.startsWith('https://wikin-tich.vercel.app')
-  if (!(isLocal || isProd)) {
+  if (!isOriginAllowed(origin)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 //Parse the request body 
@@ -84,7 +84,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: phoneValidation.message }, { status: 400 })
   }
 
-  // TODO: server-side rate limit (email+IP)
+  // Server-side rate limiting
+  const rateLimitCheck = await checkServerSideRateLimit(req, formData.parentEmail)
+  if (!rateLimitCheck.allowed) {
+    return NextResponse.json({ 
+      error: rateLimitCheck.error || 'Rate limit exceeded',
+      resetTime: rateLimitCheck.resetTime
+    }, { status: 429 })
+  }
 
   const { error: otpError } = await supabase.auth.signInWithOtp({
     email: formData.parentEmail,
@@ -134,7 +141,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'storage_error', details: storeResult.error }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true }) // if everything is successful, return a success response
+  return NextResponse.json({ ok: true }, {
+    headers: getCORSHeaders(origin)
+  }) // if everything is successful, return a success response
 }
 
-
+// Handle CORS preflight requests
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get('origin') || ''
+  
+  if (!isOriginAllowed(origin)) {
+    return new NextResponse(null, { status: 403 })
+  }
+  
+  return new NextResponse(null, {
+    status: 200,
+    headers: getCORSHeaders(origin)
+  })
+}

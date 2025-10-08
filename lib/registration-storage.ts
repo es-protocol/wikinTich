@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabaseAdmin } from './supabase'
 import { REGISTRATION_CONSTANTS, REGISTRATION_TYPES } from './constants'
 
 export interface PendingRegistrationData {
@@ -43,10 +43,14 @@ export const storeRegistrationData = async (
   type: typeof REGISTRATION_TYPES.PARENT | typeof REGISTRATION_TYPES.TUTOR
 ): Promise<{ success: boolean; error?: string }> => {
   try {
+    if (!supabaseAdmin) {
+      return { success: false, error: 'Service role key not configured' }
+    }
+
     // Set expiration to 24 hours from now
     const expiresAt = new Date(Date.now() + REGISTRATION_CONSTANTS.EXPIRATION_MS).toISOString()
     
-    const { data: result, error } = await supabase
+    const { data: result, error } = await supabaseAdmin
       .from('pending_registrations')
       .upsert({
         email,
@@ -82,7 +86,7 @@ export const getRegistrationData = async (
   email: string
 ): Promise<{ success: boolean; data?: PendingRegistration; error?: string }> => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('pending_registrations')
       .select('*')
       .eq('email', email)
@@ -109,7 +113,7 @@ export const deleteRegistrationData = async (
   email: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('pending_registrations')
       .delete()
       .eq('email', email)
@@ -132,7 +136,7 @@ export const deleteRegistrationData = async (
 // Clean up expired registrations (can be called periodically)
 export const cleanupExpiredRegistrations = async (): Promise<{ success: boolean; error?: string }> => {
   try {
-    const { error } = await supabase.rpc('cleanup_expired_registrations')
+    const { error } = await supabaseAdmin.rpc('cleanup_expired_registrations')
 
     if (error) {
       console.error('Error cleaning up expired registrations:', error)

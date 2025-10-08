@@ -38,6 +38,10 @@ export async function GET(req: NextRequest) {
 }
 
 async function fetchUserProfile(userId: string) {
+  if (!supabaseAdmin) {
+    throw new Error('Supabase admin client not available')
+  }
+  
   const { data: profile, error } = await supabaseAdmin
     .from('profiles')
     .select('*')
@@ -52,6 +56,10 @@ async function fetchUserProfile(userId: string) {
 }
 
 async function fetchStudents(userId: string) {
+  if (!supabaseAdmin) {
+    throw new Error('Supabase admin client not available')
+  }
+  
   const { data: students, error } = await supabaseAdmin
     .from('students')
     .select('*')
@@ -66,6 +74,10 @@ async function fetchStudents(userId: string) {
 }
 
 async function fetchTutoringRequests(userId: string) {
+  if (!supabaseAdmin) {
+    throw new Error('Supabase admin client not available')
+  }
+  
   const { data: requests, error } = await supabaseAdmin
     .from('home_tutoring_requests')
     .select(`
@@ -83,6 +95,10 @@ async function fetchTutoringRequests(userId: string) {
 }
 
 async function fetchSessions(userId: string) {
+  if (!supabaseAdmin) {
+    throw new Error('Supabase admin client not available')
+  }
+  
   // Get sessions through tutoring requests
   const { data: requests, error: requestsError } = await supabaseAdmin
     .from('home_tutoring_requests')
@@ -117,6 +133,10 @@ async function fetchSessions(userId: string) {
 }
 
 async function fetchNotifications(userId: string) {
+  if (!supabaseAdmin) {
+    throw new Error('Supabase admin client not available')
+  }
+  
   const { data: notifications, error } = await supabaseAdmin
     .from('parent_notifications')
     .select('*')

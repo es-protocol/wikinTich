@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { checkInMemoryRateLimit } from '@/lib/services/fallback-rate-limiting-service'
 
-// Rate limiting constants - action-specific limits
+ // Rate limiting constants - action-specific limits
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
 
 // Different limits for different actions (more user-friendly)

@@ -3,30 +3,13 @@
 import { motion } from 'framer-motion'
 import { HomeIcon, AcademicCapIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
+import MainNavigation from '@/app/components/MainNavigation'
 
 export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
       {/* Header */}
-      <header className="bg-white shadow-sm fixed top-0 left-0 right-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div className="flex items-center">
-              <Link href="/" className="text-2xl font-bold text-primary-600 hover:text-primary-700 transition-colors duration-200">
-                Tutor Link
-              </Link>
-            </div>
-            <div className="flex space-x-4">
-              <Link href="/login" className="text-primary-600 hover:text-primary-700 font-medium">
-                Login
-              </Link>
-              <Link href="/apply-tutor/under-construction" className="text-secondary-600 hover:text-secondary-700 font-medium">
-                Apply to be a Tutor
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
+      <MainNavigation />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 pt-28">

@@ -32,7 +32,7 @@ export default function HomePage() {
       </header>
 
       {/* Hero Section */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-8 sm:py-16 pt-20 sm:pt-24">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-8 sm:py-16 pt-32 sm:pt-24">
         <div className="text-center mb-12 sm:mb-16">
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}

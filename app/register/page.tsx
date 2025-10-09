@@ -12,9 +12,8 @@ export default function RegisterPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
-              <Link href="/" className="flex items-center text-primary-600 hover:text-primary-700">
-                <span className="text-2xl font-bold">Tutor Link</span>
-                <span className="ml-2 text-sm text-gray-500">Sierra Leone</span>
+              <Link href="/" className="text-2xl font-bold text-primary-600 hover:text-primary-700 transition-colors duration-200">
+                Tutor Link
               </Link>
             </div>
             <div className="flex space-x-4">

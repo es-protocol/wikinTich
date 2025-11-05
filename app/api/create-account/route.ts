@@ -7,6 +7,9 @@ import { ERROR_MESSAGES } from '@/lib/constants'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { devLog, devError } from '@/lib/utils/logger'
 
+// Force dynamic rendering - this route uses cookies and headers which are dynamic
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
   try {
     // Check if supabaseAdmin is available

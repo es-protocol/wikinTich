@@ -59,17 +59,17 @@ function buildScriptSrcDirective(nonce?: string): string {
     sources.push("'unsafe-eval'")
   } else {
     // Production: Use nonce for secure inline script execution
-    // SECURITY NOTE: Currently using unsafe-inline as fallback because Next.js App Router
-    // doesn't automatically use nonces from x-nonce header. This is a known security trade-off.
+    // SECURITY NOTE: Currently using unsafe-inline and unsafe-eval as fallback because Next.js App Router
+    // requires these for proper script execution. This is a known security trade-off.
     // TODO: Configure Next.js App Router to properly use nonces (requires root layout modification)
     // I will have to check: https://nextjs.org/docs/app/api-reference/next-config-js/headers#content-security-policy
     if (nonce) {
       sources.push(`'nonce-${nonce}'`)
     }
-    // Temporary fallback: Allow unsafe-inline for Next.js inline scripts
+    // Temporary fallback: Allow unsafe-inline and unsafe-eval for Next.js scripts
     // I WILL REMOVE THIS once Next.js nonce configuration is implemented
     sources.push(CSP_SOURCES.UNSAFE_INLINE)
-    // Note: unsafe-eval is NOT included in production for security
+    sources.push("'unsafe-eval'") // Next.js production builds may need this for certain scripts
   }
   
   // Add CDN sources

@@ -4,6 +4,9 @@ import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 import { supabase } from '@/lib/supabase'
 
+// Force dynamic rendering - this route uses searchParams and headers which are dynamic
+export const dynamic = 'force-dynamic'
+
 /**
  * GET handler for registration data endpoint
  * 

@@ -4,6 +4,9 @@ import { getSessionFromRequest } from '@/lib/session-management'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 
+// Force dynamic rendering - this route uses cookies and searchParams which are dynamic
+export const dynamic = 'force-dynamic'
+
 /**
  * GET handler for dashboard data endpoint
  * 

@@ -26,7 +26,16 @@ export function middleware(request: NextRequest) {
   
   // Generate nonce for production CSP (development uses unsafe-inline)
   const isProduction = process.env.NODE_ENV === 'production'
-  const nonce = isProduction ? generateNonce() : undefined
+  let nonce: string | undefined = undefined
+  
+  if (isProduction) {
+    try {
+      nonce = generateNonce()
+    } catch (error) {
+      // If nonce generation fails, continue without it (we have unsafe-inline fallback)
+      console.error('Nonce generation failed in middleware, using unsafe-inline fallback:', error)
+    }
+  }
   
   // Get all security headers with nonce
   const securityHeaders = getSecurityHeaders(nonce)

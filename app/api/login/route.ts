@@ -6,9 +6,6 @@ import { setSessionCookie, SessionData } from '@/lib/session-management'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 
-// Force dynamic rendering - this route uses cookies and headers which are dynamic
-export const dynamic = 'force-dynamic'
-
 /**
  * POST handler for login endpoint
  * 

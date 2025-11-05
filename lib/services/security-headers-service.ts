@@ -60,7 +60,7 @@ function buildScriptSrcDirective(nonce?: string): string {
   } else {
     // Production: Use nonce for secure inline script execution
     // SECURITY NOTE: Currently using unsafe-inline and unsafe-eval as fallback because Next.js App Router
-    // requires these for proper script execution. This is a known security trade-off.
+    // doesn't automatically use nonces from x-nonce header. This is a known security trade-off.
     // TODO: Configure Next.js App Router to properly use nonces (requires root layout modification)
     // I will have to check: https://nextjs.org/docs/app/api-reference/next-config-js/headers#content-security-policy
     if (nonce) {
@@ -69,7 +69,7 @@ function buildScriptSrcDirective(nonce?: string): string {
     // Temporary fallback: Allow unsafe-inline and unsafe-eval for Next.js scripts
     // I WILL REMOVE THIS once Next.js nonce configuration is implemented
     sources.push(CSP_SOURCES.UNSAFE_INLINE)
-    sources.push("'unsafe-eval'") // Next.js production builds may need this for certain scripts
+    sources.push("'unsafe-eval'") // Required for Next.js production builds
   }
   
   // Add CDN sources
@@ -201,13 +201,26 @@ export function generateNonce(): string {
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
     crypto.getRandomValues(array)
   } else {
-    // Fallback for Node.js runtime (though crypto should be available)
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const nodeCrypto = require('crypto')
-    nodeCrypto.randomFillSync(array)
+    // This should never happen in modern environments, but throw error if it does
+    throw new Error('crypto.getRandomValues is not available')
   }
   
-  return Buffer.from(array).toString('base64')
+  // Convert to base64 without using Buffer (Edge runtime compatible)
+  // Edge runtime supports btoa, but we need to convert bytes properly
+  let binaryString = ''
+  for (let i = 0; i < array.length; i++) {
+    binaryString += String.fromCharCode(array[i])
+  }
+  
+  // btoa is available in Edge runtime and works with the binary string
+  try {
+    return btoa(binaryString)
+  } catch (error) {
+    // Fallback: convert to hex if btoa fails (shouldn't happen but safety net)
+    return Array.from(array)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+  }
 }
 
 /**
@@ -220,8 +233,18 @@ export function generateNonce(): string {
 export function getSecurityHeaders(nonce?: string): Record<string, string> {
   const isProduction = process.env.NODE_ENV === 'production'
   
-  // Generate nonce for production if not provided
-  const cspNonce = isProduction && !nonce ? generateNonce() : nonce
+  // Use provided nonce or generate one for production
+  // Note: Nonce is generated in middleware, so this should rarely be called
+  let cspNonce = nonce
+  if (isProduction && !cspNonce) {
+    try {
+      cspNonce = generateNonce()
+    } catch (error) {
+      // If nonce generation fails, skip it (we have unsafe-inline fallback)
+      console.error('Nonce generation failed, using unsafe-inline fallback:', error)
+      cspNonce = undefined
+    }
+  }
   
   const headers: Record<string, string> = {
     'Content-Security-Policy': getCSPHeader(cspNonce),

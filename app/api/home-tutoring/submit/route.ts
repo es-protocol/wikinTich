@@ -9,9 +9,6 @@ import { ERROR_MESSAGES, REGISTRATION_TYPES } from '@/lib/constants'
 import { validateCSRFToken, extractCSRFSignature } from '@/lib/services/csrf-service'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 
-// Force dynamic rendering - this route uses cookies, headers, and request body which are dynamic
-export const dynamic = 'force-dynamic'
-
 /**
  * Validates CSRF protection for the request
  * 

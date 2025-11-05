@@ -2,9 +2,6 @@ import { NextResponse } from 'next/server'
 import { createCSRFTokenData, createCSRFSignature } from '@/lib/services/csrf-service'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 
-// Force dynamic rendering - this route uses cookies which are dynamic
-export const dynamic = 'force-dynamic'
-
 const COOKIE_NAME = 'csrf_sig'
 const ONE_HOUR = 60 * 60 // 1 hour lifetime
 

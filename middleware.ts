@@ -9,8 +9,7 @@
  * - Security: Defense-in-depth approach
  */
 
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextResponse, NextRequest } from 'next/server'
 import { getSecurityHeaders, generateNonce } from './lib/services/security-headers-service'
 
 /**
@@ -22,8 +21,6 @@ import { getSecurityHeaders, generateNonce } from './lib/services/security-heade
  * @returns Response with security headers
  */
 export function middleware(request: NextRequest) {
-  const response = NextResponse.next()
-  
   // Generate nonce for production CSP (development uses unsafe-inline)
   const isProduction = process.env.NODE_ENV === 'production'
   let nonce: string | undefined = undefined
@@ -39,6 +36,21 @@ export function middleware(request: NextRequest) {
   
   // Get all security headers with nonce
   const securityHeaders = getSecurityHeaders(nonce)
+  
+  // Clone request headers and add nonce so Server Components can read it via headers()
+  // Next.js Server Components read request headers via headers() function
+  const requestHeaders = new Headers(request.headers)
+  if (isProduction && nonce) {
+    requestHeaders.set('x-nonce', nonce)
+  }
+  
+  // Create response and rewrite request with modified headers
+  // This ensures Server Components can read the nonce via headers()
+  const response = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  })
   
   // Apply security headers to response
   Object.entries(securityHeaders).forEach(([key, value]) => {

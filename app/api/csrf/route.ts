@@ -14,6 +14,10 @@ const ONE_HOUR = 60 * 60 // 1 hour lifetime
  * - Security: HTTP-only cookies, secure settings
  * - Testability: Pure function logic
  */
+
+// Force dynamic rendering - this route uses cookies which are dynamic
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     // Validate environment configuration

@@ -17,6 +17,10 @@ import { supabase } from '@/lib/supabase'
  * - Single Responsibility: Only retrieves registration data for authenticated users
  * - Security: Defense-in-depth with multiple layers
  */
+
+// Force dynamic rendering - this route uses searchParams and headers which are dynamic
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)

@@ -59,17 +59,20 @@ function buildScriptSrcDirective(nonce?: string): string {
     sources.push("'unsafe-eval'")
   } else {
     // Production: Use nonce for secure inline script execution
-    // SECURITY NOTE: Currently using unsafe-inline and unsafe-eval as fallback because Next.js App Router
-    // doesn't automatically use nonces from x-nonce header. This is a known security trade-off.
-    // TODO: Configure Next.js App Router to properly use nonces (requires root layout modification)
-    // I will have to check: https://nextjs.org/docs/app/api-reference/next-config-js/headers#content-security-policy
+    // Next.js App Router now properly supports nonces via root layout configuration
+    // The nonce is passed to <html> tag and Next.js automatically adds it to all script tags
     if (nonce) {
       sources.push(`'nonce-${nonce}'`)
+      // 'strict-dynamic' allows scripts loaded by nonced scripts to execute
+      // This is secure because only scripts with the nonce can load other scripts
+      sources.push("'strict-dynamic'")
+    } else {
+      // Fallback: If nonce generation fails, use unsafe-inline (should not happen in production)
+      // This is a safety net, but nonce should always be generated
+      console.warn('No nonce available in production, falling back to unsafe-inline')
+      sources.push(CSP_SOURCES.UNSAFE_INLINE)
+      sources.push("'unsafe-eval'")
     }
-    // Temporary fallback: Allow unsafe-inline and unsafe-eval for Next.js scripts
-    // I WILL REMOVE THIS once Next.js nonce configuration is implemented
-    sources.push(CSP_SOURCES.UNSAFE_INLINE)
-    sources.push("'unsafe-eval'") // Required for Next.js production builds
   }
   
   // Add CDN sources
@@ -86,6 +89,7 @@ function buildScriptSrcDirective(nonce?: string): string {
  * 
  * @param nonce - Optional nonce for production CSP (recommended for security)
  */
+//combines all CSP rules into one string. The string becomes the content-security-policy header
 export function getCSPHeader(nonce?: string): string {
   const cspDirectives = [
     // Default policy - only same origin
@@ -230,6 +234,7 @@ export function generateNonce(): string {
  * @param nonce - Optional nonce for production CSP (auto-generated if not provided)
  * @returns Record of security headers
  */
+//create an object with all security headers
 export function getSecurityHeaders(nonce?: string): Record<string, string> {
   const isProduction = process.env.NODE_ENV === 'production'
   

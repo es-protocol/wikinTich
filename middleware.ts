@@ -11,20 +11,25 @@
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getSecurityHeaders } from './lib/services/security-headers-service'
+import { getSecurityHeaders, generateNonce } from './lib/services/security-headers-service'
 
 /**
  * Middleware function that adds security headers to all responses
+ * 
+ * Generates a nonce for production CSP to securely allow Next.js inline scripts
  * 
  * @param request - The incoming request
  * @returns Response with security headers
  */
 export function middleware(request: NextRequest) {
-  // Create response
   const response = NextResponse.next()
   
-  // Get all security headers
-  const securityHeaders = getSecurityHeaders()
+  // Generate nonce for production CSP (development uses unsafe-inline)
+  const isProduction = process.env.NODE_ENV === 'production'
+  const nonce = isProduction ? generateNonce() : undefined
+  
+  // Get all security headers with nonce
+  const securityHeaders = getSecurityHeaders(nonce)
   
   // Apply security headers to response
   Object.entries(securityHeaders).forEach(([key, value]) => {

@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase'
-import { hashPassword, sanitizeInput } from '@/lib/security'
+import { hashPassword, sanitizeInput } from '@/lib/security' //Im importing the hashing and sanitizing functions
 import { getRegistrationData, deleteRegistrationData } from '@/lib/registration-storage'
 import { ERROR_MESSAGES } from '@/lib/constants'
 

@@ -15,48 +15,114 @@
  */
 
 /**
+ * CSP source constants
+ * Centralized source definitions for maintainability
+ */
+const CSP_SOURCES = {
+  SELF: "'self'",
+  UNSAFE_INLINE: "'unsafe-inline'",
+  DATA_URI: 'data:',
+  HTTPS: 'https:',
+  BLOB: 'blob:',
+  NONE: "'none'",
+} as const
+
+const CSP_CDN_SOURCES = {
+  JSDELIVR: 'https://cdn.jsdelivr.net',
+  UNPKG: 'https://unpkg.com',
+  GOOGLE_FONTS: 'https://fonts.googleapis.com',
+  GOOGLE_FONTS_STATIC: 'https://fonts.gstatic.com',
+} as const
+
+const CSP_SUPABASE_SOURCES = {
+  API: 'https://*.supabase.co',
+  WEBSOCKET: 'wss://*.supabase.co',
+} as const
+
+/**
+ * Builds the script-src CSP directive based on environment and nonce
+ * 
+ * Development: Allows unsafe-inline for Next.js hot reloading
+ * Production: Uses nonces for secure inline script execution
+ * 
+ * @param nonce - Optional nonce for production CSP
+ * @returns script-src directive string
+ */
+function buildScriptSrcDirective(nonce?: string): string {
+  const isDevelopment = process.env.NODE_ENV === 'development'
+  const sources: string[] = [CSP_SOURCES.SELF]
+  
+  if (isDevelopment) {
+    // Development: Allow unsafe-inline and unsafe-eval for Next.js hot module reloading
+    // Required for Next.js React Refresh Utils to work properly
+    sources.push(CSP_SOURCES.UNSAFE_INLINE)
+    sources.push("'unsafe-eval'")
+  } else {
+    // Production: Use nonce for secure inline script execution
+    // SECURITY NOTE: Currently using unsafe-inline as fallback because Next.js App Router
+    // doesn't automatically use nonces from x-nonce header. This is a known security trade-off.
+    // TODO: Configure Next.js App Router to properly use nonces (requires root layout modification)
+    // I will have to check: https://nextjs.org/docs/app/api-reference/next-config-js/headers#content-security-policy
+    if (nonce) {
+      sources.push(`'nonce-${nonce}'`)
+    }
+    // Temporary fallback: Allow unsafe-inline for Next.js inline scripts
+    // I WILL REMOVE THIS once Next.js nonce configuration is implemented
+    sources.push(CSP_SOURCES.UNSAFE_INLINE)
+    // Note: unsafe-eval is NOT included in production for security
+  }
+  
+  // Add CDN sources
+  sources.push(CSP_CDN_SOURCES.JSDELIVR, CSP_CDN_SOURCES.UNPKG)
+  
+  return `script-src ${sources.join(' ')}`
+}
+
+/**
  * Content Security Policy (CSP) configuration
  * 
  * This prevents XSS attacks by controlling what resources can be loaded
  * Tailored for West African deployment with specific needs
+ * 
+ * @param nonce - Optional nonce for production CSP (recommended for security)
  */
 export function getCSPHeader(nonce?: string): string {
   const cspDirectives = [
     // Default policy - only same origin
-    "default-src 'self'",
+    `default-src ${CSP_SOURCES.SELF}`,
     
-    // Scripts - allow self, inline with nonce, and specific CDNs
-    `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com`,
+    // Scripts - environment-aware with nonce support
+    buildScriptSrcDirective(nonce),
     
-    // Styles - allow self and inline styles (for Tailwind)
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    // Styles - allow self and inline styles (required for Tailwind CSS)
+    `style-src ${CSP_SOURCES.SELF} ${CSP_SOURCES.UNSAFE_INLINE} ${CSP_CDN_SOURCES.GOOGLE_FONTS}`,
     
     // Images - allow self, data URIs, and common image CDNs
-    "img-src 'self' data: https: blob:",
+    `img-src ${CSP_SOURCES.SELF} ${CSP_SOURCES.DATA_URI} ${CSP_SOURCES.HTTPS} ${CSP_SOURCES.BLOB}`,
     
     // Fonts - allow self and Google Fonts
-    "font-src 'self' data: https://fonts.gstatic.com",
+    `font-src ${CSP_SOURCES.SELF} ${CSP_SOURCES.DATA_URI} ${CSP_CDN_SOURCES.GOOGLE_FONTS_STATIC}`,
     
     // Connect (AJAX/fetch) - allow self and Supabase
-    `connect-src 'self' https://*.supabase.co wss://*.supabase.co`,
+    `connect-src ${CSP_SOURCES.SELF} ${CSP_SUPABASE_SOURCES.API} ${CSP_SUPABASE_SOURCES.WEBSOCKET}`,
     
     // Frames - only allow same origin
-    "frame-src 'self'",
+    `frame-src ${CSP_SOURCES.SELF}`,
     
     // Objects - block all plugins (Flash, etc.)
-    "object-src 'none'",
+    `object-src ${CSP_SOURCES.NONE}`,
     
     // Base URI - only same origin
-    "base-uri 'self'",
+    `base-uri ${CSP_SOURCES.SELF}`,
     
     // Form actions - only same origin
-    "form-action 'self'",
+    `form-action ${CSP_SOURCES.SELF}`,
     
     // Upgrade insecure requests (HTTP → HTTPS)
-    "upgrade-insecure-requests",
+    'upgrade-insecure-requests',
     
     // Block mixed content
-    "block-all-mixed-content"
+    'block-all-mixed-content'
   ]
 
   return cspDirectives.join('; ')
@@ -123,19 +189,52 @@ export function getXSSProtectionHeader(): string {
 }
 
 /**
+ * Generate a cryptographically secure nonce for CSP
+ * Works in both Node.js and Edge runtime environments
+ * 
+ * @returns Base64-encoded nonce string
+ */
+export function generateNonce(): string {
+  // Use Web Crypto API which works in Edge runtime
+  const array = new Uint8Array(16)
+  
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(array)
+  } else {
+    // Fallback for Node.js runtime (though crypto should be available)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const nodeCrypto = require('crypto')
+    nodeCrypto.randomFillSync(array)
+  }
+  
+  return Buffer.from(array).toString('base64')
+}
+
+/**
  * Get all security headers as an object
  * Ready to be added to NextResponse
+ * 
+ * @param nonce - Optional nonce for production CSP (auto-generated if not provided)
+ * @returns Record of security headers
  */
-export function getSecurityHeaders(): Record<string, string> {
+export function getSecurityHeaders(nonce?: string): Record<string, string> {
   const isProduction = process.env.NODE_ENV === 'production'
   
+  // Generate nonce for production if not provided
+  const cspNonce = isProduction && !nonce ? generateNonce() : nonce
+  
   const headers: Record<string, string> = {
-    'Content-Security-Policy': getCSPHeader(),
+    'Content-Security-Policy': getCSPHeader(cspNonce),
     'X-Frame-Options': getFrameOptionsHeader(),
     'X-Content-Type-Options': getContentTypeOptionsHeader(),
     'Referrer-Policy': getReferrerPolicyHeader(),
     'Permissions-Policy': getPermissionsPolicyHeader(),
     'X-XSS-Protection': getXSSProtectionHeader(),
+  }
+  
+  // Add nonce header for Next.js to use (production only)
+  if (isProduction && cspNonce) {
+    headers['x-nonce'] = cspNonce
   }
 
   // Only add HSTS in production (requires HTTPS)
@@ -153,9 +252,13 @@ export function getSecurityHeaders(): Record<string, string> {
  * - Single Responsibility: Only adds headers
  * - Immutability: Returns modified response
  * - Type Safety: Typed parameters
+ * 
+ * @param response - Response object to add headers to
+ * @param nonce - Optional nonce for production CSP
+ * @returns Response with security headers applied
  */
-export function applySecurityHeaders<T extends Response>(response: T): T {
-  const headers = getSecurityHeaders()
+export function applySecurityHeaders<T extends Response>(response: T, nonce?: string): T {
+  const headers = getSecurityHeaders(nonce)
   
   Object.entries(headers).forEach(([key, value]) => {
     response.headers.set(key, value)
@@ -166,7 +269,7 @@ export function applySecurityHeaders<T extends Response>(response: T): T {
 
 /**
  * Get CSP report-only header for testing
- * Use this during development to test CSP without blocking
+ * Used during development to test CSP without blocking
  */
 export function getCSPReportOnlyHeader(): string {
   return getCSPHeader()

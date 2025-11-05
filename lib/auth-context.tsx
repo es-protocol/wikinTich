@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Login function
   const login = async (email: string, password: string, role?: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      setIsLoading(true)
+      setIsLoading(true) //Spinner shown
       
       const response = await fetch('/api/login', {
         method: 'POST',

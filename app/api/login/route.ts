@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       .select('*')
       .eq('email', email)
       .eq('is_active', true)
-      .single()
+      .single() //if the user exists returns a single record if not returns null
 
     if (authError || !authUser) {
       // Record failed attempt

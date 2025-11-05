@@ -28,7 +28,7 @@ export interface SessionData {
 
 // Create secure session cookie
 export function createSessionCookie(sessionData: SessionData): string {
-  const secret = getSessionSecret()
+  const secret = getSessionSecret() //Secret key from environment 
   const sessionToken = crypto.randomBytes(32).toString('hex')
   const sessionDataString = JSON.stringify(sessionData)
   
@@ -40,7 +40,7 @@ export function createSessionCookie(sessionData: SessionData): string {
   // Encode session data with signature
   const encodedData = Buffer.from(sessionDataString).toString('base64')
   
-  return `${sessionToken}:${encodedData}:${signature}`
+  return `${sessionToken}:${encodedData}:${signature}` //basically the secure cookie
 }
 
 // Parse and validate session cookie
@@ -87,9 +87,9 @@ export function setSessionCookie(response: NextResponse, sessionData: SessionDat
   const cookieValue = createSessionCookie(sessionData)
   
   response.cookies.set(SESSION_COOKIE_NAME, cookieValue, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    httpOnly: true, //javascript cant access it
+    secure: process.env.NODE_ENV === 'production', //only send over https in production
+    sameSite: 'strict', //prevents CSRF attacks
     maxAge: SESSION_MAX_AGE / 1000, // Convert to seconds
     path: '/'
   })

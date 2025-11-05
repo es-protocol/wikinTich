@@ -39,6 +39,7 @@ export function removeHTMLTags(input: string): string {
  * @param input - Raw user input
  * @returns Sanitized string
  */
+//probabl drop quote removal
 export function removeDangerousCharacters(input: string): string {
   return input
     .replace(/[<>]/g, '') // Remove angle brackets
@@ -51,6 +52,7 @@ export function removeDangerousCharacters(input: string): string {
  * @param input - Raw user input
  * @returns Sanitized string
  */
+//I need to remove this and use parametirzed queries instead
 export function removeSQLPatterns(input: string): string {
   return input
     .replace(/('|(;|--|\/\*|\*\/|xp_|sp_|exec|execute|select|insert|update|delete|drop|create|alter|union|into|load_file|outfile))/gi, '')
@@ -62,6 +64,7 @@ export function removeSQLPatterns(input: string): string {
  * @param input - Raw user input
  * @returns Sanitized string
  */
+//Here as well I need to remove this and use proper queries instead - its too aggresive
 export function removeNoSQLPatterns(input: string): string {
   return input
     .replace(/[\$\{\}]/g, '') // Remove $ and {} used in MongoDB queries

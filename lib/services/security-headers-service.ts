@@ -50,7 +50,7 @@ const CSP_SUPABASE_SOURCES = {
  */
 function buildScriptSrcDirective(nonce?: string): string {
   const isDevelopment = process.env.NODE_ENV === 'development'
-  const sources: string[] = [CSP_SOURCES.SELF]
+  const sources: string[] = [CSP_SOURCES.SELF] //Always allow script from my own domain
   
   if (isDevelopment) {
     // Development: Allow unsafe-inline and unsafe-eval for Next.js hot module reloading
@@ -62,7 +62,7 @@ function buildScriptSrcDirective(nonce?: string): string {
     // Next.js App Router now properly supports nonces via root layout configuration
     // The nonce is passed to <html> tag and Next.js automatically adds it to all script tags
     if (nonce) {
-      sources.push(`'nonce-${nonce}'`)
+      sources.push(`'nonce-${nonce}'`) //add nonce to allowed sources
       // 'strict-dynamic' allows scripts loaded by nonced scripts to execute
       // This is secure because only scripts with the nonce can load other scripts
       sources.push("'strict-dynamic'")
@@ -92,37 +92,40 @@ function buildScriptSrcDirective(nonce?: string): string {
 //combines all CSP rules into one string. The string becomes the content-security-policy header
 export function getCSPHeader(nonce?: string): string {
   const cspDirectives = [
-    // Default policy - only same origin
+    // Default policy - only same origin(for any resource type I was not explicit about, 
+    //only allow from my own domain)
     `default-src ${CSP_SOURCES.SELF}`,
     
     // Scripts - environment-aware with nonce support
-    buildScriptSrcDirective(nonce),
+    buildScriptSrcDirective(nonce), // so basically this line translates to 
+    // script-src 'self' 'nonce-randomString' 'strict-dynamic' in production
     
     // Styles - allow self and inline styles (required for Tailwind CSS)
     `style-src ${CSP_SOURCES.SELF} ${CSP_SOURCES.UNSAFE_INLINE} ${CSP_CDN_SOURCES.GOOGLE_FONTS}`,
-    
+    //protects against malicious stylesheet injection
+
     // Images - allow self, data URIs, and common image CDNs
     `img-src ${CSP_SOURCES.SELF} ${CSP_SOURCES.DATA_URI} ${CSP_SOURCES.HTTPS} ${CSP_SOURCES.BLOB}`,
     
     // Fonts - allow self and Google Fonts
     `font-src ${CSP_SOURCES.SELF} ${CSP_SOURCES.DATA_URI} ${CSP_CDN_SOURCES.GOOGLE_FONTS_STATIC}`,
     
-    // Connect (AJAX/fetch) - allow self and Supabase
+    // Connect (AJAX/fetch) - allow self(my domain) and Supabase
     `connect-src ${CSP_SOURCES.SELF} ${CSP_SUPABASE_SOURCES.API} ${CSP_SUPABASE_SOURCES.WEBSOCKET}`,
     
     // Frames - only allow same origin
     `frame-src ${CSP_SOURCES.SELF}`,
     
-    // Objects - block all plugins (Flash, etc.)
+    // Objects - block all plugins (Flash, etc.) - old school attacks
     `object-src ${CSP_SOURCES.NONE}`,
     
     // Base URI - only same origin
     `base-uri ${CSP_SOURCES.SELF}`,
     
-    // Form actions - only same origin
+    // Form actions - only same origin - does not send form data to origin different from mine
     `form-action ${CSP_SOURCES.SELF}`,
     
-    // Upgrade insecure requests (HTTP → HTTPS)
+    // Upgrade insecure requests (HTTP → HTTPS), stops MITM attacks
     'upgrade-insecure-requests',
     
     // Block mixed content
@@ -151,6 +154,9 @@ export function getContentTypeOptionsHeader(): string {
 /**
  * Referrer-Policy header
  * Controls how much referrer information is sent
+ * same origin send full url
+ * cross origin on secure http send only domain
+ * cross orgin https -> http send nothing, prevents information leakeage url exposure etc
  */
 export function getReferrerPolicyHeader(): string {
   return 'strict-origin-when-cross-origin'

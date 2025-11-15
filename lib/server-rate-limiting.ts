@@ -48,39 +48,39 @@ function getClientIP(request: NextRequest): string {
  * - Action Context: Different limits for different actions (login vs registration)
  */
 export async function checkServerSideRateLimit(
-  request: NextRequest, 
-  email: string,
-  action: 'registration' | 'login' | 'dashboard' = 'registration'
-): Promise<{ 
+  request: NextRequest, //incoming client request. Why needed? To get client IP Address
+  email: string, //Parent email from the form. Why, I want to track rate limits per email + IP Address
+  action: 'registration' | 'login' | 'dashboard' = 'registration'//What are action is this email trying to perform
+): Promise<{ //Function does slow operations, so it's a good idea to return a promise
   allowed: boolean; 
   resetTime?: number; 
   remainingRequests?: number;
   error?: string 
 }> {
-  const ip = getClientIP(request)
+  const ip = getClientIP(request)//Extract ip address from incoming request
   // Include action in key to separate rate limits for different actions
-  const rateLimitKey = `${action}:${email}:${ip}`
+  const rateLimitKey = `${action}:${email}:${ip}` //unique key combining action, email and ip address
   
-  // Get action-specific limit
+  // Get action-specific limit- if not specified use the fallback
   const maxRequests = RATE_LIMITS[action] || MAX_REQUESTS_PER_WINDOW
   
   try {
     // If supabaseAdmin is not available, use fallback in-memory rate limiting
     if (!supabaseAdmin) {
       console.warn('⚠️ Supabase admin client not available, using in-memory rate limiting')
-      return checkInMemoryRateLimit(rateLimitKey)
+      return checkInMemoryRateLimit(rateLimitKey) //fallback to in-memory rate limiting- stores in server RAM not database
     }
-    
-    const now = Date.now()
+    //Calculate tim window
+    const now = Date.now()//get current tim in milliseconds
     const windowStart = Math.floor(now / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_WINDOW_MS
     
     // Check existing rate limit record
     const { data: existingRecord, error: fetchError } = await supabaseAdmin
       .from('rate_limits')
       .select('*')
-      .eq('key', rateLimitKey)
+      .eq('key', rateLimitKey)//where key column = our rateLimitey
       .single()
-    
+    //PGRST116 = no rows found. Expected for first time users
     if (fetchError && fetchError.code !== 'PGRST116') {
       console.error('⚠️ Error fetching rate limit, falling back to in-memory:', fetchError)
       return checkInMemoryRateLimit(rateLimitKey)

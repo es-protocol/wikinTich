@@ -183,13 +183,7 @@ If an issue persists after these steps, checking the terminal logs and browser c
 
 Tutor-Link is built as a Next.js 14 application using the App Router, with React and TypeScript on the frontend and Supabase (PostgreSQL + Supabase Auth) handling data storage and authentication. The main pattern is a browser client calling Next.js API routes, which in turn interact with Supabase using the appropriate keys and security controls (CSRF protection, rate limiting, and input sanitization).
 
-Conceptual architecture and diagrams are documented in the architecture markdown inside the `docs` folder. This document uses Mermaid diagrams to show:
-
-- The **system context** (how parents, tutors, admins, and external services like Supabase interact with Tutor-Link).
-- The **container and component view** of the web app, API routes, and database.
-- A detailed **parent registration data-flow sequence diagram**, which is the best starting point for understanding the parent signup and home-tutoring request workflow end to end.
-
-These diagrams can be viewed directly in supported editors (for example, VS Code with a Mermaid preview extension) or by copying the Mermaid blocks into the Mermaid Live Editor.
+The main conceptual explanation of the parent signup and home-tutoring request workflow is available in `docs/PARENT_SIGNUP_CONCEPTUAL.md`. This document explains the flow in words, shows how the browser, API routes, and Supabase fit together, and includes a Mermaid sequence diagram of the parent registration data flow. Additional, more detailed C4-style architecture diagrams are available in the `docs` folder for readers who want a deeper, system-wide view.
 
 ## Contributing guidelines
 
@@ -207,8 +201,11 @@ Detailed guidance for contributors, including project structure, code style, Git
 
 Tutor-Link includes additional documentation in the `docs` directory for readers who want to dive deeper into the architecture and the parent signup workflow:
 
+- `docs/PARENT_SIGNUP_CONCEPTUAL.md`  
+  Conceptual overview of the parent signup and home-tutoring request workflow, including a narrative description and a data-flow diagram.
+
 - `docs/C4_ARCHITECTURE_STANDARD.md`  
-  High-level architecture and conceptual view of the platform using Mermaid diagrams, including system context, containers, components, and the parent registration data-flow.
+  A more detailed C4-style architecture view of the platform using Mermaid diagrams, including system context, containers, components, and the parent registration data-flow.
 
 - `docs/API_PARENT_SIGNUP.md`  
   API reference for the parent signup and home-tutoring request workflow, covering the main endpoints, request/response structures, validation, and error handling.

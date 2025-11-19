@@ -12,7 +12,7 @@ import { useDebouncedCallback } from '@/lib/hooks/useDebouncedValue'
 import { DEBOUNCE_DELAYS } from '@/lib/utils/debounce'
 
 export default function HomeTutoringRequest() {
-  const router = useRouter()
+  const router = useRouter() //gives access to next.js navigation
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState(clearErrorState())
   const [countryCode, setCountryCode] = useState('+232') // Default to Sierra Leone
@@ -20,7 +20,7 @@ export default function HomeTutoringRequest() {
   // Rate limit countdown state
   const [rateLimitCountdown, setRateLimitCountdown] = useState<number | null>(null)
   
-  // Inline validation errors
+  // Inline validation errors - hold per field error messages
   const [fieldErrors, setFieldErrors] = useState({
     parentEmail: '',
     parentPhone: '',

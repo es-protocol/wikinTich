@@ -41,7 +41,7 @@ jest.mock('next/navigation', () => ({
 
 describe('Tutor Signup - Integration Tests (Current Behavior)', () => {
   let mockStorage: ReturnType<typeof createMockLocalStorage>
-  let originalLocalStorage: Storage
+  let originalLocalStorage: Storage // real browser localStorage stored here so it can be sent back after tests
 
   const clickAndIgnoreNavigation = async (
     user: ReturnType<typeof userEvent.setup>,
@@ -50,13 +50,13 @@ describe('Tutor Signup - Integration Tests (Current Behavior)', () => {
     try {
       await user.click(element)
     } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes('navigation')) {
-        throw error
+      if (!(error instanceof Error) || !error.message.includes('navigation')) {//if the error is a navigation error, ignore
+        throw error //otherwise, throw the error
       }
     }
   }
 
-  beforeEach(() => {
+  beforeEach(() => { //runs before each test
     // Setup localStorage mock
     mockStorage = createMockLocalStorage()
     originalLocalStorage = global.localStorage
@@ -286,7 +286,7 @@ describe('Tutor Signup - Integration Tests (Current Behavior)', () => {
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
       const errorMessage = 'Email sending failed'
-      
+      //whenever signWithOTP() is called throw a promise rejection with the error message - "Email Sending Failed"
       mockSupabase.auth.signInWithOtp.mockRejectedValue(new Error(errorMessage))
       render(<ApplyTutorPage />)
 

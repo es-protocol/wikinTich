@@ -199,7 +199,9 @@ Detailed guidance for contributors, including project structure, code style, Git
 
 ## Additional documentation
 
-Tutor-Link includes additional documentation in the `docs` directory for readers who want to dive deeper into the architecture and the parent signup workflow:
+Tutor-Link includes additional documentation in the `docs` directory for readers who want to dive deeper into the architecture and the parent signup workflow.
+
+The last two documents in this list were created specifically to satisfy the requirements of the **Cybersecurity** module (threat model and list of implemented measures):
 
 - `docs/PARENT_SIGNUP_CONCEPTUAL.md`  
   Conceptual overview of the parent signup and home-tutoring request workflow, including a narrative description and a data-flow diagram.
@@ -213,8 +215,13 @@ Tutor-Link includes additional documentation in the `docs` directory for readers
 - `docs/DATA_PARENT_SIGNUP.md`  
   Data documentation for the parent signup flow, describing the key Supabase tables, their relationships, and how data moves from temporary registration to permanent records.
 
-- Threat model in the `docs` directory  
-  Additional context on how threats were considered and how security features like CSRF protection, rate limiting, and secure session handling are applied in the project.
+- `docs/THREAT_MODEL.md`  
+  Minimal threat model for the parent signup and account creation flow, including a trust-boundary diagram and the main threats and mitigations.  
+  _Prepared for the Cybersecurity module assessment._
+
+- `docs/SECURITY_MEASURES.md`  
+  Summary of the concrete cyber security measures implemented in the project (CSRF protection, input validation and sanitisation, rate limiting, account lockout, secure session cookies, and security headers).  
+  _Prepared for the Cybersecurity module assessment._
 
 ## How to get help
 

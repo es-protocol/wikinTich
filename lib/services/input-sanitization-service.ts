@@ -35,11 +35,9 @@ export function removeHTMLTags(input: string): string {
 }
 
 /**
- * Removes potentially dangerous characters for SQL/NoSQL injection
- * @param input - Raw user input
- * @returns Sanitized string
+ * Removes potentially dangerous characters that could be used in injection payloads.
+ * This is a defensive layer on top of parameterized queries and ORM protections.
  */
-//probabl drop quote removal
 export function removeDangerousCharacters(input: string): string {
   return input
     .replace(/[<>]/g, '') // Remove angle brackets
@@ -48,11 +46,9 @@ export function removeDangerousCharacters(input: string): string {
 }
 
 /**
- * Removes SQL injection patterns
- * @param input - Raw user input
- * @returns Sanitized string
+ * Attempts to strip common SQL injection patterns from user input.
+ * Note: in production this should complement, not replace, proper parameterized queries.
  */
-//I need to remove this and use parametirzed queries instead
 export function removeSQLPatterns(input: string): string {
   return input
     .replace(/('|(;|--|\/\*|\*\/|xp_|sp_|exec|execute|select|insert|update|delete|drop|create|alter|union|into|load_file|outfile))/gi, '')
@@ -60,11 +56,9 @@ export function removeSQLPatterns(input: string): string {
 }
 
 /**
- * Removes NoSQL injection patterns (for MongoDB, etc.)
- * @param input - Raw user input
- * @returns Sanitized string
+ * Attempts to strip common NoSQL injection patterns from user input.
+ * Note: in production this should complement, not replace, safe query building.
  */
-//Here as well I need to remove this and use proper queries instead - its too aggresive
 export function removeNoSQLPatterns(input: string): string {
   return input
     .replace(/[\$\{\}]/g, '') // Remove $ and {} used in MongoDB queries

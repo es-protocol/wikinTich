@@ -1,3 +1,16 @@
+/**
+ * API route for handling parent home tutoring requests.
+ * 
+ * This endpoint is responsible for:
+ * - Enforcing origin and CSRF protections
+ * - Validating and sanitizing parent and student input
+ * - Applying server-side rate limiting
+ * - Triggering the Supabase OTP email flow
+ * - Persisting a pending registration record in Supabase
+ * 
+ * The actual account creation happens later in the `/api/create-account` route
+ * after the parent has verified their email via the OTP link.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 import { storeRegistrationData } from '@/lib/registration-storage'

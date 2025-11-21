@@ -36,7 +36,7 @@ export interface PendingRegistration {
   updated_at: string
 }
 
-// Store registration data server-side
+// Store a pending registration record in Supabase before verification is complete
 export const storeRegistrationData = async (
   email: string,
   data: PendingRegistrationData,

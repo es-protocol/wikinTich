@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { devError } from '@/lib/utils/logger'
 
+// Cookie-based session management for authenticated users.
+// This module keeps all session creation, parsing, and validation logic in one place
+// so that the rest of the codebase does not need to deal with low-level cookie details.
+
 // Session management constants
 const SESSION_COOKIE_NAME = 'tutor_link_session'
 const SESSION_SECRET = process.env.SESSION_SECRET
@@ -26,7 +30,7 @@ export interface SessionData {
   createdAt: number
 }
 
-// Create secure session cookie
+// Create a signed and encoded session cookie value from the session payload
 export function createSessionCookie(sessionData: SessionData): string {
   const secret = getSessionSecret() //Secret key from environment 
   const sessionToken = crypto.randomBytes(32).toString('hex')
@@ -40,10 +44,11 @@ export function createSessionCookie(sessionData: SessionData): string {
   // Encode session data with signature
   const encodedData = Buffer.from(sessionDataString).toString('base64')
   
-  return `${sessionToken}:${encodedData}:${signature}` //basically the secure cookie
+  // Final cookie value format: "<randomToken>:<base64Payload>:<hmacSignature>"
+  return `${sessionToken}:${encodedData}:${signature}`
 }
 
-// Parse and validate session cookie
+// Parse the session cookie value and validate its integrity and freshness
 export function parseSessionCookie(cookieValue: string): SessionData | null {
   try {
     const secret = getSessionSecret()
@@ -82,20 +87,20 @@ export function parseSessionCookie(cookieValue: string): SessionData | null {
   }
 }
 
-// Set session cookie in response
+// Attach a secure session cookie to an HTTP response
 export function setSessionCookie(response: NextResponse, sessionData: SessionData): void {
   const cookieValue = createSessionCookie(sessionData)
   
   response.cookies.set(SESSION_COOKIE_NAME, cookieValue, {
-    httpOnly: true, //javascript cant access it
-    secure: process.env.NODE_ENV === 'production', //only send over https in production
-    sameSite: 'strict', //prevents CSRF attacks
-    maxAge: SESSION_MAX_AGE / 1000, // Convert to seconds
+    httpOnly: true, // prevent access from client-side JavaScript
+    secure: process.env.NODE_ENV === 'production', // send only over HTTPS in production
+    sameSite: 'strict', // mitigate CSRF by restricting cross-site requests
+    maxAge: SESSION_MAX_AGE / 1000, // expiration in seconds
     path: '/'
   })
 }
 
-// Clear session cookie
+// Clear the session cookie by overwriting it with an empty, expired value
 export function clearSessionCookie(response: NextResponse): void {
   response.cookies.set(SESSION_COOKIE_NAME, '', {
     httpOnly: true,
@@ -106,7 +111,7 @@ export function clearSessionCookie(response: NextResponse): void {
   })
 }
 
-// Get session from request
+// Convenience helper to read and validate the session from an incoming request
 export function getSessionFromRequest(request: NextRequest): SessionData | null {
   const cookieValue = request.cookies.get(SESSION_COOKIE_NAME)?.value
   

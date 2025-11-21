@@ -1,4 +1,4 @@
-'use client' //This page runs in the browser
+'use client'
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
@@ -12,15 +12,13 @@ import { useDebouncedCallback } from '@/lib/hooks/useDebouncedValue'
 import { DEBOUNCE_DELAYS } from '@/lib/utils/debounce'
 
 export default function HomeTutoringRequest() {
-  const router = useRouter() //gives access to next.js navigation
+  const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState(clearErrorState())
   const [countryCode, setCountryCode] = useState('+232') // Default to Sierra Leone
   
-  // Rate limit countdown state
   const [rateLimitCountdown, setRateLimitCountdown] = useState<number | null>(null)
   
-  // Inline validation errors - hold per field error messages
   const [fieldErrors, setFieldErrors] = useState({
     parentEmail: '',
     parentPhone: '',
@@ -30,7 +28,6 @@ export default function HomeTutoringRequest() {
     subjects: ''
   })
   
-  // Field touched state (to show errors only after user interacts)
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
   
   const [formData, setFormData] = useState({
@@ -51,7 +48,6 @@ export default function HomeTutoringRequest() {
     additionalRequirements: ''
   })
 
-  // Rate limit countdown timer
   useEffect(() => {
     if (rateLimitCountdown === null || rateLimitCountdown <= 0) {
       return
@@ -60,7 +56,7 @@ export default function HomeTutoringRequest() {
     const timer = setInterval(() => {
       setRateLimitCountdown((prev) => {
         if (prev === null || prev <= 1000) {
-          setError(clearErrorState()) // Clear error when countdown finishes
+      setError(clearErrorState())
           return null
         }
         return prev - 1000 // Decrease by 1 second
@@ -69,7 +65,6 @@ export default function HomeTutoringRequest() {
 
     return () => clearInterval(timer)
   }, [rateLimitCountdown])
-//when someone types in the form we update the right box with the new text
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({
@@ -77,20 +72,18 @@ export default function HomeTutoringRequest() {
       [name]: value
     }))
     
-    // Debounced real-time validation for specific fields (prevents excessive validation calls)
     if (touchedFields.has(name)) {
       debouncedValidate(name, value)
     }
   }
 
-  // Mark field as touched when user leaves it
+  // Mark a field as "touched" when the parent moves focus away, then validate it
   const handleBlur = (fieldName: string) => {
     setTouchedFields(prev => new Set(prev).add(fieldName))
     const value = formData[fieldName as keyof typeof formData]
     validateField(fieldName, value as string)
   }
 
-  // Validate individual field
   const validateField = (fieldName: string, value: string) => {
     let errorMessage = ''
 
@@ -130,11 +123,9 @@ export default function HomeTutoringRequest() {
     setFieldErrors(prev => ({ ...prev, [fieldName]: errorMessage }))
   }
 
-  // Debounced validation for real-time feedback without excessive calls
   const debouncedValidate = useDebouncedCallback((fieldName: string, value: string) => {
     validateField(fieldName, value)
   }, DEBOUNCE_DELAYS.VALIDATION)
-//when the form is submitted
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault() 
     setIsSubmitting(true)

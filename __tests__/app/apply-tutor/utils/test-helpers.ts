@@ -6,6 +6,7 @@
  */
 
 import { FormData } from '@/app/apply-tutor/page'
+import { transformFormDataToStorageFormat } from '@/lib/utils/tutor-data-transformation'
 
 /**
  * Creates a complete tutor form data object with all required fields
@@ -38,21 +39,15 @@ export const createMockTutorFormData = (overrides?: Partial<FormData>): FormData
 
 /**
  * Creates the expected localStorage structure for tutor data
- * Matches the exact format stored by the current implementation
+ * 
+ * Uses the shared transformation function to ensure consistency between
+ * component implementation and test expectations (DRY principle).
+ * 
+ * @param formData - The tutor form data to transform
+ * @returns The storage format data structure
  */
 export const createExpectedLocalStorageData = (formData: FormData) => {
-  return {
-    fullName: formData.fullName,
-    email: formData.email,
-    phone: formData.phone,
-    bio: formData.bio,
-    subjects: formData.subjects,
-    qualificationType: formData.qualificationType,
-    qualificationTitle: formData.qualificationTitle,
-    institution: formData.institution,
-    yearObtained: formData.yearObtained,
-    availability: formData.availability,
-  }
+  return transformFormDataToStorageFormat(formData)
 }
 
 /**

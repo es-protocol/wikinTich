@@ -6,8 +6,9 @@ import { AcademicCapIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
 import { STORAGE_KEYS, ROUTES } from '@/lib/constants'
+import { transformFormDataToStorageFormat } from '@/lib/utils/tutor-data-transformation'
 
-interface FormData {
+export interface FormData {
   fullName: string
   email: string
   phone: string
@@ -101,25 +102,8 @@ export default function ApplyTutorPage() {
     try {
       // 1. Store the tutor data immediately for after verification
       // TODO: This will be replaced with API route call in future refactoring
-      localStorage.setItem(STORAGE_KEYS.PENDING_TUTOR_DATA, JSON.stringify({
-        // Profile information
-        fullName: formData.fullName,
-        email: formData.email,
-        phone: formData.phone,
-        
-        // Tutor information
-        bio: formData.bio,
-        subjects: formData.subjects,
-        
-        // Qualifications
-        qualificationType: formData.qualificationType,
-        qualificationTitle: formData.qualificationTitle,
-        institution: formData.institution,
-        yearObtained: formData.yearObtained,
-        
-        // Availability
-        availability: formData.availability
-      }))
+      const storageData = transformFormDataToStorageFormat(formData)
+      localStorage.setItem(STORAGE_KEYS.PENDING_TUTOR_DATA, JSON.stringify(storageData))
 
       // 2. Send verification email using Supabase Auth
       const { error } = await supabase.auth.signInWithOtp({

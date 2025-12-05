@@ -4,13 +4,38 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { AcademicCapIcon, CheckCircleIcon, ArrowRightIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
+import { STORAGE_KEYS, ROUTES } from '@/lib/constants'
 
+/**
+ * Tutor Application Success Page Component
+ * 
+ * Displays a success message after tutor application submission.
+ * 
+ * Current implementation:
+ * - Reads email from localStorage (pendingTutorData)
+ * - Displays success message with email
+ * - Provides next steps instructions
+ * 
+ * TODO: Refactor to read email from URL query params or API after refactoring
+ * to remove localStorage dependency
+ * 
+ * @returns {JSX.Element} The success page component
+ */
 export default function TutorApplicationSuccessPage() {
   const [email, setEmail] = useState('')
 
+  /**
+   * Reads email from localStorage on component mount
+   * 
+   * Fetches the email address from the pending tutor data stored in localStorage.
+   * This is used to display the email address in the success message.
+   * 
+   * TODO: Replace with reading from URL query params or API after refactoring
+   */
   useEffect(() => {
     // Get email from pending tutor data
-    const pendingData = localStorage.getItem('pendingTutorData')
+    // TODO: Replace with URL query params or API call after refactoring
+    const pendingData = localStorage.getItem(STORAGE_KEYS.PENDING_TUTOR_DATA)
     if (pendingData) {
       const data = JSON.parse(pendingData)
       setEmail(data.email)
@@ -57,7 +82,7 @@ export default function TutorApplicationSuccessPage() {
 
           {/* Action Buttons */}
           <div className="space-y-3">
-            <Link href={`/verify-email?email=${email}`} className="block">
+            <Link href={`${ROUTES.VERIFY_EMAIL}?email=${email}`} className="block">
               <button className="w-full bg-primary-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-primary-700 transition-colors duration-300 flex items-center justify-center">
                 <AcademicCapIcon className="w-5 h-5 mr-2" />
                 Go to Verification Page
@@ -65,7 +90,7 @@ export default function TutorApplicationSuccessPage() {
               </button>
             </Link>
             
-            <Link href="/" className="block">
+            <Link href={ROUTES.HOME} className="block">
               <button className="w-full bg-gray-100 text-gray-700 py-3 px-6 rounded-lg font-medium hover:bg-gray-200 transition-colors duration-300">
                 Return to Home
               </button>

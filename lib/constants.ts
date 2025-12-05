@@ -173,6 +173,8 @@ export const ROUTES = {
   LOGIN: '/login',
   REGISTER: '/register',
   HOME_TUTORING: '/home-tutoring',
+  APPLY_TUTOR: '/apply-tutor',
+  APPLY_TUTOR_SUCCESS: '/apply-tutor/success',
   VERIFY_EMAIL: '/verify-email',
   SET_PASSWORD: '/set-password',
   AUTH_CALLBACK: '/auth/callback',

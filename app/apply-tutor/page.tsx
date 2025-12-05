@@ -5,24 +5,21 @@ import { motion } from 'framer-motion'
 import { AcademicCapIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
+import { STORAGE_KEYS, ROUTES } from '@/lib/constants'
 
 interface FormData {
-  // Profile information
   fullName: string
   email: string
   phone: string
   
-  // Tutor information
   bio: string
   subjects: string[]
   
-  // Qualifications
   qualificationType: string
   qualificationTitle: string
   institution: string
   yearObtained: string
   
-  // Availability
   availability: {
     monday: { available: boolean; hours: string }
     tuesday: { available: boolean; hours: string }
@@ -65,7 +62,7 @@ export default function ApplyTutorPage() {
   const [error, setError] = useState('')
 
   const handleInputChange = (field: keyof FormData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData(prev => ({ ...prev, [field]: value     }))
   }
 
   const handleSubjectToggle = (subject: string) => {
@@ -90,6 +87,12 @@ export default function ApplyTutorPage() {
     }))
   }
 
+  /**
+   * Handles form submission
+   * 
+   * Current implementation stores data in localStorage and sends OTP via Supabase.
+   * TODO: Refactor to use API route for server-side storage and security controls.
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -97,7 +100,8 @@ export default function ApplyTutorPage() {
 
     try {
       // 1. Store the tutor data immediately for after verification
-      localStorage.setItem('pendingTutorData', JSON.stringify({
+      // TODO: This will be replaced with API route call in future refactoring
+      localStorage.setItem(STORAGE_KEYS.PENDING_TUTOR_DATA, JSON.stringify({
         // Profile information
         fullName: formData.fullName,
         email: formData.email,
@@ -130,10 +134,12 @@ export default function ApplyTutorPage() {
       }
 
       // 3. Redirect to success page
-      window.location.href = '/apply-tutor/success'
+      // TODO: Replace with Next.js router navigation in future refactoring
+      window.location.href = ROUTES.APPLY_TUTOR_SUCCESS
 
     } catch (err: any) {
       console.error('Error submitting application:', err)
+      // TODO: Replace with proper error handling using error utilities
       setError(err.message || 'Error submitting application')
     } finally {
       setIsSubmitting(false)

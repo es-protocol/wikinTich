@@ -5,7 +5,7 @@
  * Follows Single Responsibility Principle and DRY principle.
  */
 
-import { FormData } from '@/app/apply-tutor/page'
+import type { FormData } from '@/app/apply-tutor/page'
 
 /**
  * Storage format for tutor data (matches localStorage structure)

@@ -1,50 +1,224 @@
 /**
  * Tutor Application Submission API Route
- * 
- * PLACEHOLDER - This route will be implemented during refactoring.
- * Currently, the tutor flow uses client-side localStorage (insecure).
- * 
- * Target Implementation:
- * - CSRF protection
+ *
+ * This route will mirror the parent /api/home-tutoring/submit endpoint,
+ * enforcing the same security guarantees for tutor registration:
  * - Origin validation
+ * - CSRF protection
+ * - Server-side validation
  * - Rate limiting
  * - Input sanitization
- * - Server-side storage in pending_registrations table
- * 
+ * - Secure pending_registrations storage
+ * - OTP email sending via Supabase Auth
+ *
  * Security Tests: See __tests__/app/apply-tutor/api/submit/route.test.ts
  */
 
+import { ERROR_MESSAGES, REGISTRATION_TYPES } from '@/lib/constants'
+import { getCORSHeaders, isOriginAllowed } from '@/lib/cors-config'
+import { storeRegistrationData } from '@/lib/registration-storage'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
+import { validateCSRFRequest, type CSRFValidationResult } from '@/lib/services/csrf-service'
+import { sanitizeFormData } from '@/lib/services/input-sanitization-service'
+import { applySecurityHeaders } from '@/lib/services/security-headers-service'
+import { validateTutorFormData, type TutorFormData } from '@/lib/services/tutor-validation'
+import { getEmailRedirectUrl, supabase } from '@/lib/supabase'
+import { devError } from '@/lib/utils/logger'
 import { NextRequest, NextResponse } from 'next/server'
+
+interface TutorSubmitBody {
+  csrf_token: string
+  formData: TutorFormData
+}
 
 /**
  * POST handler for tutor application submission
- * 
- * TODO: Implement security controls matching parent flow:
- * 1. Origin validation
- * 2. CSRF token validation
- * 3. Input validation
- * 4. Rate limiting
- * 5. Input sanitization
- * 6. Server-side storage
- * 7. OTP email sending
+ *
+ * Final flow:
+ * - Origin validation
+ * - JSON parsing
+ * - CSRF protection
+ * - Server-side tutor validation
+ * - Server-side rate limiting
+ * - OTP email sending via Supabase
+ * - Sanitised pending_registrations storage
+ * - Secure JSON success response with CORS + security headers
  */
 export async function POST(req: NextRequest) {
-  // PLACEHOLDER: This will be implemented during refactoring
-  // For now, return 501 (Not Implemented) so tests can run
-  // Using Response directly for Jest compatibility
   try {
-    return new Response(
-      JSON.stringify({ error: 'not_implemented', message: 'Tutor API route not yet implemented' }),
+    // 1) Origin validation
+    const origin = req.headers.get('origin') || ''
+    if (!isOriginAllowed(origin)) {
+      const response = NextResponse.json({ error: ERROR_MESSAGES.FORBIDDEN }, { status: 403 })
+      return applySecurityHeaders(response)
+    }
+
+    // 2) Parse JSON body safely
+    let body: TutorSubmitBody
+    try {
+      body = await req.json()
+    } catch {
+      const response = NextResponse.json({ error: ERROR_MESSAGES.INVALID_JSON }, { status: 400 })
+      return applySecurityHeaders(response)
+    }
+
+    const { csrf_token, formData } = body || ({} as TutorSubmitBody)
+
+    // 3) CSRF protection
+    const csrfValidation: CSRFValidationResult = validateCSRFRequest(req, csrf_token)
+    if (!csrfValidation.isValid) {
+      const response = NextResponse.json(
+        { error: csrfValidation.error || ERROR_MESSAGES.BAD_CSRF },
+        { status: 400 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 4) Basic formData presence check to avoid runtime errors
+    if (!formData || typeof formData !== 'object') {
+      const response = NextResponse.json(
+        { error: ERROR_MESSAGES.INVALID_FORM_DATA },
+        { status: 400 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 5) Server-side tutor validation (matches client + unit tests)
+    const tutorValidation = validateTutorFormData(formData)
+    if (!tutorValidation.isValid) {
+      const firstError = tutorValidation.errors[0] || ERROR_MESSAGES.INVALID_FORM_DATA
+      const response = NextResponse.json(
+        { error: firstError },
+        { status: 400 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 6) Server-side rate limiting for tutor registration (per email + IP)
+    const rateLimitCheck = await checkServerSideRateLimit(req, formData.email, 'registration')
+
+    if (!rateLimitCheck.allowed) {
+      const response = NextResponse.json(
+        {
+          error: rateLimitCheck.error || ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
+          resetTime: rateLimitCheck.resetTime,
+        },
+        { status: 429 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 7) Send OTP email using Supabase Auth with tutor metadata
+    const tutorEmail = formData.email
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: tutorEmail,
+      options: {
+        data: {
+          full_name: formData.fullName,
+          phone: formData.phone,
+          role: 'tutor',
+          subjects: formData.subjects,
+          qualification_type: formData.qualificationType,
+          qualification_title: formData.qualificationTitle,
+          institution: formData.institution,
+          year_obtained: formData.yearObtained,
+          availability: formData.availability,
+        },
+        emailRedirectTo: getEmailRedirectUrl(),
+      },
+    })
+
+    if (otpError) {
+      devError('Tutor OTP error:', otpError)
+      const response = NextResponse.json(
+        { error: ERROR_MESSAGES.OTP_ERROR },
+        { status: 500 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 8) Build and sanitise registration payload for pending_registrations
+    const registrationData = sanitizeFormData(
       {
-        status: 501,
-        headers: { 'Content-Type': 'application/json' },
+        fullName: formData.fullName,
+        phone: formData.phone,
+        email: formData.email,
+        countryCode: formData.countryCode,
+        bio: formData.bio,
+        subjects: Array.isArray(formData.subjects)
+          ? formData.subjects.join(', ')
+          : formData.subjects ?? '',
+        qualificationType: formData.qualificationType,
+        qualificationTitle: formData.qualificationTitle,
+        institution: formData.institution,
+        yearObtained: formData.yearObtained,
+        availability: JSON.stringify(formData.availability),
+      },
+      {
+        fullName: 'text',
+        phone: 'phone',
+        email: 'email',
+        countryCode: 'text',
+        bio: 'text',
+        subjects: 'text',
+        qualificationType: 'text',
+        qualificationTitle: 'text',
+        institution: 'text',
+        yearObtained: 'numeric',
       }
     )
-  } catch {
-    // Fallback for NextResponse if available
-    return NextResponse.json(
-      { error: 'not_implemented', message: 'Tutor API route not yet implemented' },
-      { status: 501 }
+
+    const storeResult = await storeRegistrationData(
+      formData.email,
+      registrationData,
+      REGISTRATION_TYPES.TUTOR
     )
+
+    if (!storeResult.success) {
+      devError('Tutor storage error details:', storeResult.error)
+      const response = NextResponse.json(
+        { error: ERROR_MESSAGES.STORAGE_ERROR_CODE, details: storeResult.error },
+        { status: 500 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 9) Successful response with CORS + security headers
+    const successResponse = NextResponse.json(
+      { ok: true },
+      {
+        status: 200,
+        headers: getCORSHeaders(origin),
+      }
+    )
+
+    return applySecurityHeaders(successResponse)
+  } catch (error) {
+    devError('Tutor submission error:', error)
+    const errorResponse = NextResponse.json(
+      { error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR },
+      { status: 500 }
+    )
+    return applySecurityHeaders(errorResponse)
   }
+}
+
+/**
+ * OPTIONS handler for CORS preflight
+ *
+ * Mirrors the parent home-tutoring submit route:
+ * - Validates origin
+ * - Returns appropriate CORS headers for allowed origins
+ */
+export async function OPTIONS(req: Request) {
+  const origin = req.headers.get('origin') || ''
+
+  if (!isOriginAllowed(origin)) {
+    return new NextResponse(null, { status: 403 })
+  }
+
+  return new NextResponse(null, {
+    status: 200,
+    headers: getCORSHeaders(origin),
+  })
 }

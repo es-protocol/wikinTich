@@ -9,6 +9,7 @@
  */
 
 import crypto from 'crypto'
+import type { NextRequest } from 'next/server'
 
 // Types for better type safety and testability
 export interface CSRFTokenData {
@@ -126,4 +127,32 @@ export function createCSRFTokenData(): CSRFTokenData {
  */
 export function isCSRFTokenExpired(expiresAt: number): boolean {
   return Date.now() > expiresAt
+}
+
+/**
+ * High-level CSRF validation for Next.js API/App routes.
+ *
+ * Reads the CSRF signature from the csrf_sig cookie and validates it
+ * against the csrf_token provided in the JSON body using CSRF_SECRET.
+ *
+ * This is shared by multiple API routes (parent + tutor submit flows)
+ * to keep CSRF behaviour consistent and easy to maintain.
+ */
+export function validateCSRFRequest(
+  request: NextRequest,
+  token: string
+): CSRFValidationResult {
+  const secret = process.env.CSRF_SECRET
+  if (!secret) {
+    return { isValid: false, error: 'server_misconfigured' }
+  }
+
+  const cookieHeader = request.headers.get('cookie')
+  const signature = extractCSRFSignature(cookieHeader)
+
+  if (!token || !signature) {
+    return { isValid: false, error: 'bad_csrf' }
+  }
+
+  return validateCSRFToken(token, signature, secret)
 }

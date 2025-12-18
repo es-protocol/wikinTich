@@ -9,6 +9,13 @@ import type { FormData } from '@/app/apply-tutor/page'
 
 /**
  * Storage format for tutor data (matches localStorage structure)
+ *
+ * NOTE:
+ * - This shape is validated in the tutor data-transformation unit tests
+ *   (__tests__/app/apply-tutor/unit/data-transformation.test.ts and
+ *   related helpers).
+ * - Any changes here must stay compatible with pending_registrations
+ *   storage on the server and the client-side localStorage usage.
  */
 export interface TutorStorageData {
   fullName: string

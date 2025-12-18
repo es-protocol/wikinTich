@@ -5,13 +5,15 @@ import { motion } from 'framer-motion'
 import { AcademicCapIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
-import { STORAGE_KEYS, ROUTES } from '@/lib/constants'
+import { STORAGE_KEYS, ROUTES, SUPPORTED_COUNTRIES } from '@/lib/constants'
 import { transformFormDataToStorageFormat } from '@/lib/utils/tutor-data-transformation'
+import { validateTutorFormData } from '@/lib/services/tutor-validation'
 
 export interface FormData {
   fullName: string
   email: string
   phone: string
+  countryCode: string
   
   bio: string
   subjects: string[]
@@ -42,6 +44,7 @@ export default function ApplyTutorPage() {
     fullName: '',
     email: '',
     phone: '',
+    countryCode: '+232', // Default to Sierra Leone
     bio: '',
     subjects: [],
     qualificationType: '',
@@ -100,6 +103,13 @@ export default function ApplyTutorPage() {
     setError('')
 
     try {
+      // 0. Validate form data before proceeding
+      const validation = validateTutorFormData(formData)
+      if (!validation.isValid) {
+        setError(validation.errors[0] || 'Please fix the form errors before submitting')
+        return
+      }
+
       // 1. Store the tutor data immediately for after verification
       // TODO: This will be replaced with API route call in future refactoring
       const storageData = transformFormDataToStorageFormat(formData)
@@ -207,14 +217,30 @@ export default function ApplyTutorPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Phone Number *
                   </label>
-                  <input
-                    type="tel"
-                    required
-                    value={formData.phone}
-                    onChange={(e) => handleInputChange('phone', e.target.value)}
-                    className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
-                    placeholder="Enter your phone number"
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={formData.countryCode}
+                      onChange={(e) => handleInputChange('countryCode', e.target.value)}
+                      className="px-3 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 bg-white text-sm sm:text-base"
+                      style={{ minWidth: '140px' }}
+                    >
+                      {SUPPORTED_COUNTRIES.map((country) => (
+                        <option key={country.code} value={country.code}>
+                          {country.flag} {country.code}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex-1">
+                      <input
+                        type="tel"
+                        required
+                        value={formData.phone}
+                        onChange={(e) => handleInputChange('phone', e.target.value)}
+                        className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base text-gray-900"
+                        placeholder="Enter your phone number"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

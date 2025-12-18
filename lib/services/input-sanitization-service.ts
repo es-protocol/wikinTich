@@ -95,9 +95,9 @@ export function sanitizeTextInput(input: string): string {
   return input
     .trim() // Remove leading/trailing whitespace
     .substring(0, VALIDATION_CONSTANTS.MAX_INPUT_LENGTH) // Limit length
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove scripts
-    .replace(/[<>]/g, '') // Remove angle brackets
-    .replace(/['"]/g, '') // Remove quotes
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove scripts(XSS Prevention)
+    .replace(/[<>]/g, '') // Remove angle brackets(XSS & HTML Injection Prevention)
+    .replace(/['"]/g, '') // Remove quotes(XSS & SQL Injection Prevention)
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control characters
     .replace(/javascript:/gi, '') // Remove javascript: protocol
     .replace(/data:text\/html/gi, '') // Remove data URLs

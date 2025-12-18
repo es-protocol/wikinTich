@@ -10,6 +10,7 @@
  */
 
 import Link from 'next/link'
+import { ROUTES } from '@/lib/constants'
 
 export default function MainNavigation() {
   return (
@@ -25,7 +26,7 @@ export default function MainNavigation() {
             <Link href="/login" className="text-primary-600 hover:text-primary-700 font-medium text-sm sm:text-base">
               Login
             </Link>
-            <Link href="/apply-tutor/under-construction" className="text-secondary-600 hover:text-secondary-700 font-medium text-sm sm:text-base">
+            <Link href={ROUTES.APPLY_TUTOR} className="text-secondary-600 hover:text-secondary-700 font-medium text-sm sm:text-base">
               Apply to be a Tutor
             </Link>
             <Link href="/register" className="bg-primary-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-primary-700 font-medium text-sm sm:text-base">

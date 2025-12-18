@@ -14,6 +14,7 @@ export interface TutorStorageData {
   fullName: string
   email: string
   phone: string
+  countryCode: string
   bio: string
   subjects: string[]
   qualificationType: string
@@ -44,6 +45,7 @@ export function transformFormDataToStorageFormat(
     fullName: formData.fullName,
     email: formData.email,
     phone: formData.phone,
+    countryCode: formData.countryCode,
     
     // Tutor information
     bio: formData.bio,

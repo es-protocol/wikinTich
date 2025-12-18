@@ -26,6 +26,7 @@ describe('Tutor Form Data Transformation - Unit Tests', () => {
       expect(transformedData).toHaveProperty('fullName')
       expect(transformedData).toHaveProperty('email')
       expect(transformedData).toHaveProperty('phone')
+      expect(transformedData).toHaveProperty('countryCode')
       expect(transformedData).toHaveProperty('bio')
       expect(transformedData).toHaveProperty('subjects')
       expect(transformedData).toHaveProperty('qualificationType')

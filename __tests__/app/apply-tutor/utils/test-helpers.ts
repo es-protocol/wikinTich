@@ -16,7 +16,8 @@ export const createMockTutorFormData = (overrides?: Partial<FormData>): FormData
   const defaultData: FormData = {
     fullName: 'John Doe',
     email: 'john.doe@example.com',
-    phone: '+1234567890',
+    phone: '76123456', // Valid Sierra Leone phone number (8 digits, matches format: +232 XX XXX XXXX)
+    countryCode: '+232', // Sierra Leone
     bio: 'Experienced mathematics tutor with 5 years of teaching experience.',
     subjects: ['Mathematics', 'Science'],
     qualificationType: 'degree',
@@ -65,6 +66,7 @@ export const validateLocalStorageStructure = (
     'fullName',
     'email',
     'phone',
+    'countryCode',
     'bio',
     'subjects',
     'qualificationType',

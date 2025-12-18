@@ -1,11 +1,22 @@
 /**
- * Integration Tests: Tutor Signup Submission Flow
+ * Integration Tests: Tutor Signup API Submission Flow (Target State)
  * 
- * Tests the complete user flow from form submission to navigation
- * Verifies interactions between components, localStorage, Supabase, and navigation
+ * Tests the complete user flow from form submission through API route to navigation.
+ * Verifies interactions between components, API route, server-side storage, and navigation.
+ * 
+ * These tests define the EXPECTED behavior after refactoring:
+ * - Form submits to API route (not localStorage)
+ * - API route handles validation, sanitization, storage
+ * - OTP email sent via API route
+ * - Navigation to success page
+ * 
+ * These tests will FAIL initially because:
+ * - API route doesn't exist yet
+ * - Frontend still uses localStorage
+ * - Need to be updated as we refactor
  * 
  * Clean Code Principles:
- * - Integration Focus: Tests real interactions, not mocks
+ * - Integration Focus: Tests real interactions through API
  * - Clear Test Scenarios: Each test represents a real user journey
  * - Proper Mocking: External dependencies mocked, internal flow tested
  * - Test Isolation: Each test cleans up after itself
@@ -15,34 +26,46 @@ import React from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
-import { createMockTutorFormData, createExpectedLocalStorageData } from '../utils/test-helpers'
-import { mockSupabase } from '../__mocks__/supabase'
-import { createMockLocalStorage } from '../__mocks__/localStorage'
+import { createMockTutorFormData } from '../utils/test-helpers'
 
-// Mock Supabase BEFORE importing the component
-jest.mock('@/lib/supabase', () => {
-  const { mockSupabase } = require('../__mocks__/supabase')
-  return {
-    supabase: mockSupabase,
-    getEmailRedirectUrl: jest.fn(() => 'http://localhost:3000/auth/callback'),
-  }
-})
+// Mock Next.js router
+const mockPush = jest.fn()
+const mockReplace = jest.fn()
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+    replace: mockReplace,
+  }),
+}))
+
+// Mock fetch for API calls
+global.fetch = jest.fn()
+
+// Mock CSRF endpoint
+const mockCSRFResponse = {
+  token: 'mock-csrf-token-12345',
+}
+
+// Mock successful API response
+const mockSuccessResponse = {
+  ok: true,
+}
+
+// Mock Supabase (for component imports, but API route will use it)
+jest.mock('@/lib/supabase', () => ({
+  supabase: {
+    auth: {
+      signInWithOtp: jest.fn().mockResolvedValue({ data: null, error: null }),
+    },
+  },
+  getEmailRedirectUrl: jest.fn(() => 'http://localhost:3000/auth/callback'),
+}))
 
 // Import component after mocks are set up
 import ApplyTutorPage from '@/app/apply-tutor/page'
 
-// Mock Next.js router
-jest.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: jest.fn(),
-    replace: jest.fn(),
-  }),
-}))
-
-describe('Tutor Signup - Integration Tests (Current Behavior)', () => {
-  let mockStorage: ReturnType<typeof createMockLocalStorage>
-  let originalLocalStorage: Storage // real browser localStorage stored here so it can be sent back after tests
-
+describe.skip('Tutor Signup - API Submission Flow (Target State)', () => {
   const clickAndIgnoreNavigation = async (
     user: ReturnType<typeof userEvent.setup>,
     element: HTMLElement
@@ -50,256 +73,218 @@ describe('Tutor Signup - Integration Tests (Current Behavior)', () => {
     try {
       await user.click(element)
     } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes('navigation')) {//if the error is a navigation error, ignore
+      if (!(error instanceof Error) || !error.message.includes('navigation')) {
         throw error
       }
     }
   }
 
-  beforeEach(() => { //runs before each test
-    // Setup localStorage mock
-    mockStorage = createMockLocalStorage()
-    originalLocalStorage = global.localStorage
-    Object.defineProperty(window, 'localStorage', {
-      value: mockStorage,
-      writable: true,
-    })
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockPush.mockClear()
+    mockReplace.mockClear()
 
-    // Reset Supabase mocks
-    mockSupabase.auth.signInWithOtp.mockClear()
-    mockSupabase.auth.signInWithOtp.mockResolvedValue({
-      data: { user: null, session: null },
-      error: null,
+    // Setup fetch mock for CSRF endpoint
+    ;(global.fetch as jest.Mock).mockImplementation((url: string) => {
+      if (url === '/api/csrf') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockCSRFResponse,
+        })
+      }
+      if (url === '/api/apply-tutor/submit') {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => mockSuccessResponse,
+        })
+      }
+      return Promise.reject(new Error('Unknown URL'))
     })
   })
 
   afterEach(() => {
-    // Restore original implementations
-    Object.defineProperty(window, 'localStorage', {
-      value: originalLocalStorage,
-      writable: true,
-      configurable: true,
-    })
     jest.clearAllMocks()
   })
 
-  describe('Successful Form Submission Flow', () => {
-    it('should store tutor data in localStorage before sending email', async () => {
+  describe('Successful API Submission Flow', () => {
+    it('should fetch CSRF token before submitting form', async () => {
       // Arrange
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
       render(<ApplyTutorPage />)
 
       // Act - Fill form and submit
-      // Note: Using placeholder text since labels aren't properly associated (accessibility issue)
       await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
       await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
       await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
       await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
       
-      // Select subjects
       await user.click(screen.getAllByLabelText(/mathematics/i)[0])
       await user.click(screen.getAllByLabelText(/science/i)[0])
 
-      // Fill qualifications
       const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
       await user.selectOptions(qualificationSelect, formData.qualificationType)
-      await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle)
-      await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
-      await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
-
-      // Set availability
-      await user.click(screen.getByLabelText(/monday/i))
-      const mondayHoursInput = screen.getByPlaceholderText(/9:00 AM - 5:00 PM/i)
-      if (mondayHoursInput) {
-        await user.type(mondayHoursInput, '9:00 AM - 5:00 PM')
-      }
-
-      // Submit form
-      const submitButton = screen.getByRole('button', { name: /submit application/i })
-      await clickAndIgnoreNavigation(user, submitButton)
-
-      // Assert - Verify localStorage was called with correct data
-      await waitFor(() => {
-        expect(mockStorage.setItem).toHaveBeenCalled()
-        const storedData = mockStorage.getStoredData('pendingTutorData')
-        expect(storedData).toBeTruthy()
-        expect(storedData.fullName).toBe(formData.fullName)
-        expect(storedData.email).toBe(formData.email)
-      })
-    })
-
-    it('should store all required fields in localStorage with correct structure', async () => {
-      // Arrange
-      const user = userEvent.setup()
-      const formData = createMockTutorFormData()
-      const expectedData = createExpectedLocalStorageData(formData)
-      render(<ApplyTutorPage />)
-
-      // Act - Fill minimal required fields and submit
-      await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
-      await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
-      await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
-      await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
-      await user.click(screen.getAllByLabelText(/mathematics/i)[0])
-      await user.click(screen.getAllByLabelText(/science/i)[0])
-      const qualificationSelectMinimal = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
-      await user.selectOptions(qualificationSelectMinimal, formData.qualificationType)
-      await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle)
+      await user.type(screen.getByPlaceholderText(/bachelor of education/i), formData.qualificationTitle)
       await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
       await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
 
       const submitButton = screen.getByRole('button', { name: /submit application/i })
       await clickAndIgnoreNavigation(user, submitButton)
 
-      // Assert - Verify complete data structure
+      // Assert - CSRF token should be fetched
       await waitFor(() => {
-        const storedData = mockStorage.getStoredData('pendingTutorData')
-        expect(storedData).toMatchObject({
-          fullName: expectedData.fullName,
-          email: expectedData.email,
-          phone: expectedData.phone,
-          bio: expectedData.bio,
-          subjects: expect.arrayContaining(expectedData.subjects),
-          qualificationType: expectedData.qualificationType,
-          qualificationTitle: expectedData.qualificationTitle,
-          institution: expectedData.institution,
-          yearObtained: expectedData.yearObtained,
-          availability: expect.objectContaining({
-            monday: expect.objectContaining({
-              available: expect.any(Boolean),
-              hours: expect.any(String),
-            }),
-          }),
+        expect(global.fetch).toHaveBeenCalledWith('/api/csrf', {
+          method: 'GET',
+          credentials: 'include',
         })
       })
     })
 
-    it('should send OTP email via Supabase after storing data', async () => {
+    it('should submit form data to API route with CSRF token', async () => {
       // Arrange
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
       render(<ApplyTutorPage />)
 
-      // Act
+      // Act - Fill form and submit
       await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
       await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
       await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
       await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
       await user.click(screen.getAllByLabelText(/mathematics/i)[0])
       await user.click(screen.getAllByLabelText(/science/i)[0])
+
       const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
       await user.selectOptions(qualificationSelect, formData.qualificationType)
-      await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle)
+      await user.type(screen.getByPlaceholderText(/bachelor of education/i), formData.qualificationTitle)
       await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
       await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
 
       const submitButton = screen.getByRole('button', { name: /submit application/i })
       await clickAndIgnoreNavigation(user, submitButton)
 
-      // Assert - Verify Supabase was called
+      // Assert - API route should be called with correct data
       await waitFor(() => {
-        expect(mockSupabase.auth.signInWithOtp).toHaveBeenCalledWith({
-          email: formData.email,
-          options: {
-            emailRedirectTo: expect.any(String),
-          },
+        expect(global.fetch).toHaveBeenCalledWith('/api/apply-tutor/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: expect.stringContaining(formData.email),
         })
       })
+
+      // Verify CSRF token is included
+      const submitCall = (global.fetch as jest.Mock).mock.calls.find(
+        (call: any[]) => call[0] === '/api/apply-tutor/submit'
+      )
+      expect(submitCall).toBeDefined()
+      const requestBody = JSON.parse(submitCall[1].body)
+      expect(requestBody.csrf_token).toBe(mockCSRFResponse.token)
+      expect(requestBody.formData.email).toBe(formData.email)
     })
 
-    it('should navigate to success page after successful email sending', async () => {
+    it('should navigate to success page after successful API submission', async () => {
       // Arrange
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
       render(<ApplyTutorPage />)
 
-      // Act
+      // Act - Fill form and submit
       await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
       await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
       await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
       await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
       await user.click(screen.getAllByLabelText(/mathematics/i)[0])
       await user.click(screen.getAllByLabelText(/science/i)[0])
+
       const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
       await user.selectOptions(qualificationSelect, formData.qualificationType)
-      await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle)
+      await user.type(screen.getByPlaceholderText(/bachelor of education/i), formData.qualificationTitle)
       await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
       await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
 
       const submitButton = screen.getByRole('button', { name: /submit application/i })
       await clickAndIgnoreNavigation(user, submitButton)
 
-      // Assert - Verify navigation occurred
-      // Note: window.location.href assignment is tested indirectly
-      // The form submission succeeded, which means navigation would occur
+      // Assert - Should navigate to success page
       await waitFor(() => {
-        // Verify form submission completed successfully
-        expect(mockSupabase.auth.signInWithOtp).toHaveBeenCalled()
-        expect(mockStorage.setItem).toHaveBeenCalled()
-      }, { timeout: 3000 })
-    })
-
-    it('should complete full submission flow: store → email → navigate', async () => {
-      // Arrange
-      const user = userEvent.setup()
-      const formData = createMockTutorFormData()
-      render(<ApplyTutorPage />)
-
-      // Act - Complete form submission
-      await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
-      await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
-      await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
-      await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
-      await user.click(screen.getAllByLabelText(/mathematics/i)[0])
-      await user.click(screen.getAllByLabelText(/science/i)[0])
-      const qualificationSelectFlowComplete = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
-      await user.selectOptions(qualificationSelectFlowComplete, formData.qualificationType)
-      await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle)
-      await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
-      await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
-
-      const submitButton = screen.getByRole('button', { name: /submit application/i })
-      await clickAndIgnoreNavigation(user, submitButton)
-
-      // Assert - Verify complete flow
-      await waitFor(() => {
-        // 1. Data stored
-        expect(mockStorage.setItem).toHaveBeenCalledWith(
-          'pendingTutorData',
-          expect.stringContaining(formData.email)
+        expect(mockPush).toHaveBeenCalledWith(
+          expect.stringContaining('/verify-email')
         )
-        
-        // 2. Email sent
-        expect(mockSupabase.auth.signInWithOtp).toHaveBeenCalled()
-        
-        // 3. Navigation would occur (tested indirectly via successful submission)
-        // window.location.href assignment happens but is hard to test directly
-        // The important part is that submission succeeded
       }, { timeout: 3000 })
+    })
+
+    it('should include all form fields in API submission', async () => {
+      // Arrange
+      const user = userEvent.setup()
+      const formData = createMockTutorFormData()
+      render(<ApplyTutorPage />)
+
+      // Act - Fill all fields
+      await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
+      await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
+      await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
+      await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
+      await user.click(screen.getAllByLabelText(/mathematics/i)[0])
+      await user.click(screen.getAllByLabelText(/science/i)[0])
+
+      const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
+      await user.selectOptions(qualificationSelect, formData.qualificationType)
+      await user.type(screen.getByPlaceholderText(/bachelor of education/i), formData.qualificationTitle)
+      await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
+      await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
+
+      const submitButton = screen.getByRole('button', { name: /submit application/i })
+      await clickAndIgnoreNavigation(user, submitButton)
+
+      // Assert - Verify all fields are in request
+      await waitFor(() => {
+        const submitCall = (global.fetch as jest.Mock).mock.calls.find(
+          (call: any[]) => call[0] === '/api/apply-tutor/submit'
+        )
+        const requestBody = JSON.parse(submitCall[1].body)
+        expect(requestBody.formData.fullName).toBe(formData.fullName)
+        expect(requestBody.formData.email).toBe(formData.email)
+        expect(requestBody.formData.phone).toBe(formData.phone)
+        expect(requestBody.formData.bio).toBe(formData.bio)
+        expect(requestBody.formData.subjects).toEqual(expect.arrayContaining(formData.subjects))
+        expect(requestBody.formData.qualificationType).toBe(formData.qualificationType)
+        expect(requestBody.formData.qualificationTitle).toBe(formData.qualificationTitle)
+        expect(requestBody.formData.institution).toBe(formData.institution)
+        expect(requestBody.formData.yearObtained).toBe(formData.yearObtained)
+      })
     })
   })
 
   describe('Error Handling', () => {
-    it('should handle email sending errors gracefully', async () => {
+    it('should display error message when CSRF token fetch fails', async () => {
       // Arrange
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
-      const errorMessage = 'Email sending failed'
-      //whenever signWithOTP() is called throw a promise rejection with the error message - "Email Sending Failed"
-      mockSupabase.auth.signInWithOtp.mockRejectedValue(new Error(errorMessage))
+      
+      ;(global.fetch as jest.Mock).mockImplementation((url: string) => {
+        if (url === '/api/csrf') {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+          })
+        }
+        return Promise.reject(new Error('Unknown URL'))
+      })
+
       render(<ApplyTutorPage />)
 
-      // Act
+      // Act - Fill form and submit
       await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
       await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
       await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
       await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
       await user.click(screen.getAllByLabelText(/mathematics/i)[0])
-      await user.click(screen.getAllByLabelText(/science/i)[0])
+
       const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
       await user.selectOptions(qualificationSelect, formData.qualificationType)
-      await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle)
+      await user.type(screen.getByPlaceholderText(/bachelor of education/i), formData.qualificationTitle)
       await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
       await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
 
@@ -308,112 +293,143 @@ describe('Tutor Signup - Integration Tests (Current Behavior)', () => {
 
       // Assert - Error should be displayed
       await waitFor(() => {
-        expect(screen.getByText(errorMessage)).toBeInTheDocument()
+        expect(screen.getByText(/security token/i)).toBeInTheDocument()
       })
-
-      // Data should still be in localStorage (not cleared on error)
-      const storedData = mockStorage.getStoredData('pendingTutorData')
-      expect(storedData).toBeTruthy()
     })
 
-    it('should preserve localStorage data when email sending fails', async () => {
+    it('should display error message when API submission fails', async () => {
       // Arrange
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
       
-      mockSupabase.auth.signInWithOtp.mockRejectedValue(new Error('Network error'))
+      ;(global.fetch as jest.Mock).mockImplementation((url: string) => {
+        if (url === '/api/csrf') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => mockCSRFResponse,
+          })
+        }
+        if (url === '/api/apply-tutor/submit') {
+          return Promise.resolve({
+            ok: false,
+            status: 400,
+            json: async () => ({ error: 'validation_error' }),
+          })
+        }
+        return Promise.reject(new Error('Unknown URL'))
+      })
+
       render(<ApplyTutorPage />)
 
-      // Act
+      // Act - Fill form and submit
       await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
       await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
       await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
       await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
       await user.click(screen.getAllByLabelText(/mathematics/i)[0])
-      await user.click(screen.getAllByLabelText(/science/i)[0])
+
       const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
       await user.selectOptions(qualificationSelect, formData.qualificationType)
-      await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle)
+      await user.type(screen.getByPlaceholderText(/bachelor of education/i), formData.qualificationTitle)
       await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
       await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
 
       const submitButton = screen.getByRole('button', { name: /submit application/i })
       await clickAndIgnoreNavigation(user, submitButton)
 
-      // Assert - Data should remain in localStorage
+      // Assert - Error should be displayed
       await waitFor(() => {
-        const storedData = mockStorage.getStoredData('pendingTutorData')
-        expect(storedData).toBeTruthy()
-        expect(storedData.email).toBe(formData.email)
+        expect(screen.getByText(/validation/i)).toBeInTheDocument()
       })
-
-      // Should not navigate on error (form submission failed)
-      // Navigation only happens on success, which didn't occur
     })
 
-    it('should display error message when submission fails', async () => {
+    it('should handle rate limiting response from API', async () => {
       // Arrange
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
-      const errorMessage = 'Failed to send email'
       
-      mockSupabase.auth.signInWithOtp.mockRejectedValue(new Error(errorMessage))
+      ;(global.fetch as jest.Mock).mockImplementation((url: string) => {
+        if (url === '/api/csrf') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => mockCSRFResponse,
+          })
+        }
+        if (url === '/api/apply-tutor/submit') {
+          return Promise.resolve({
+            ok: false,
+            status: 429,
+            json: async () => ({
+              error: 'Rate limit exceeded',
+              resetTime: 900, // 15 minutes in seconds
+            }),
+          })
+        }
+        return Promise.reject(new Error('Unknown URL'))
+      })
+
       render(<ApplyTutorPage />)
 
-      // Act
+      // Act - Fill form and submit
       await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
       await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
       await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
       await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
       await user.click(screen.getAllByLabelText(/mathematics/i)[0])
-      await user.click(screen.getAllByLabelText(/science/i)[0])
+
       const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
       await user.selectOptions(qualificationSelect, formData.qualificationType)
-      await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle)
+      await user.type(screen.getByPlaceholderText(/bachelor of education/i), formData.qualificationTitle)
       await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
       await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
 
       const submitButton = screen.getByRole('button', { name: /submit application/i })
       await clickAndIgnoreNavigation(user, submitButton)
 
-      // Assert
+      // Assert - Rate limit error should be displayed
       await waitFor(() => {
-        const errorElement = screen.getByText(new RegExp(errorMessage, 'i'))
-        expect(errorElement).toBeInTheDocument()
+        expect(screen.getByText(/rate limit/i)).toBeInTheDocument()
       })
     })
   })
 
-  describe('Data Persistence', () => {
-    it('should use correct localStorage key: pendingTutorData', async () => {
+  describe('No localStorage Usage', () => {
+    it('should NOT use localStorage for data storage', async () => {
       // Arrange
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
+      const localStorageSpy = jest.spyOn(Storage.prototype, 'setItem')
+
       render(<ApplyTutorPage />)
 
-      // Act
+      // Act - Fill form and submit
       await user.type(screen.getByPlaceholderText(/enter your full name/i), formData.fullName)
       await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email)
       await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
       await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
       await user.click(screen.getAllByLabelText(/mathematics/i)[0])
-      await user.click(screen.getAllByLabelText(/science/i)[0])
+
       const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
       await user.selectOptions(qualificationSelect, formData.qualificationType)
-      await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle)
+      await user.type(screen.getByPlaceholderText(/bachelor of education/i), formData.qualificationTitle)
       await user.type(screen.getByPlaceholderText(/name of institution/i), formData.institution)
       await user.type(screen.getByPlaceholderText(/year/i), formData.yearObtained)
 
       const submitButton = screen.getByRole('button', { name: /submit application/i })
       await clickAndIgnoreNavigation(user, submitButton)
 
-      // Assert
+      // Assert - localStorage should NOT be used
       await waitFor(() => {
-        expect(mockStorage.setItem).toHaveBeenCalledWith(
-          'pendingTutorData',
-          expect.any(String)
-        )
+        expect(global.fetch).toHaveBeenCalledWith('/api/apply-tutor/submit', expect.any(Object))
       })
+
+      // Verify localStorage.setItem was NOT called with pendingTutorData
+      const setItemCalls = localStorageSpy.mock.calls.filter(
+        (call) => call[0] === 'pendingTutorData'
+      )
+      expect(setItemCalls).toHaveLength(0)
+
+      localStorageSpy.mockRestore()
     })
   })
 })

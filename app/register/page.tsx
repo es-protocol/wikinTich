@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { HomeIcon, AcademicCapIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 import MainNavigation from '@/app/components/MainNavigation'
+import { ROUTES } from '@/lib/constants'
 
 export default function RegisterPage() {
   return (
@@ -69,7 +70,7 @@ export default function RegisterPage() {
             whileHover={{ scale: 1.02 }}
             className="group"
           >
-            <Link href="/apply-tutor/under-construction" className="block">
+            <Link href={ROUTES.APPLY_TUTOR} className="block">
               <div className="bg-white rounded-2xl shadow-lg p-8 h-full border-2 border-transparent group-hover:border-primary-200 transition-all duration-300">
                 <div className="text-center">
                   <div className="mx-auto w-24 h-24 bg-primary-100 rounded-full flex items-center justify-center mb-6 group-hover:bg-primary-200 transition-colors duration-300">

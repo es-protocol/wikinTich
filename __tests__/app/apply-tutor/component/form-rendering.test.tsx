@@ -91,7 +91,7 @@ describe('Tutor Signup Form - Component Tests', () => {
       expect(screen.getByText(/subjects you can teach/i)).toBeInTheDocument()
 
       // Assert - Qualifications
-      expect(screen.getByRole('combobox')).toBeInTheDocument()
+      expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2) // Country code + Qualification type
       expect(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i)).toBeInTheDocument()
       expect(screen.getByPlaceholderText(/name of institution/i)).toBeInTheDocument()
       expect(screen.getByPlaceholderText(/year/i)).toBeInTheDocument()
@@ -216,10 +216,10 @@ describe('Tutor Signup Form - Component Tests', () => {
       // Fill required fields
       await user.type(screen.getByPlaceholderText(/enter your full name/i), 'John Doe')
       await user.type(screen.getByPlaceholderText(/enter your email/i), 'john@example.com')
-      await user.type(screen.getByPlaceholderText(/enter your phone number/i), '1234567890')
-      await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), 'Test bio')
+      await user.type(screen.getByPlaceholderText(/enter your phone number/i), '76123456') // Valid Sierra Leone phone number
+      await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), 'This is a valid bio with more than 50 characters as required by the validation rules for tutor applications.')
       await user.click(screen.getByLabelText(/mathematics/i))
-      const qualificationSelect = screen.getByRole('combobox')
+      const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
       await user.selectOptions(qualificationSelect, 'degree')
       await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), 'Bachelor')
       await user.type(screen.getByPlaceholderText(/name of institution/i), 'University')

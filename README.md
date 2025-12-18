@@ -80,8 +80,6 @@ Optional (used in production or advanced scenarios):
 ```env
 PRODUCTION_URL=https://wikin-tich.vercel.app
 ADDITIONAL_ALLOWED_ORIGINS=https://another-allowed-origin.example
-NEXT_PUBLIC_AI_MATCHING_SERVICE_URL=http://localhost:3002
-NEXT_PUBLIC_AI_MATCHING_ENABLED=false
 ```
 
 ## Run Tutor-Link

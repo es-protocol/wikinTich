@@ -53,7 +53,8 @@ describe('Tutor Application Success Page - Integration Test', () => {
       const tutorData = {
         email: testEmail,
         fullName: 'John Doe',
-        phone: '1234567890',
+        phone: '76123456', // Valid Sierra Leone phone number (8 digits)
+        countryCode: '+232',
       }
       mockStorage.setItem('pendingTutorData', JSON.stringify(tutorData))
 

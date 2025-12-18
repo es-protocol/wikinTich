@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { 
-  UserGroupIcon, 
-  AcademicCapIcon, 
-  ClockIcon, 
+import {
+  UserGroupIcon,
+  AcademicCapIcon,
+  ClockIcon,
   CurrencyDollarIcon,
   CheckCircleIcon,
   XCircleIcon,
@@ -19,7 +19,6 @@ import {
   ArrowRightOnRectangleIcon
 } from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
-import { aiMatchingService, AIRecommendationWithDetails } from '@/lib/ai-matching-service'
 
 interface SuperAdminProfile {
   id: string
@@ -108,12 +107,6 @@ export default function SuperAdminDashboard() {
   const [selectedTutorId, setSelectedTutorId] = useState('')
   const [isMatching, setIsMatching] = useState(false)
   
-  // AI Matching states
-  const [aiRecommendations, setAiRecommendations] = useState<AIRecommendationWithDetails[]>([])
-  const [isLoadingAiRecommendations, setIsLoadingAiRecommendations] = useState(false)
-  const [aiServiceAvailable, setAiServiceAvailable] = useState(false)
-
-
   // Filter states
   const [tutorFilter, setTutorFilter] = useState('all') // all, verified, pending
   const [requestFilter, setRequestFilter] = useState('all') // all, pending, matched
@@ -433,11 +426,6 @@ export default function SuperAdminDashboard() {
   const openMatchModal = async (request: HomeTutoringRequest) => {
     setSelectedRequest(request)
     setSelectedTutorId('')
-    setAiRecommendations([])
-    
-    // Check if AI service is available
-    const isAiAvailable = await aiMatchingService.checkServiceHealth()
-    setAiServiceAvailable(isAiAvailable)
     
     // Fetch available tutors (verified tutors)
     const { data: tutors, error } = await supabase
@@ -459,22 +447,6 @@ export default function SuperAdminDashboard() {
     }
 
     setAvailableTutors(tutors || [])
-    
-    // Get AI recommendations if service is available
-    if (isAiAvailable) {
-      setIsLoadingAiRecommendations(true)
-      try {
-        const recommendations = await aiMatchingService.getRecommendations(request.id)
-        setAiRecommendations(recommendations)
-        console.log('AI Recommendations:', recommendations)
-      } catch (error) {
-        console.error('Error getting AI recommendations:', error)
-        setAiRecommendations([])
-      } finally {
-        setIsLoadingAiRecommendations(false)
-      }
-    }
-    
     setShowMatchModal(true)
   }
 
@@ -1147,65 +1119,9 @@ export default function SuperAdminDashboard() {
                </div>
              </div>
 
-             {/* AI Recommendations Section */}
-             {aiServiceAvailable && (
-               <div className="mb-6">
-                 <div className="flex items-center justify-between mb-3">
-                   <h4 className="font-medium text-gray-900 flex items-center">
-                     🤖 AI Recommendations
-                     {isLoadingAiRecommendations && (
-                       <div className="ml-2 w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                     )}
-                   </h4>
-                   <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded-full">
-                     AI Service Active
-                   </span>
-                 </div>
-                 
-                 {isLoadingAiRecommendations ? (
-                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                     <div className="text-blue-600">Getting AI recommendations...</div>
-                   </div>
-                 ) : aiRecommendations.length > 0 ? (
-                   <div className="space-y-3">
-                     {aiRecommendations.map((rec, index) => (
-                       <div key={rec.tutorId} className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
-                         <div className="flex justify-between items-start mb-2">
-                           <h5 className="font-medium text-gray-900">{rec.tutorName}</h5>
-                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                             rec.compatibilityScore >= 0.8 ? 'bg-green-100 text-green-800' :
-                             rec.compatibilityScore >= 0.6 ? 'bg-yellow-100 text-yellow-800' :
-                             'bg-red-100 text-red-800'
-                           }`}>
-                             {Math.round(rec.compatibilityScore * 100)}% Match
-                           </span>
-                         </div>
-                         <div className="text-sm text-gray-600 space-y-1">
-                           <p><strong>Subjects:</strong> {rec.subjects.join(', ')}</p>
-                           <p><strong>Rating:</strong> {rec.rating || 'N/A'}/5 ⭐</p>
-                           <p><strong>Experience:</strong> {rec.experience || 'N/A'} years</p>
-                           <p><strong>Reasoning:</strong> {rec.reasoning.join(', ')}</p>
-                         </div>
-                         <button
-                           onClick={() => setSelectedTutorId(rec.tutorId)}
-                           className="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                         >
-                           Select This Tutor
-                         </button>
-                       </div>
-                     ))}
-                   </div>
-                 ) : (
-                   <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-                     <div className="text-yellow-600">No AI recommendations found. Try manual selection below.</div>
-                   </div>
-                 )}
-               </div>
-             )}
-
              <div className="mb-6">
                <label className="block text-sm font-medium text-gray-700 mb-2">
-                 {aiServiceAvailable ? 'Or Select Manually:' : 'Select a Tutor:'}
+                 Select a Tutor:
                </label>
                <select
                  value={selectedTutorId}

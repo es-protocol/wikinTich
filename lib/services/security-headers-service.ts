@@ -145,7 +145,7 @@ export function getFrameOptionsHeader(): string {
 
 /**
  * X-Content-Type-Options header
- * Prevents MIME sniffing attacks
+ * Prevents MIME sniffing attacks, as in prevent browser from guessing file types
  */
 export function getContentTypeOptionsHeader(): string {
   return 'nosniff'

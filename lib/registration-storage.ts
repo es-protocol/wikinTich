@@ -2,6 +2,9 @@ import { REGISTRATION_CONSTANTS, REGISTRATION_TYPES } from './constants'
 import { supabaseAdmin } from './supabase'
 
 export interface PendingRegistrationData {
+  // Role indicator (explicitly set by submit APIs)
+  role?: string
+  
   // Parent data
   parentName?: string
   parentPhone?: string

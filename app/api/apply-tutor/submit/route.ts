@@ -152,6 +152,7 @@ export async function POST(req: NextRequest) {
         qualificationTitle: formData.qualificationTitle,
         institution: formData.institution,
         yearObtained: formData.yearObtained,
+        role: 'tutor',
         availability: JSON.stringify(formData.availability),
       },
       {

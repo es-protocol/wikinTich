@@ -1,39 +1,33 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
 import { useAuth } from '@/lib/auth-context'
-import { 
-  AcademicCapIcon, 
-  UserIcon, 
-  ClockIcon, 
-  CurrencyDollarIcon,
-  BookOpenIcon,
-  StarIcon,
-  CalendarIcon,
-  PhoneIcon,
-  EnvelopeIcon,
-  XMarkIcon,
-  Cog6ToothIcon,
-  ArrowRightOnRectangleIcon,
-  ChevronDownIcon,
-  BellIcon,
-  DocumentTextIcon,
-  PhotoIcon,
-  AcademicCapIcon as AcademicCapIconSolid
-} from '@heroicons/react/24/outline'
-import { supabase } from '@/lib/supabase'
-import { 
-  EnhancedTutor, 
-  ProfileCompletionData, 
-  CertificateData, 
-  FileMetadata,
-  VERIFICATION_STEPS,
-  PROFILE_COMPLETION_STEPS,
-  PROFILE_COMPLETION_STEP_LABELS,
+import {
+  CertificateData,
+  FILE_UPLOAD_LIMITS,
   PROFILE_COMPLETION_STEP_DESCRIPTIONS,
-  FILE_UPLOAD_LIMITS
+  PROFILE_COMPLETION_STEP_LABELS,
+  ProfileCompletionData,
+  VERIFICATION_STEPS
 } from '@/lib/enhanced-tutor-types'
+import { supabase } from '@/lib/supabase'
+import {
+  AcademicCapIcon,
+  AcademicCapIcon as AcademicCapIconSolid,
+  ArrowRightOnRectangleIcon,
+  BellIcon,
+  CalendarIcon,
+  ChevronDownIcon,
+  Cog6ToothIcon,
+  DocumentTextIcon,
+  EnvelopeIcon,
+  PhoneIcon,
+  PhotoIcon,
+  StarIcon,
+  UserIcon,
+  XMarkIcon
+} from '@heroicons/react/24/outline'
+import { motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
 
 interface TutorProfile {
   id: string
@@ -291,21 +285,19 @@ export default function TutorDashboard() {
 
       console.log('Debug: Fetching profile for user ID:', user.id)
 
-      // Get user profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user?.id)
-        .single()
+      // Get user profile via API route (server-side, bypasses RLS)
+      const profileResponse = await fetch(`/api/dashboard?userId=${user.id}&type=profile`, {
+        credentials: 'include' // Include session cookie
+      })
+      const profileResult = await profileResponse.json()
 
-      console.log('Debug: Profile query result:', { profile, profileError })
-
-      if (profileError || !profile) {
-        console.error('Profile error:', profileError)
+      if (!profileResponse.ok || !profileResult.data) {
+        console.error('Profile error:', profileResult.error)
         setError('Failed to load profile data')
         return
       }
 
+      const profile = profileResult.data
       console.log('Debug: Profile loaded successfully:', profile)
       setUserProfile(profile)
 

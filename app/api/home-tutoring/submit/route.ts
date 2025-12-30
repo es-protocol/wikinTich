@@ -154,6 +154,7 @@ export async function POST(req: NextRequest) {
         preferredSchedule: formData.preferredSchedule,
         location: formData.location,
         additionalRequirements: formData.additionalRequirements,
+role: 'parent',
       },
       {
         parentName: 'text',

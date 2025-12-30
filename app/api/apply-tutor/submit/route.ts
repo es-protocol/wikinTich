@@ -1,6 +1,6 @@
 /**
  * Tutor Application Submission API Route
- *
+ * 
  * This route will mirror the parent /api/home-tutoring/submit endpoint,
  * enforcing the same security guarantees for tutor registration:
  * - Origin validation
@@ -10,7 +10,7 @@
  * - Input sanitization
  * - Secure pending_registrations storage
  * - OTP email sending via Supabase Auth
- *
+ * 
  * Security Tests: See __tests__/app/apply-tutor/api/submit/route.test.ts
  */
 
@@ -33,7 +33,7 @@ interface TutorSubmitBody {
 
 /**
  * POST handler for tutor application submission
- *
+ * 
  * Final flow:
  * - Origin validation
  * - JSON parsing

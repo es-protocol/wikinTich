@@ -11,11 +11,11 @@
  * - Clear Assertions: Each test verifies one UI aspect
  */
 
-import React from 'react'
+import ApplyTutorPage from '@/app/apply-tutor/page'
+import '@testing-library/jest-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import '@testing-library/jest-dom'
-import ApplyTutorPage from '@/app/apply-tutor/page'
+import React from 'react'
 
 // Mock Next.js components
 jest.mock('next/link', () => {
@@ -31,15 +31,6 @@ jest.mock('next/navigation', () => ({
   }),
 }))
 
-// Mock Supabase (not testing auth in component tests)
-jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    auth: {
-      signInWithOtp: jest.fn().mockResolvedValue({ data: null, error: null }),
-    },
-  },
-  getEmailRedirectUrl: jest.fn(() => 'http://localhost:3000/auth/callback'),
-}))
 
 describe('Tutor Signup Form - Component Tests', () => {
   const clickAndIgnoreNavigation = async (
@@ -225,16 +216,25 @@ describe('Tutor Signup Form - Component Tests', () => {
       await user.type(screen.getByPlaceholderText(/name of institution/i), 'University')
       await user.type(screen.getByPlaceholderText(/year/i), '2020')
 
-      const submitButton = screen.getByRole('button', { name: /submit application/i })
+      // Setup deferred promise for fetch mock
+      let resolveSubmit: (value: any) => void = () => {};
+      const submitPromise = new Promise(resolve => { resolveSubmit = resolve; });
+      global.fetch = jest.fn()
+        .mockImplementationOnce(() => Promise.resolve({ ok: true, json: () => Promise.resolve({ token: 'csrf-token' }) })) // CSRF
+        .mockImplementationOnce(() => submitPromise); // Stay pending
 
+      const submitButton = screen.getByRole('button', { name: /submit application/i });
       // Act
-      const clickPromise = clickAndIgnoreNavigation(user, submitButton)
+      const clickPromise = clickAndIgnoreNavigation(user, submitButton);
 
-      // Assert - Button should show loading state (temporarily disabled)
-      await waitFor(() => {
-        expect(submitButton).toBeDisabled()
-      })
-      await clickPromise
+      // While submit fetch is pending, submit button should be disabled
+      await waitFor(() => { expect(submitButton).toBeDisabled(); });
+
+      // Finish submit
+      if (resolveSubmit) {
+        resolveSubmit({ ok: true, json: () => Promise.resolve({ ok: true }) });
+      }
+      await clickPromise;
     })
   })
 

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { ROUTES, STORAGE_KEYS } from '@/lib/constants'
+import { AcademicCapIcon, ArrowRightIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 import { motion } from 'framer-motion'
-import { AcademicCapIcon, CheckCircleIcon, ArrowRightIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
-import { STORAGE_KEYS, ROUTES } from '@/lib/constants'
+import { useEffect, useState } from 'react'
 
 /**
  * Tutor Application Success Page Component
@@ -35,10 +35,14 @@ export default function TutorApplicationSuccessPage() {
   useEffect(() => {
     // Get email from pending tutor data
     // TODO: Replace with URL query params or API call after refactoring
-    const pendingData = localStorage.getItem(STORAGE_KEYS.PENDING_TUTOR_DATA)
-    if (pendingData) {
-      const data = JSON.parse(pendingData)
-      setEmail(data.email)
+    try {
+      const pendingData = localStorage.getItem(STORAGE_KEYS.PENDING_TUTOR_DATA);
+      if (pendingData) {
+        const data = JSON.parse(pendingData);
+        setEmail(data.email || "");
+      }
+    } catch {
+      setEmail(""); // fallback if parsing fails
     }
   }, [])
 

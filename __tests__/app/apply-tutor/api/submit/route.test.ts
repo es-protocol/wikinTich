@@ -17,14 +17,14 @@
  * - Test Isolation: Each test is independent
  */
 
-import { NextRequest } from 'next/server'
 import { POST } from '@/app/api/apply-tutor/submit/route'
-import { validateCSRFToken, createCSRFSignature, generateSecureCSRFToken } from '@/lib/services/csrf-service'
-import { isOriginAllowed } from '@/lib/cors-config'
-import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
-import { sanitizeFormData } from '@/lib/services/input-sanitization-service'
-import { storeRegistrationData } from '@/lib/registration-storage'
 import { REGISTRATION_TYPES } from '@/lib/constants'
+import { isOriginAllowed } from '@/lib/cors-config'
+import { storeRegistrationData } from '@/lib/registration-storage'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
+import { createCSRFSignature, generateSecureCSRFToken, validateCSRFRequest } from '@/lib/services/csrf-service'
+import { sanitizeFormData } from '@/lib/services/input-sanitization-service'
+import { NextRequest } from 'next/server'
 
 // Mock NextResponse for Jest environment
 jest.mock('next/server', () => {
@@ -64,14 +64,14 @@ jest.mock('@/lib/supabase', () => ({
   getEmailRedirectUrl: jest.fn(() => 'http://localhost:3000/auth/callback'),
 }))
 
-describe.skip('Tutor Application API - Security Tests (Target State)', () => {
+describe('Tutor Application API - Security Tests', () => {
   // Mock valid tutor form data
   const validTutorData = {
     fullName: 'John Doe',
     email: 'john@example.com',
     phone: '76123456', // Valid Sierra Leone phone number (8 digits)
     countryCode: '+232',
-    bio: 'Experienced mathematics teacher',
+    bio: 'Experienced mathematics teacher with over 5 years of teaching experience in secondary education. Specialized in algebra, geometry, and calculus.',
     subjects: ['Mathematics', 'Physics'],
     qualificationType: 'degree',
     qualificationTitle: 'Bachelor of Science',
@@ -79,6 +79,12 @@ describe.skip('Tutor Application API - Security Tests (Target State)', () => {
     yearObtained: '2020',
     availability: {
       monday: { available: true, hours: '9:00 AM - 5:00 PM' },
+      tuesday: { available: true, hours: '9:00 AM - 5:00 PM' },
+      wednesday: { available: false, hours: '' },
+      thursday: { available: true, hours: '10:00 AM - 3:00 PM' },
+      friday: { available: false, hours: '' },
+      saturday: { available: true, hours: '9:00 AM - 12:00 PM' },
+      sunday: { available: false, hours: '' },
     },
   }
 
@@ -123,6 +129,7 @@ describe.skip('Tutor Application API - Security Tests (Target State)', () => {
     
     // Default mocks for valid requests
     ;(isOriginAllowed as jest.Mock).mockReturnValue(true)
+    ;(validateCSRFRequest as jest.Mock).mockReturnValue({ isValid: true })
     ;(checkServerSideRateLimit as jest.Mock).mockResolvedValue({ allowed: true })
     ;(storeRegistrationData as jest.Mock).mockResolvedValue({ success: true })
     ;(sanitizeFormData as jest.Mock).mockImplementation((data) => data)
@@ -132,6 +139,12 @@ describe.skip('Tutor Application API - Security Tests (Target State)', () => {
     it('should reject requests without CSRF token', async () => {
       // Arrange
       const req = createMockRequest(validTutorData, { csrfToken: undefined })
+      
+      // Override default mock to return invalid CSRF
+      ;(validateCSRFRequest as jest.Mock).mockReturnValue({
+        isValid: false,
+        error: 'bad_csrf',
+      })
 
       // Act
       const response = await POST(req)
@@ -149,7 +162,7 @@ describe.skip('Tutor Application API - Security Tests (Target State)', () => {
         csrfSignature: 'invalid-signature',
       })
       
-      ;(validateCSRFToken as jest.Mock).mockReturnValue({
+      ;(validateCSRFRequest as jest.Mock).mockReturnValue({
         isValid: false,
         error: 'Invalid CSRF token',
       })
@@ -169,6 +182,12 @@ describe.skip('Tutor Application API - Security Tests (Target State)', () => {
       const req = createMockRequest(validTutorData, {
         csrfToken: token,
         csrfSignature: undefined, // No signature in cookie
+      })
+      
+      // Override default mock to return invalid CSRF (missing signature)
+      ;(validateCSRFRequest as jest.Mock).mockReturnValue({
+        isValid: false,
+        error: 'bad_csrf',
       })
 
       // Act
@@ -191,7 +210,7 @@ describe.skip('Tutor Application API - Security Tests (Target State)', () => {
         csrfSignature: signature,
       })
       
-      ;(validateCSRFToken as jest.Mock).mockReturnValue({ isValid: true })
+      ;(validateCSRFRequest as jest.Mock).mockReturnValue({ isValid: true })
 
       // Act
       const response = await POST(req)
@@ -291,12 +310,13 @@ describe.skip('Tutor Application API - Security Tests (Target State)', () => {
   describe('Input Sanitization', () => {
     it('should sanitize XSS attempts in bio field', async () => {
       // Arrange
+      // Bio must be at least 50 characters for validation to pass
       const maliciousData = {
         ...validTutorData,
-        bio: '<script>alert("XSS")</script>Malicious content',
+        bio: '<script>alert("XSS")</script>Experienced mathematics teacher with over 5 years of teaching experience in secondary education. Specialized in algebra, geometry, and calculus.',
       }
       
-      const sanitizedBio = 'Malicious content' // XSS removed
+      const sanitizedBio = 'Experienced mathematics teacher with over 5 years of teaching experience in secondary education. Specialized in algebra, geometry, and calculus.' // XSS removed
       ;(sanitizeFormData as jest.Mock).mockReturnValue({
         ...validTutorData,
         bio: sanitizedBio,
@@ -498,7 +518,7 @@ describe.skip('Tutor Application API - Security Tests (Target State)', () => {
       expect(isOriginAllowed).toHaveBeenCalled()
       
       // 2. CSRF validation (after origin)
-      expect(validateCSRFToken).toHaveBeenCalled()
+      expect(validateCSRFRequest).toHaveBeenCalled()
       
       // 3. Rate limiting (after CSRF)
       expect(checkServerSideRateLimit).toHaveBeenCalled()

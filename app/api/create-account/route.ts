@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const { error: tutorError } = await supabaseAdmin
+      const { data: tutor, error: tutorError } = await supabaseAdmin
         .from('tutors')
         .insert({
           profile_id: profile.id,
@@ -113,9 +113,33 @@ export async function POST(req: NextRequest) {
           profile_completion_step: 'basic_info',
           certificates_data: []
         })
+        .select('id')
+        .single()
 
-      if (tutorError) {
-        return NextResponse.json({ error: tutorError.message || 'Tutor creation failed' }, { status: 500 })
+      if (tutorError || !tutor) {
+        return NextResponse.json({ error: tutorError?.message || 'Tutor creation failed' }, { status: 500 })
+      }
+
+      // Create tutor_qualifications record if qualification data exists
+      if (pendingData.qualificationType && pendingData.qualificationTitle && pendingData.institution && pendingData.yearObtained) {
+        const yearObtained = pendingData.yearObtained 
+          ? parseInt(sanitizeNumericInput(pendingData.yearObtained)) 
+          : null
+
+        const { error: qualificationError } = await supabaseAdmin
+          .from('tutor_qualifications')
+          .insert({
+            tutor_id: tutor.id,
+            qualification_type: sanitizeTextInput(pendingData.qualificationType),
+            title: sanitizeTextInput(pendingData.qualificationTitle),
+            institution: sanitizeTextInput(pendingData.institution),
+            year_obtained: yearObtained,
+            is_verified: false
+          })
+
+        if (qualificationError) {
+          return NextResponse.json({ error: qualificationError.message || 'Qualification creation failed' }, { status: 500 })
+        }
       }
     } else {
       // Create parent-specific records (students and home_tutoring_requests)

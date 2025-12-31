@@ -11,13 +11,9 @@ import { useEffect, useState } from 'react'
  * 
  * Displays a success message after tutor application submission.
  * 
- * Current implementation:
- * - Reads email from localStorage (pendingTutorData)
- * - Displays success message with email
- * - Provides next steps instructions
- * 
- * TODO: Refactor to read email from URL query params or API after refactoring
- * to remove localStorage dependency
+ * Reads the email address from localStorage (from the tutor application form)
+ * to display in the success message. The email is stored locally for UX purposes
+ * to provide immediate feedback after form submission.
  * 
  * @returns {JSX.Element} The success page component
  */
@@ -29,12 +25,9 @@ export default function TutorApplicationSuccessPage() {
    * 
    * Fetches the email address from the pending tutor data stored in localStorage.
    * This is used to display the email address in the success message.
-   * 
-   * TODO: Replace with reading from URL query params or API after refactoring
    */
   useEffect(() => {
-    // Get email from pending tutor data
-    // TODO: Replace with URL query params or API call after refactoring
+    // Get email from pending tutor data stored in localStorage
     try {
       const pendingData = localStorage.getItem(STORAGE_KEYS.PENDING_TUTOR_DATA);
       if (pendingData) {

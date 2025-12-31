@@ -108,8 +108,8 @@ export default function ApplyTutorPage() {
   /**
    * Handles form submission
    * 
-   * Current implementation stores data in localStorage and sends OTP via Supabase.
-   * TODO: Refactor to use API route for server-side storage and security controls.
+   * Submits tutor application data to the secure API route which handles
+   * server-side validation, sanitization, rate limiting, and storage.
    */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

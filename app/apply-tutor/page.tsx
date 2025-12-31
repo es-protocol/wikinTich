@@ -1,13 +1,11 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { AcademicCapIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
-import Link from 'next/link'
-import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
-import { STORAGE_KEYS, ROUTES, SUPPORTED_COUNTRIES } from '@/lib/constants'
-import { transformFormDataToStorageFormat } from '@/lib/utils/tutor-data-transformation'
+import { ROUTES, STORAGE_KEYS, SUPPORTED_COUNTRIES } from '@/lib/constants'
 import { validateTutorFormData } from '@/lib/services/tutor-validation'
+import { AcademicCapIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
+import { motion } from 'framer-motion'
+import Link from 'next/link'
+import { useState } from 'react'
 
 export interface FormData {
   fullName: string
@@ -40,33 +38,49 @@ const availableSubjects = [
 ]
 
 export default function ApplyTutorPage() {
-  const [formData, setFormData] = useState<FormData>({
-    fullName: '',
-    email: '',
-    phone: '',
-    countryCode: '+232', // Default to Sierra Leone
-    bio: '',
-    subjects: [],
-    qualificationType: '',
-    qualificationTitle: '',
-    institution: '',
-    yearObtained: '',
-    availability: {
-      monday: { available: false, hours: '' },
-      tuesday: { available: false, hours: '' },
-      wednesday: { available: false, hours: '' },
-      thursday: { available: false, hours: '' },
-      friday: { available: false, hours: '' },
-      saturday: { available: false, hours: '' },
-      sunday: { available: false, hours: '' }
-    }
-  })
+  const [formData, setFormData] = useState<FormData>(() => {
+    // Load draft from localStorage if it exists
+    try {
+      const draft = localStorage.getItem(STORAGE_KEYS.PENDING_TUTOR_DATA);
+      if (draft) {
+        return JSON.parse(draft);
+      }
+    } catch {}
+    return {
+      fullName: '',
+      email: '',
+      phone: '',
+      countryCode: '+232', // Default to Sierra Leone
+      bio: '',
+      subjects: [],
+      qualificationType: '',
+      qualificationTitle: '',
+      institution: '',
+      yearObtained: '',
+      availability: {
+        monday: { available: false, hours: '' },
+        tuesday: { available: false, hours: '' },
+        wednesday: { available: false, hours: '' },
+        thursday: { available: false, hours: '' },
+        friday: { available: false, hours: '' },
+        saturday: { available: false, hours: '' },
+        sunday: { available: false, hours: '' }
+      }
+    };
+  });
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   const handleInputChange = (field: keyof FormData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value     }))
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+      // Save draft to localStorage on every change
+      try {
+        localStorage.setItem(STORAGE_KEYS.PENDING_TUTOR_DATA, JSON.stringify(newData));
+      } catch {}
+      return newData;
+    });
   }
 
   const handleSubjectToggle = (subject: string) => {
@@ -94,51 +108,61 @@ export default function ApplyTutorPage() {
   /**
    * Handles form submission
    * 
-   * Current implementation stores data in localStorage and sends OTP via Supabase.
-   * TODO: Refactor to use API route for server-side storage and security controls.
+   * Submits tutor application data to the secure API route which handles
+   * server-side validation, sanitization, rate limiting, and storage.
    */
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
-    setError('')
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
 
     try {
-      // 0. Validate form data before proceeding
-      const validation = validateTutorFormData(formData)
+      // 0. Client-side validation
+      const validation = validateTutorFormData(formData);
       if (!validation.isValid) {
-        setError(validation.errors[0] || 'Please fix the form errors before submitting')
-        return
+        setError(validation.errors[0] || 'Please fix the highlighted fields.');
+        setIsSubmitting(false);
+        return;
       }
 
-      // 1. Store the tutor data immediately for after verification
-      // TODO: This will be replaced with API route call in future refactoring
-      const storageData = transformFormDataToStorageFormat(formData)
-      localStorage.setItem(STORAGE_KEYS.PENDING_TUTOR_DATA, JSON.stringify(storageData))
-
-      // 2. Send verification email using Supabase Auth
-      const { error } = await supabase.auth.signInWithOtp({
-        email: formData.email,
-        options: {
-          emailRedirectTo: getEmailRedirectUrl()
-        }
-      })
-
-      if (error) {
-        throw error
+      // 1. Fetch CSRF token
+      let csrf_token = '';
+      try {
+        const csrfRes = await fetch('/api/csrf');
+        const csrfData = await csrfRes.json();
+        csrf_token = csrfData.csrfToken || csrfData.token || '';
+      } catch {
+        setError('Could not connect. Please check your connection and retry.');
+        setIsSubmitting(false);
+        return;
       }
 
-      // 3. Redirect to success page
-      // TODO: Replace with Next.js router navigation in future refactoring
-      window.location.href = ROUTES.APPLY_TUTOR_SUCCESS
+      // 2. Attempt to submit to secure API
+      const res = await fetch('/api/apply-tutor/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csrf_token, formData })
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        setError(result.error || 'Submission failed. Please try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 3. Clear draft and navigate to success page
+      try {
+        localStorage.removeItem(STORAGE_KEYS.PENDING_TUTOR_DATA);
+      } catch {}
+      window.location.href = ROUTES.APPLY_TUTOR_SUCCESS;
 
     } catch (err: any) {
-      console.error('Error submitting application:', err)
-      // TODO: Replace with proper error handling using error utilities
-      setError(err.message || 'Error submitting application')
-    } finally {
-      setIsSubmitting(false)
+      setError('Could not connect. Please check your connection and retry.');
+      setIsSubmitting(false);
     }
-  }
+    setIsSubmitting(false);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">

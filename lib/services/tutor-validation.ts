@@ -13,7 +13,6 @@
 
 import type { FormData } from '@/app/apply-tutor/page'
 import { validateEmailDetailed, validatePhoneDetailed, type ValidationResult } from '@/lib/security'
-import { VALIDATION_CONSTANTS } from '@/lib/constants'
 
 // Validation constants specific to tutor form
 const TUTOR_VALIDATION_CONSTANTS = {
@@ -36,10 +35,16 @@ export interface ValidationResultWithErrors {
 
 /**
  * Validates complete tutor form data
- * 
+ *
  * Orchestrates all field validations and returns aggregated results.
  * Uses shared validation functions from lib/security.ts for email and phone.
- * 
+ *
+ * IMPORTANT:
+ * - The exact validation behaviour is asserted in
+ *   __tests__/app/apply-tutor/unit/tutor-validation.test.ts.
+ * - Keep client-side tutor form validation in sync with these rules so users
+ *   see the same errors before and after submission.
+ *
  * @param formData - Complete tutor application form data
  * @returns Validation result with all errors aggregated
  */

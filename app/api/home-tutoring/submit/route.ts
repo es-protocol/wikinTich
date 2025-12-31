@@ -11,39 +11,30 @@
  * The actual account creation happens later in the `/api/create-account` route
  * after the parent has verified their email via the OTP link.
  */
-import { NextRequest, NextResponse } from 'next/server'
-import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
-import { storeRegistrationData } from '@/lib/registration-storage'
-import { validateEmailDetailed, validatePhoneDetailed, validateCountryCode } from '@/lib/security'
-import { sanitizeFormData } from '@/lib/services/input-sanitization-service'
-import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
-import { isOriginAllowed, getCORSHeaders } from '@/lib/cors-config'
 import { ERROR_MESSAGES, REGISTRATION_TYPES } from '@/lib/constants'
-import { validateCSRFToken, extractCSRFSignature } from '@/lib/services/csrf-service'
+import { getCORSHeaders, isOriginAllowed } from '@/lib/cors-config'
+import { storeRegistrationData } from '@/lib/registration-storage'
+import { validateCountryCode, validateEmailDetailed, validatePhoneDetailed } from '@/lib/security'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
+import { validateCSRFRequest } from '@/lib/services/csrf-service'
+import { sanitizeFormData } from '@/lib/services/input-sanitization-service'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
+import { getEmailRedirectUrl, supabase } from '@/lib/supabase'
+import { devError } from '@/lib/utils/logger'
+import { NextRequest, NextResponse } from 'next/server'
 
-/**
- * Validates CSRF protection for the request
- * 
- * Clean Code Principles:
- * - Single Responsibility: Only handles CSRF validation
- * - Error Handling: Clear error responses
- * - Security: Proper token validation
- */
-function validateCSRFProtection(request: NextRequest, token: string): { isValid: boolean; error?: string } {
-  if (!process.env.CSRF_SECRET) {
-    return { isValid: false, error: 'server_misconfigured' }
-  }
-
-  const cookieHeader = request.headers.get('cookie')
-  const signature = extractCSRFSignature(cookieHeader)
-
-  if (!token || !signature) {
-    return { isValid: false, error: 'bad_csrf' }
-  }
-
-  const validation = validateCSRFToken(token, signature, process.env.CSRF_SECRET)
-  return validation
+interface ParentFormData {
+  parentName: string
+  parentPhone: string
+  parentEmail: string
+  studentName: string
+  studentAge: string
+  gradeLevel: string
+  subjects: string
+  preferredSchedule: string
+  location: string
+  additionalRequirements: string
+  countryCode: string
 }
 
 /**
@@ -54,7 +45,7 @@ function validateCSRFProtection(request: NextRequest, token: string): { isValid:
  * - Testability: Pure function with clear inputs/outputs
  * - Error Handling: Detailed validation messages
  */
-function validateFormData(formData: any): { isValid: boolean; error?: string } {
+function validateFormData(formData: ParentFormData): { isValid: boolean; error?: string } {
   // Validate country code
   const countryCodeValidation = validateCountryCode(formData?.countryCode)
   if (!countryCodeValidation.isValid) {
@@ -90,36 +81,36 @@ export async function POST(req: NextRequest) {
     // Check if request is from allowed origin
     const origin = req.headers.get('origin') || ''
     if (!isOriginAllowed(origin)) {
-      return NextResponse.json({ error: 'forbidden' }, { status: 403 })
+      return NextResponse.json({ error: ERROR_MESSAGES.FORBIDDEN }, { status: 403 })
     }
 
     // Parse request body
-    let body: any
+    let body: { csrf_token: string; formData: ParentFormData }
     try {
       body = await req.json()
     } catch {
-      return NextResponse.json({ error: 'invalid_json' }, { status: 400 })
+      return NextResponse.json({ error: ERROR_MESSAGES.INVALID_JSON }, { status: 400 })
     }
 
-    const { csrf_token, formData } = body || {}
+    const { csrf_token, formData } = body || ({} as { csrf_token: string; formData: ParentFormData })
 
     // Validate CSRF protection
-    const csrfValidation = validateCSRFProtection(req, csrf_token)
+    const csrfValidation = validateCSRFRequest(req, csrf_token)
     if (!csrfValidation.isValid) {
-      return NextResponse.json({ error: csrfValidation.error }, { status: 400 })
+      return NextResponse.json({ error: csrfValidation.error || ERROR_MESSAGES.BAD_CSRF }, { status: 400 })
     }
 
     // Validate form data
     const formValidation = validateFormData(formData)
     if (!formValidation.isValid) {
-      return NextResponse.json({ error: formValidation.error }, { status: 400 })
+      return NextResponse.json({ error: formValidation.error || ERROR_MESSAGES.INVALID_FORM_DATA }, { status: 400 })
     }
 
     // Server-side rate limiting for registration
     const rateLimitCheck = await checkServerSideRateLimit(req, formData.parentEmail, 'registration')
     if (!rateLimitCheck.allowed) {
       return NextResponse.json({ 
-        error: rateLimitCheck.error || 'Rate limit exceeded',
+        error: rateLimitCheck.error || ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
         resetTime: rateLimitCheck.resetTime
       }, { status: 429 })
     }
@@ -145,8 +136,8 @@ export async function POST(req: NextRequest) {
     })
 
     if (otpError) {
-      console.error('OTP error:', otpError)
-      return NextResponse.json({ error: 'otp_error' }, { status: 500 })
+      devError('Parent OTP error:', otpError)
+      return NextResponse.json({ error: ERROR_MESSAGES.OTP_ERROR }, { status: 500 })
     }
 
     // Build sanitized registration data with type-specific sanitization
@@ -163,6 +154,7 @@ export async function POST(req: NextRequest) {
         preferredSchedule: formData.preferredSchedule,
         location: formData.location,
         additionalRequirements: formData.additionalRequirements,
+role: 'parent',
       },
       {
         parentName: 'text',
@@ -186,8 +178,8 @@ export async function POST(req: NextRequest) {
     )
 
     if (!storeResult.success) {
-      console.error('Storage error details:', storeResult.error)
-      return NextResponse.json({ error: 'storage_error', details: storeResult.error }, { status: 500 })
+      devError('Parent storage error details:', storeResult.error)
+      return NextResponse.json({ error: ERROR_MESSAGES.STORAGE_ERROR_CODE, details: storeResult.error }, { status: 500 })
     }
 
     const response = NextResponse.json({ ok: true }, {
@@ -197,8 +189,8 @@ export async function POST(req: NextRequest) {
     return applySecurityHeaders(response)
 
   } catch (error) {
-    console.error('Home tutoring submission error:', error)
-    const errorResponse = NextResponse.json({ error: 'internal_server_error' }, { status: 500 })
+    devError('Home tutoring submission error:', error)
+    const errorResponse = NextResponse.json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR }, { status: 500 })
     return applySecurityHeaders(errorResponse)
   }
 }

@@ -10,10 +10,10 @@
  * - Proper Mocking: Isolate localStorage dependency
  */
 
-import React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
-import '@testing-library/jest-dom'
 import TutorApplicationSuccessPage from '@/app/apply-tutor/success/page'
+import '@testing-library/jest-dom'
+import { render, screen, waitFor } from '@testing-library/react'
+import React from 'react'
 import { createMockLocalStorage } from './__mocks__/localStorage'
 
 // Mock Next.js Link
@@ -114,9 +114,13 @@ describe('Tutor Application Success Page - Integration Test', () => {
       // After refactoring, this should be handled gracefully
       // The component will throw an error when trying to parse invalid JSON
       // This is expected behavior for the current implementation
-      expect(() => {
-        render(<TutorApplicationSuccessPage />)
-      }).toThrow()
+      render(<TutorApplicationSuccessPage />);
+      // Should render success message
+      expect(screen.getByText(/application submitted successfully/i)).toBeInTheDocument();
+      // Should not show any email address
+      // Should not show a typical applicant email (e.g., tutor@example.com)
+      expect(screen.queryByText(/tutor@example.com/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/jane.smith@example.com/)).not.toBeInTheDocument();
     })
   })
 

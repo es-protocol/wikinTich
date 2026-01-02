@@ -114,6 +114,12 @@ export const ERROR_MESSAGES = {
   CLEANUP_ERROR: 'Failed to clean up expired data'
 } as const
 
+// Database error codes
+export const DB_ERROR_CODES = {
+  NO_ROWS_FOUND: 'PGRST116', // Supabase/PostgREST "no rows returned" error
+  DUPLICATE_KEY: '23505', // PostgreSQL unique constraint violation
+} as const
+
 // Success messages
 export const SUCCESS_MESSAGES = {
   OTP_SENT: 'Verification email sent successfully! Check your inbox and spam folder.',
@@ -186,8 +192,38 @@ export const ROUTES = {
   VERIFY_EMAIL: '/verify-email',
   SET_PASSWORD: '/set-password',
   AUTH_CALLBACK: '/auth/callback',
+  FORGOT_PASSWORD: '/forgot-password',
+  RESET_PASSWORD: '/reset-password',
   DASHBOARD_PARENT: '/dashboard-with-children',
   DASHBOARD_TUTOR: '/tutor-dashboard',
   DASHBOARD_SCHOOL_ADMIN: '/school-admin-dashboard',
   DASHBOARD_SUPER_ADMIN: '/super-admin-dashboard'
 } as const
+
+// Available subjects for tutoring
+export const AVAILABLE_SUBJECTS = [
+  'Biology',
+  'Business Management',
+  'Business Studies',
+  'Chemistry',
+  'Christian Religious Knowledge',
+  'Core Science',
+  'Cost Accounting',
+  'Creative Practical Arts',
+  'Economics',
+  'ESP&S/English Language/Language Arts',
+  'Financial Accounting',
+  'Further Mathematics',
+  'General Science/Integrated Science',
+  'Geography',
+  'Government',
+  'History',
+  'Literature',
+  'Mathematics',
+  'Physical & Health Education',
+  'Physics',
+  'Quantitative Analysis',
+  'Religious & Moral Education',
+  'Social Studies',
+  'Verbal Reasoning'
+] as const

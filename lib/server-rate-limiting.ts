@@ -1,6 +1,7 @@
-import { NextRequest } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase'
+import { DB_ERROR_CODES } from '@/lib/constants'
 import { checkInMemoryRateLimit } from '@/lib/services/fallback-rate-limiting-service'
+import { supabaseAdmin } from '@/lib/supabase'
+import { NextRequest } from 'next/server'
 
  // Rate limiting constants - action-specific limits
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
@@ -10,6 +11,8 @@ const RATE_LIMITS = {
   registration: 3, // 3 registration submissions per 15 minutes
   login: 10, // 10 login attempts per 15 minutes (account lockout handles security)
   dashboard: 100, // 100 dashboard requests per 15 minutes (normal usage)
+  otp_resend: 3, // 3 OTP resend requests per 15 minutes
+  password_reset: 3, // 3 password reset requests per hour (more restrictive)
 } as const
 
 // Legacy constant for backward compatibility
@@ -50,7 +53,7 @@ function getClientIP(request: NextRequest): string {
 export async function checkServerSideRateLimit(
   request: NextRequest, //incoming client request. Why needed? To get client IP Address
   email: string, //Parent email from the form. Why, I want to track rate limits per email + IP Address
-  action: 'registration' | 'login' | 'dashboard' = 'registration'//What are action is this email trying to perform
+  action: 'registration' | 'login' | 'dashboard' | 'otp_resend' | 'password_reset' = 'registration'//What are action is this email trying to perform
 ): Promise<{ //Function does slow operations, so it's a good idea to return a promise
   allowed: boolean; 
   resetTime?: number; 
@@ -80,8 +83,8 @@ export async function checkServerSideRateLimit(
       .select('*')
       .eq('key', rateLimitKey)//where key column = our rateLimitey
       .single()
-    //PGRST116 = no rows found. Expected for first time users
-    if (fetchError && fetchError.code !== 'PGRST116') {
+    // Check for "no rows found" error (expected for first time users)
+    if (fetchError && fetchError.code !== DB_ERROR_CODES.NO_ROWS_FOUND) {
       console.error('⚠️ Error fetching rate limit, falling back to in-memory:', fetchError)
       return checkInMemoryRateLimit(rateLimitKey)
     }

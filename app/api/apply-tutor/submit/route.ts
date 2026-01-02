@@ -23,6 +23,7 @@ import { sanitizeFormData } from '@/lib/services/input-sanitization-service'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { validateTutorFormData, type TutorFormData } from '@/lib/services/tutor-validation'
 import { getEmailRedirectUrl, supabase } from '@/lib/supabase'
+import { checkAccountExists } from '@/lib/utils/account-check'
 import { devError } from '@/lib/utils/logger'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -104,6 +105,26 @@ export async function POST(req: NextRequest) {
           resetTime: rateLimitCheck.resetTime,
         },
         { status: 429 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 6.5) Check if account already exists (prevent duplicate signups)
+    const accountCheck = await checkAccountExists(formData.email)
+    
+    if (accountCheck.exists) {
+      const response = NextResponse.json(
+        { error: 'An account with this email already exists. Please sign in instead.' },
+        { status: 409 }
+      )
+      return applySecurityHeaders(response)
+    }
+    
+    if (accountCheck.error) {
+      devError('Error checking for existing tutor account:', accountCheck.error)
+      const response = NextResponse.json(
+        { error: 'Failed to verify account status. Please try again.' },
+        { status: 500 }
       )
       return applySecurityHeaders(response)
     }

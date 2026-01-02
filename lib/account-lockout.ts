@@ -1,10 +1,11 @@
-import { supabase } from './supabase'
-import { LOCKOUT_CONSTANTS } from './constants'
-import { 
-  isAccountLockedInMemory, 
-  recordFailedAttemptInMemory, 
-  clearFailedAttemptsInMemory 
+import { DB_ERROR_CODES, LOCKOUT_CONSTANTS } from './constants'
+import {
+  clearFailedAttemptsInMemory,
+  isAccountLockedInMemory,
+  recordFailedAttemptInMemory
 } from './services/fallback-account-lockout-service'
+import { supabaseAdmin } from './supabase'
+import { devError } from './utils/logger'
 
 export interface FailedAttempt {
   id: string
@@ -26,14 +27,19 @@ export interface FailedAttempt {
  */
 export const isAccountLocked = async (email: string): Promise<{ isLocked: boolean; lockedUntil?: string; remainingAttempts?: number }> => {
   try {
-    const { data, error } = await supabase
+    if (!supabaseAdmin) {
+      devError('Supabase admin client not available, falling back to in-memory')
+      return isAccountLockedInMemory(email)
+    }
+
+    const { data, error } = await supabaseAdmin
       .from('failed_login_attempts')
       .select('*')
       .eq('email', email)
       .single()
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
-      console.error('⚠️ Error checking account lockout, falling back to in-memory:', error)
+    if (error && error.code !== DB_ERROR_CODES.NO_ROWS_FOUND) {
+      devError('Error checking account lockout, falling back to in-memory', error)
       return isAccountLockedInMemory(email)
     }
 
@@ -58,7 +64,7 @@ export const isAccountLocked = async (email: string): Promise<{ isLocked: boolea
     }
 
   } catch (error) {
-    console.error('⚠️ Error checking account lockout, falling back to in-memory:', error)
+    devError('Error checking account lockout, falling back to in-memory', error)
     return isAccountLockedInMemory(email)
   }
 }
@@ -72,15 +78,20 @@ export const isAccountLocked = async (email: string): Promise<{ isLocked: boolea
  */
 export const recordFailedAttempt = async (email: string): Promise<{ success: boolean; isLocked: boolean; lockedUntil?: string }> => {
   try {
+    if (!supabaseAdmin) {
+      devError('Supabase admin client not available, falling back to in-memory')
+      return recordFailedAttemptInMemory(email)
+    }
+
     // Get current failed attempts
-    const { data: existing, error: fetchError } = await supabase
+    const { data: existing, error: fetchError } = await supabaseAdmin
       .from('failed_login_attempts')
       .select('*')
       .eq('email', email)
       .single()
 
-    if (fetchError && fetchError.code !== 'PGRST116') {
-      console.error('⚠️ Error fetching failed attempts, falling back to in-memory:', fetchError)
+    if (fetchError && fetchError.code !== DB_ERROR_CODES.NO_ROWS_FOUND) {
+      devError('Error fetching failed attempts, falling back to in-memory', fetchError)
       return recordFailedAttemptInMemory(email)
     }
 
@@ -90,7 +101,7 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
 
     if (!existing) {
       // First failed attempt
-      const { error: insertError } = await supabase
+      const { error: insertError } = await supabaseAdmin
         .from('failed_login_attempts')
         .insert({
           email,
@@ -101,7 +112,7 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
         })
 
       if (insertError) {
-        console.error('⚠️ Error inserting failed attempt, falling back to in-memory:', insertError)
+        devError('Error inserting failed attempt, falling back to in-memory', insertError)
         return recordFailedAttemptInMemory(email)
       }
 
@@ -121,7 +132,7 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
     const newAttemptCount = existing.attempt_count + 1
     const shouldLock = newAttemptCount >= LOCKOUT_CONSTANTS.MAX_FAILED_ATTEMPTS
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('failed_login_attempts')
       .update({
         attempt_count: newAttemptCount,
@@ -131,7 +142,7 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
       .eq('email', email)
 
     if (updateError) {
-      console.error('⚠️ Error updating failed attempt, falling back to in-memory:', updateError)
+      devError('Error updating failed attempt, falling back to in-memory', updateError)
       return recordFailedAttemptInMemory(email)
     }
 
@@ -142,7 +153,7 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
     }
 
   } catch (error) {
-    console.error('⚠️ Error recording failed attempt, falling back to in-memory:', error)
+    devError('Error recording failed attempt, falling back to in-memory', error)
     return recordFailedAttemptInMemory(email)
   }
 }
@@ -156,13 +167,18 @@ export const recordFailedAttempt = async (email: string): Promise<{ success: boo
  */
 export const clearFailedAttempts = async (email: string): Promise<{ success: boolean }> => {
   try {
-    const { error } = await supabase
+    if (!supabaseAdmin) {
+      devError('Supabase admin client not available, falling back to in-memory')
+      return clearFailedAttemptsInMemory(email)
+    }
+
+    const { error } = await supabaseAdmin
       .from('failed_login_attempts')
       .delete()
       .eq('email', email)
 
     if (error) {
-      console.error('⚠️ Error clearing failed attempts, falling back to in-memory:', error)
+      devError('Error clearing failed attempts, falling back to in-memory', error)
       return clearFailedAttemptsInMemory(email)
     }
 
@@ -170,7 +186,7 @@ export const clearFailedAttempts = async (email: string): Promise<{ success: boo
     clearFailedAttemptsInMemory(email)
     return { success: true }
   } catch (error) {
-    console.error('⚠️ Error clearing failed attempts, falling back to in-memory:', error)
+    devError('Error clearing failed attempts, falling back to in-memory', error)
     return clearFailedAttemptsInMemory(email)
   }
 }
@@ -178,16 +194,20 @@ export const clearFailedAttempts = async (email: string): Promise<{ success: boo
 // Clean up old failed attempts (can be called periodically)
 export const cleanupOldFailedAttempts = async (): Promise<{ success: boolean; error?: string }> => {
   try {
-    const { error } = await supabase.rpc('cleanup_old_failed_attempts')
+    if (!supabaseAdmin) {
+      return { success: false, error: 'Supabase admin client not available' }
+    }
+
+    const { error } = await supabaseAdmin.rpc('cleanup_old_failed_attempts')
 
     if (error) {
-      console.error('Error cleaning up old failed attempts:', error)
+      devError('Error cleaning up old failed attempts', error)
       return { success: false, error: error.message }
     }
 
     return { success: true }
   } catch (error) {
-    console.error('Error cleaning up old failed attempts:', error)
+    devError('Error cleaning up old failed attempts', error)
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Unknown error' 

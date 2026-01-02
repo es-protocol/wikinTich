@@ -1,15 +1,15 @@
 'use client'
 
-import { motion } from 'framer-motion'
-import { HomeIcon, AcademicCapIcon } from '@heroicons/react/24/outline'
-import Link from 'next/link'
 import MainNavigation from '@/app/components/MainNavigation'
 import { ROUTES } from '@/lib/constants'
+import { AcademicCapIcon, HomeIcon } from '@heroicons/react/24/outline'
+import { motion } from 'framer-motion'
+import Link from 'next/link'
 
 export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50">
-      {/* Header */}
+      {/* Main Navigation */}
       <MainNavigation />
 
       {/* Main Content */}

@@ -1,5 +1,6 @@
 'use client'
 
+import SubjectSelection from '@/app/components/SubjectSelection'
 import { ROUTES, STORAGE_KEYS, SUPPORTED_COUNTRIES } from '@/lib/constants'
 import { validateTutorFormData } from '@/lib/services/tutor-validation'
 import { AcademicCapIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
@@ -31,11 +32,6 @@ export interface FormData {
     sunday: { available: boolean; hours: string }
   }
 }
-
-const availableSubjects = [
-  'Mathematics', 'English', 'Science', 'History', 'Geography', 
-  'French', 'Computer Science', 'Business Studies', 'Art', 'Physical Education'
-]
 
 export default function ApplyTutorPage() {
   const [formData, setFormData] = useState<FormData>(() => {
@@ -83,12 +79,10 @@ export default function ApplyTutorPage() {
     });
   }
 
-  const handleSubjectToggle = (subject: string) => {
+  const handleSubjectsChange = (subjects: string[]) => {
     setFormData(prev => ({
       ...prev,
-      subjects: prev.subjects.includes(subject)
-        ? prev.subjects.filter(s => s !== subject)
-        : [...prev.subjects, subject]
+      subjects
     }))
   }
 
@@ -108,8 +102,11 @@ export default function ApplyTutorPage() {
   /**
    * Handles form submission
    * 
-   * Current implementation stores data in localStorage and sends OTP via Supabase.
-   * TODO: Refactor to use API route for server-side storage and security controls.
+   * Submits form data to the API route which handles:
+   * - Server-side validation and sanitization
+   * - CSRF protection and rate limiting
+   * - OTP email sending via Supabase
+   * - Secure storage in pending_registrations table
    */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,11 +148,11 @@ export default function ApplyTutorPage() {
         return;
       }
 
-      // 3. Clear draft and navigate to success page
+      // 3. Clear draft and navigate to success page with email in URL
       try {
         localStorage.removeItem(STORAGE_KEYS.PENDING_TUTOR_DATA);
       } catch {}
-      window.location.href = ROUTES.APPLY_TUTOR_SUCCESS;
+      window.location.href = `${ROUTES.APPLY_TUTOR_SUCCESS}?email=${encodeURIComponent(formData.email)}`;
 
     } catch (err: any) {
       setError('Could not connect. Please check your connection and retry.');
@@ -285,24 +282,12 @@ export default function ApplyTutorPage() {
             </div>
 
             {/* Subjects */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3 sm:mb-4">
-                Subjects You Can Teach *
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-                {availableSubjects.map((subject) => (
-                  <label key={subject} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={formData.subjects.includes(subject)}
-                      onChange={() => handleSubjectToggle(subject)}
-                      className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">{subject}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            <SubjectSelection
+              selectedSubjects={formData.subjects}
+              onSubjectsChange={handleSubjectsChange}
+              label="Subjects You Can Teach"
+              required
+            />
 
             {/* Qualifications */}
             <div>

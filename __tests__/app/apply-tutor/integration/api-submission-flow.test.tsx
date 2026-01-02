@@ -1,19 +1,14 @@
 /**
- * Integration Tests: Tutor Signup API Submission Flow (Target State)
+ * Integration Tests: Tutor Signup API Submission Flow
  * 
  * Tests the complete user flow from form submission through API route to navigation.
  * Verifies interactions between components, API route, server-side storage, and navigation.
  * 
- * These tests define the EXPECTED behavior after refactoring:
- * - Form submits to API route (not localStorage)
+ * Tests verify the current implementation:
+ * - Form submits to API route
  * - API route handles validation, sanitization, storage
  * - OTP email sent via API route
  * - Navigation to success page
- * 
- * These tests will FAIL initially because:
- * - API route doesn't exist yet
- * - Frontend still uses localStorage
- * - Need to be updated as we refactor
  * 
  * Clean Code Principles:
  * - Integration Focus: Tests real interactions through API

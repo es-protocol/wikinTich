@@ -16,6 +16,7 @@ import { getCORSHeaders, isOriginAllowed } from '@/lib/cors-config'
 import { storeRegistrationData } from '@/lib/registration-storage'
 import { validateCountryCode, validateEmailDetailed, validatePhoneDetailed } from '@/lib/security'
 import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
+import { notifyAdminsOfNewRequest } from '@/lib/services/admin-notification-service'
 import { validateCSRFRequest } from '@/lib/services/csrf-service'
 import { sanitizeFormData } from '@/lib/services/input-sanitization-service'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
@@ -197,6 +198,18 @@ role: 'parent',
     if (!storeResult.success) {
       devError('Parent storage error details:', storeResult.error)
       return NextResponse.json({ error: ERROR_MESSAGES.STORAGE_ERROR_CODE, details: storeResult.error }, { status: 500 })
+    }
+
+    if (storeResult.data?.id) {
+      notifyAdminsOfNewRequest(storeResult.data.id, {
+        parentName: registrationData.parentName || formData.parentName,
+        parentEmail: formData.parentEmail,
+        studentName: registrationData.studentName || formData.studentName,
+        gradeLevel: registrationData.gradeLevel || formData.gradeLevel,
+        subjects: registrationData.subjects || formData.subjects,
+      }).catch((error) => {
+        devError('Failed to create admin notifications:', error)
+      })
     }
 
     const response = NextResponse.json({ ok: true }, {

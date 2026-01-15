@@ -16,8 +16,6 @@
 
 import { POST } from '@/app/api/create-account/route'
 import { REGISTRATION_TYPES } from '@/lib/constants'
-import { deleteRegistrationData, getRegistrationData } from '@/lib/registration-storage'
-import { hashPassword } from '@/lib/security'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { NextRequest } from 'next/server'
 
@@ -43,16 +41,20 @@ jest.mock('next/server', () => {
   }
 })
 
-// Mock dependencies
-jest.mock('@/lib/registration-storage')
-jest.mock('@/lib/security')
-jest.mock('@/lib/services/security-headers-service')
-jest.mock('@/lib/services/input-sanitization-service', () => ({
-  sanitizeEmail: (val: string) => val,
-  sanitizeTextInput: (val: string) => val,
-  sanitizePhoneNumber: (val: string) => val,
-  sanitizeNumericInput: (val: string) => val,
+// Mock account creation service functions
+jest.mock('@/lib/services/account-creation-service', () => ({
+  validateCreateAccountInput: jest.fn(),
+  getPendingRegistrationData: jest.fn(),
+  createSupabaseAuthUser: jest.fn(),
+  verifyAccountDoesNotExist: jest.fn(),
+  createAuthUserRecord: jest.fn(),
+  createUserProfile: jest.fn(),
+  createTutorRecords: jest.fn(),
+  cleanupPendingRegistration: jest.fn(),
 }))
+
+// Mock dependencies
+jest.mock('@/lib/services/security-headers-service')
 
 // Mock logger to avoid console noise in tests
 jest.mock('@/lib/utils/logger', () => ({
@@ -60,20 +62,25 @@ jest.mock('@/lib/utils/logger', () => ({
   devError: jest.fn(),
 }))
 
-// Mock supabaseAdmin
+// Mock supabaseAdmin - ensure it's always defined
 jest.mock('@/lib/supabase', () => ({
   supabaseAdmin: {
     from: jest.fn(),
+    auth: {
+      admin: {
+        createUser: jest.fn(),
+        deleteUser: jest.fn(),
+      },
+    },
   },
 }))
 
 // Import after mocks
-import { supabaseAdmin } from '@/lib/supabase'
+import * as accountCreationService from '@/lib/services/account-creation-service'
 
 describe('Tutor Account Creation - Integration Tests', () => {
   const mockTutorEmail = 'tutor@example.com'
   const mockPassword = 'SecurePassword123!'
-  const mockPasswordHash = 'hashed_password_123'
   const mockProfileId = 'profile-uuid-123'
   const mockTutorId = 'tutor-uuid-456'
 
@@ -105,54 +112,35 @@ describe('Tutor Account Creation - Integration Tests', () => {
     updated_at: new Date().toISOString(),
   }
 
-  // Supabase chain mocks - create new ones for each test
-  let mockAuthUsersInsert: jest.Mock
-  let mockProfilesInsert: jest.Mock
-  let mockProfilesSelect: jest.Mock
-  let mockProfilesSingle: jest.Mock
-  let mockTutorsInsert: jest.Mock
-  let mockTutorsSelect: jest.Mock
-  let mockTutorsSingle: jest.Mock
-  let mockQualificationsInsert: jest.Mock
-
   beforeEach(() => {
     jest.clearAllMocks()
 
-    // Setup default mocks
-    ;(getRegistrationData as jest.Mock).mockResolvedValue({
+    // Setup default mocks for service functions
+    ;(accountCreationService.validateCreateAccountInput as jest.Mock).mockReturnValue(null) // No validation error
+    ;(accountCreationService.getPendingRegistrationData as jest.Mock).mockResolvedValue({
       success: true,
       data: mockPendingRegistration,
     })
-    ;(deleteRegistrationData as jest.Mock).mockResolvedValue({ success: true })
-    ;(hashPassword as jest.Mock).mockResolvedValue(mockPasswordHash)
-    ;(applySecurityHeaders as jest.Mock).mockImplementation((response) => response)
-
-    // Setup fresh Supabase chain mocks for each test
-    mockAuthUsersInsert = jest.fn().mockResolvedValue({ error: null })
-    mockProfilesSingle = jest.fn()
-    mockProfilesSelect = jest.fn().mockReturnValue({ single: mockProfilesSingle })
-    mockProfilesInsert = jest.fn().mockReturnValue({ select: mockProfilesSelect })
-    mockTutorsSingle = jest.fn()
-    mockTutorsSelect = jest.fn().mockReturnValue({ single: mockTutorsSingle })
-    mockTutorsInsert = jest.fn().mockReturnValue({ select: mockTutorsSelect })
-    mockQualificationsInsert = jest.fn().mockResolvedValue({ error: null })
-
-    // Configure supabaseAdmin.from to return appropriate chain based on table name
-    ;(supabaseAdmin.from as jest.Mock).mockImplementation((table: string) => {
-      if (table === 'auth_users') {
-        return { insert: mockAuthUsersInsert }
-      }
-      if (table === 'profiles') {
-        return { insert: mockProfilesInsert }
-      }
-      if (table === 'tutors') {
-        return { insert: mockTutorsInsert }
-      }
-      if (table === 'tutor_qualifications') {
-        return { insert: mockQualificationsInsert }
-      }
-      return { insert: jest.fn() }
+    ;(accountCreationService.createSupabaseAuthUser as jest.Mock).mockResolvedValue({
+      success: true,
+      user: { id: 'auth-user-id' },
     })
+    ;(accountCreationService.verifyAccountDoesNotExist as jest.Mock).mockResolvedValue({
+      success: true,
+    })
+    ;(accountCreationService.createAuthUserRecord as jest.Mock).mockResolvedValue({
+      success: true,
+      data: { id: 'auth-user-record-id' },
+    })
+    ;(accountCreationService.createUserProfile as jest.Mock).mockResolvedValue({
+      success: true,
+      profileId: mockProfileId,
+    })
+    ;(accountCreationService.createTutorRecords as jest.Mock).mockResolvedValue({
+      success: true,
+    })
+    ;(accountCreationService.cleanupPendingRegistration as jest.Mock).mockResolvedValue(undefined)
+    ;(applySecurityHeaders as jest.Mock).mockImplementation((response) => response)
   })
 
   const createMockRequest = (email: string, password: string): NextRequest => {
@@ -168,10 +156,7 @@ describe('Tutor Account Creation - Integration Tests', () => {
 
   describe('Successful Tutor Account Creation', () => {
     it('should create tutor account with all required records', async () => {
-      // Arrange - Setup mocks to return correct values
-      mockProfilesSingle.mockResolvedValue({ data: { id: mockProfileId }, error: null })
-      mockTutorsSingle.mockResolvedValue({ data: { id: mockTutorId }, error: null })
-
+      // Arrange
       const req = createMockRequest(mockTutorEmail, mockPassword)
 
       // Act
@@ -182,60 +167,30 @@ describe('Tutor Account Creation - Integration Tests', () => {
       expect(response.status).toBe(200)
       expect(responseData).toEqual({ success: true })
 
-      // Verify getRegistrationData was called
-      expect(getRegistrationData).toHaveBeenCalledWith(mockTutorEmail)
-
-      // Verify password was hashed
-      expect(hashPassword).toHaveBeenCalledWith(mockPassword)
-
-      // Verify auth_users insert was called
-      expect(supabaseAdmin.from).toHaveBeenCalledWith('auth_users')
-      expect(mockAuthUsersInsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          email: mockTutorEmail,
-          password_hash: mockPasswordHash,
-          role: 'tutor',
-          is_active: true,
-        })
+      // Verify service functions were called in correct order
+      expect(accountCreationService.validateCreateAccountInput).toHaveBeenCalledWith({
+        email: mockTutorEmail,
+        password: mockPassword,
+      })
+      expect(accountCreationService.getPendingRegistrationData).toHaveBeenCalledWith(mockTutorEmail)
+      expect(accountCreationService.createSupabaseAuthUser).toHaveBeenCalledWith(mockTutorEmail, mockPassword)
+      expect(accountCreationService.verifyAccountDoesNotExist).toHaveBeenCalledWith(mockTutorEmail)
+      expect(accountCreationService.createAuthUserRecord).toHaveBeenCalledWith(
+        mockTutorEmail,
+        mockPassword,
+        'tutor',
+        'auth-user-id'
       )
-
-      // Verify profiles insert was called
-      expect(supabaseAdmin.from).toHaveBeenCalledWith('profiles')
-      expect(mockProfilesInsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          email: mockTutorEmail,
-          full_name: mockPendingRegistrationData.fullName,
-          phone: mockPendingRegistrationData.phone,
-          role: 'tutor',
-        })
+      expect(accountCreationService.createUserProfile).toHaveBeenCalledWith(
+        mockTutorEmail,
+        'tutor',
+        mockPendingRegistrationData
       )
-
-      // Verify tutors insert was called
-      expect(supabaseAdmin.from).toHaveBeenCalledWith('tutors')
-      expect(mockTutorsInsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          profile_id: mockProfileId,
-          bio: mockPendingRegistrationData.bio,
-          is_verified: false,
-          profile_completion_percentage: 0,
-        })
+      expect(accountCreationService.createTutorRecords).toHaveBeenCalledWith(
+        mockProfileId,
+        mockPendingRegistrationData
       )
-
-      // Verify tutor_qualifications insert was called
-      expect(supabaseAdmin.from).toHaveBeenCalledWith('tutor_qualifications')
-      expect(mockQualificationsInsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tutor_id: mockTutorId,
-          qualification_type: mockPendingRegistrationData.qualificationType,
-          title: mockPendingRegistrationData.qualificationTitle,
-          institution: mockPendingRegistrationData.institution,
-          year_obtained: 2018,
-          is_verified: false,
-        })
-      )
-
-      // Verify pending registration was deleted
-      expect(deleteRegistrationData).toHaveBeenCalledWith(mockTutorEmail)
+      expect(accountCreationService.cleanupPendingRegistration).toHaveBeenCalledWith(mockTutorEmail)
 
       // Verify security headers were applied
       expect(applySecurityHeaders).toHaveBeenCalled()
@@ -243,41 +198,35 @@ describe('Tutor Account Creation - Integration Tests', () => {
 
     it('should create tutor record with correct subjects array', async () => {
       // Arrange
-      mockProfilesSingle.mockResolvedValue({ data: { id: mockProfileId }, error: null })
-      mockTutorsSingle.mockResolvedValue({ data: { id: mockTutorId }, error: null })
-
       const req = createMockRequest(mockTutorEmail, mockPassword)
 
       // Act
       await POST(req)
 
-      // Assert - Verify tutors insert was called with subjects as array
-      expect(mockTutorsInsert).toHaveBeenCalledWith(
+      // Assert - Verify createTutorRecords was called with correct data
+      expect(accountCreationService.createTutorRecords).toHaveBeenCalledWith(
+        mockProfileId,
         expect.objectContaining({
-          subjects: ['Mathematics', 'Science'],
+          subjects: 'Mathematics, Science',
         })
       )
     })
 
     it('should create tutor_qualifications record when qualification data exists', async () => {
       // Arrange
-      mockProfilesSingle.mockResolvedValue({ data: { id: mockProfileId }, error: null })
-      mockTutorsSingle.mockResolvedValue({ data: { id: mockTutorId }, error: null })
-
       const req = createMockRequest(mockTutorEmail, mockPassword)
 
       // Act
       await POST(req)
 
-      // Assert - Verify tutor_qualifications insert was called
-      expect(mockQualificationsInsert).toHaveBeenCalledWith(
+      // Assert - Verify createTutorRecords was called (which handles qualifications)
+      expect(accountCreationService.createTutorRecords).toHaveBeenCalledWith(
+        mockProfileId,
         expect.objectContaining({
-          tutor_id: mockTutorId,
-          qualification_type: mockPendingRegistrationData.qualificationType,
-          title: mockPendingRegistrationData.qualificationTitle,
+          qualificationType: mockPendingRegistrationData.qualificationType,
+          qualificationTitle: mockPendingRegistrationData.qualificationTitle,
           institution: mockPendingRegistrationData.institution,
-          year_obtained: 2018,
-          is_verified: false,
+          yearObtained: mockPendingRegistrationData.yearObtained,
         })
       )
     })
@@ -286,9 +235,10 @@ describe('Tutor Account Creation - Integration Tests', () => {
   describe('Error Handling', () => {
     it('should return 404 when pending registration not found', async () => {
       // Arrange
-      ;(getRegistrationData as jest.Mock).mockResolvedValue({
+      ;(accountCreationService.getPendingRegistrationData as jest.Mock).mockResolvedValue({
         success: false,
-        error: 'Not found',
+        error: 'Registration data not found',
+        statusCode: 404,
       })
 
       const req = createMockRequest(mockTutorEmail, mockPassword)
@@ -300,12 +250,18 @@ describe('Tutor Account Creation - Integration Tests', () => {
       // Assert
       expect(response.status).toBe(404)
       expect(responseData).toHaveProperty('error')
-      expect(supabaseAdmin.from).not.toHaveBeenCalled()
-      expect(deleteRegistrationData).not.toHaveBeenCalled()
+      expect(accountCreationService.createAuthUserRecord).not.toHaveBeenCalled()
+      expect(accountCreationService.cleanupPendingRegistration).not.toHaveBeenCalled()
     })
 
     it('should return 400 when email or password is missing', async () => {
       // Arrange
+      ;(accountCreationService.validateCreateAccountInput as jest.Mock).mockReturnValue({
+        success: false,
+        error: 'Email and password are required',
+        statusCode: 400,
+      })
+
       const req = createMockRequest('', mockPassword)
 
       // Act
@@ -319,10 +275,10 @@ describe('Tutor Account Creation - Integration Tests', () => {
 
     it('should return 500 when tutor record creation fails', async () => {
       // Arrange
-      mockProfilesSingle.mockResolvedValue({ data: { id: mockProfileId }, error: null })
-      mockTutorsSingle.mockResolvedValue({
-        data: null,
-        error: { message: 'Tutor creation failed' },
+      ;(accountCreationService.createTutorRecords as jest.Mock).mockResolvedValue({
+        success: false,
+        error: 'Tutor creation failed',
+        statusCode: 500,
       })
 
       const req = createMockRequest(mockTutorEmail, mockPassword)
@@ -334,15 +290,15 @@ describe('Tutor Account Creation - Integration Tests', () => {
       // Assert
       expect(response.status).toBe(500)
       expect(responseData.error).toContain('Tutor creation failed')
-      expect(deleteRegistrationData).not.toHaveBeenCalled()
+      expect(accountCreationService.cleanupPendingRegistration).not.toHaveBeenCalled()
     })
 
     it('should return 500 when qualification creation fails', async () => {
       // Arrange
-      mockProfilesSingle.mockResolvedValue({ data: { id: mockProfileId }, error: null })
-      mockTutorsSingle.mockResolvedValue({ data: { id: mockTutorId }, error: null })
-      mockQualificationsInsert.mockResolvedValue({
-        error: { message: 'Qualification creation failed' },
+      ;(accountCreationService.createTutorRecords as jest.Mock).mockResolvedValue({
+        success: false,
+        error: 'Qualification creation failed',
+        statusCode: 500,
       })
 
       const req = createMockRequest(mockTutorEmail, mockPassword)
@@ -354,16 +310,13 @@ describe('Tutor Account Creation - Integration Tests', () => {
       // Assert
       expect(response.status).toBe(500)
       expect(responseData.error).toContain('Qualification creation failed')
-      expect(deleteRegistrationData).not.toHaveBeenCalled()
+      expect(accountCreationService.cleanupPendingRegistration).not.toHaveBeenCalled()
     })
   })
 
   describe('Security Headers', () => {
     it('should apply security headers to successful response', async () => {
       // Arrange
-      mockProfilesSingle.mockResolvedValue({ data: { id: mockProfileId }, error: null })
-      mockTutorsSingle.mockResolvedValue({ data: { id: mockTutorId }, error: null })
-
       const req = createMockRequest(mockTutorEmail, mockPassword)
 
       // Act

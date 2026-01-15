@@ -19,7 +19,7 @@ export const createMockTutorFormData = (overrides?: Partial<FormData>): FormData
     phone: '76123456', // Valid Sierra Leone phone number (8 digits, matches format: +232 XX XXX XXXX)
     countryCode: '+232', // Sierra Leone
     bio: 'Experienced mathematics tutor with 5 years of teaching experience.',
-    subjects: ['Mathematics', 'Science'],
+    subjects: ['Mathematics', 'Core Science'],
     qualificationType: 'degree',
     qualificationTitle: 'Bachelor of Science in Mathematics',
     institution: 'University of Example',

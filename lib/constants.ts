@@ -111,7 +111,25 @@ export const ERROR_MESSAGES = {
   UNEXPECTED_ERROR: 'An unexpected error occurred. Please try again.',
   PASSWORD_MISMATCH: 'Passwords do not match',
   STORAGE_ERROR: 'Failed to store registration data',
-  CLEANUP_ERROR: 'Failed to clean up expired data'
+  CLEANUP_ERROR: 'Failed to clean up expired data',
+  // Account creation errors
+  EMAIL_PASSWORD_REQUIRED: 'Email and password are required',
+  SERVICE_UNAVAILABLE: 'Service temporarily unavailable',
+  ACCOUNT_ALREADY_EXISTS: 'An account with this email already exists. Please sign in instead.',
+  ACCOUNT_STATUS_VERIFICATION_FAILED: 'Failed to verify account status. Please try again.',
+  ACCOUNT_CREATION_FAILED: 'Failed to create account: No data returned from database',
+  PROFILE_CREATION_FAILED: 'Profile creation failed',
+  TUTOR_CREATION_FAILED: 'Tutor creation failed',
+  QUALIFICATION_CREATION_FAILED: 'Qualification creation failed',
+  STUDENT_CREATION_FAILED: 'Student creation failed',
+  // Password reset errors
+  INVALID_SESSION: 'Invalid or expired session. Please reset your password again.',
+  EMAIL_FROM_TOKEN_FAILED: 'Could not determine user email from session token.',
+  PASSWORD_REQUIRED: 'Password is required',
+  PASSWORD_UPDATE_FAILED: 'Failed to update password. Please try again.',
+  USER_ACCOUNT_NOT_FOUND: 'User account not found. Please contact support.',
+  // General errors
+  INTERNAL_SERVER_ERROR_MESSAGE: 'Internal server error'
 } as const
 
 // Database error codes

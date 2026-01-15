@@ -23,6 +23,17 @@ jest.mock('next/link', () => {
   }
 })
 
+// Mock Next.js navigation
+jest.mock('next/navigation', () => ({
+  useSearchParams: () => ({
+    get: jest.fn().mockReturnValue(null),
+  }),
+  useRouter: () => ({
+    push: jest.fn(),
+    replace: jest.fn(),
+  }),
+}))
+
 describe('Tutor Application Success Page - Integration Test', () => {
   let mockStorage: ReturnType<typeof createMockLocalStorage>
   let originalLocalStorage: Storage

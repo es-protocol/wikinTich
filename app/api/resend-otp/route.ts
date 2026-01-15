@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     // 3) Validate email format
     if (!email || typeof email !== 'string') {
       const response = NextResponse.json(
-        { error: 'Email is required' },
+        { error: ERROR_MESSAGES.INVALID_EMAIL },
         { status: 400 }
       )
       return applySecurityHeaders(response)
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     const emailValidation = validateEmailDetailed(email)
     if (!emailValidation.isValid) {
       const response = NextResponse.json(
-        { error: emailValidation.message || 'Invalid email address' },
+        { error: emailValidation.message || ERROR_MESSAGES.INVALID_EMAIL },
         { status: 400 }
       )
       return applySecurityHeaders(response)

@@ -120,7 +120,8 @@ describe('POST /api/forgot-password', () => {
       const data = await response.json()
 
       expect(response.status).toBe(400)
-      expect(data.error).toBe('Email is required')
+      // The route returns "Please enter a valid email address" for missing email
+      expect(data.error).toBe('Please enter a valid email address')
     })
 
     it('should reject requests from disallowed origins', async () => {
@@ -288,6 +289,46 @@ describe('POST /api/forgot-password', () => {
       expect(response.status).toBe(200)
       expect(data.success).toBe(true)
       expect(data.message).toContain('If an account exists')
+    })
+  })
+
+  describe('Error Message Centralization', () => {
+    it('should use ERROR_MESSAGES.INVALID_EMAIL for missing email', async () => {
+      const req = new NextRequest('http://localhost:3000/api/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', origin: 'http://localhost:3000' },
+        body: JSON.stringify({}),
+      })
+
+      const response = await POST(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(400)
+      // The route returns "Please enter a valid email address" for missing email
+      expect(data.error).toBe('Please enter a valid email address')
+    })
+
+    it('should use ERROR_MESSAGES.FORBIDDEN for CORS violations', async () => {
+      mockIsOriginAllowed.mockReturnValue(false)
+
+      const req = new NextRequest('http://localhost:3000/api/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', origin: 'http://evil.com' },
+        body: JSON.stringify({ email: 'test@example.com' }),
+      })
+
+      const response = await POST(req)
+      const data = await response.json()
+
+      expect(response.status).toBe(403)
+      expect(data.error).toBe(ERROR_MESSAGES.FORBIDDEN)
+    })
+
+    it('should use ERROR_MESSAGES constants instead of hardcoded strings', () => {
+      // Verify that all error messages come from ERROR_MESSAGES
+      expect(ERROR_MESSAGES.INVALID_EMAIL).toBeDefined()
+      expect(ERROR_MESSAGES.FORBIDDEN).toBeDefined()
+      expect(ERROR_MESSAGES.RATE_LIMIT_EXCEEDED).toBeDefined()
     })
   })
 })

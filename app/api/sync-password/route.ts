@@ -16,7 +16,8 @@
  * - Validates user exists in auth_users table
  */
 
-import { hashPassword } from '@/lib/security'
+import { ERROR_MESSAGES } from '@/lib/constants'
+import { hashPassword, validatePasswordComplexity } from '@/lib/security'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { supabaseAdmin } from '@/lib/supabase'
 import { devError, devLog } from '@/lib/utils/logger'
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest) {
   try {
     if (!supabaseAdmin) {
       const errorResponse = NextResponse.json(
-        { error: 'Service temporarily unavailable' },
+        { error: ERROR_MESSAGES.SERVICE_UNAVAILABLE },
         { status: 503 }
       )
       return applySecurityHeaders(errorResponse)
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       const errorResponse = NextResponse.json(
-        { error: 'Invalid or expired session. Please reset your password again.' },
+        { error: ERROR_MESSAGES.INVALID_SESSION },
         { status: 401 }
       )
       return applySecurityHeaders(errorResponse)
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
           if (userError || !user) {
             devError('Error getting user from token:', userError)
             const errorResponse = NextResponse.json(
-              { error: 'Invalid or expired session. Please reset your password again.' },
+              { error: ERROR_MESSAGES.INVALID_SESSION },
               { status: 401 }
             )
             return applySecurityHeaders(errorResponse)
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
     } catch (error) {
       devError('Error decoding token:', error)
       const errorResponse = NextResponse.json(
-        { error: 'Invalid or expired session. Please reset your password again.' },
+        { error: ERROR_MESSAGES.INVALID_SESSION },
         { status: 401 }
       )
       return applySecurityHeaders(errorResponse)
@@ -96,7 +97,7 @@ export async function POST(req: NextRequest) {
     
     if (!sessionEmail) {
       const errorResponse = NextResponse.json(
-        { error: 'Could not determine user email from session token.' },
+        { error: ERROR_MESSAGES.EMAIL_FROM_TOKEN_FAILED },
         { status: 401 }
       )
       return applySecurityHeaders(errorResponse)
@@ -107,7 +108,17 @@ export async function POST(req: NextRequest) {
 
     if (!password || typeof password !== 'string') {
       const errorResponse = NextResponse.json(
-        { error: 'Password is required' },
+        { error: ERROR_MESSAGES.PASSWORD_REQUIRED },
+        { status: 400 }
+      )
+      return applySecurityHeaders(errorResponse)
+    }
+
+    // Validate password strength server-side
+    const passwordValidation = validatePasswordComplexity(password)
+    if (!passwordValidation.isValid) {
+      const errorResponse = NextResponse.json(
+        { error: passwordValidation.errors.join('. ') },
         { status: 400 }
       )
       return applySecurityHeaders(errorResponse)
@@ -124,7 +135,7 @@ export async function POST(req: NextRequest) {
     if (authError || !authUser) {
       devError('User not found in auth_users table:', authError)
       const errorResponse = NextResponse.json(
-        { error: 'User account not found. Please contact support.' },
+        { error: ERROR_MESSAGES.USER_ACCOUNT_NOT_FOUND },
         { status: 404 }
       )
       return applySecurityHeaders(errorResponse)
@@ -142,7 +153,7 @@ export async function POST(req: NextRequest) {
     if (updateError) {
       devError('Error updating password hash:', updateError)
       const errorResponse = NextResponse.json(
-        { error: 'Failed to update password. Please try again.' },
+        { error: ERROR_MESSAGES.PASSWORD_UPDATE_FAILED },
         { status: 500 }
       )
       return applySecurityHeaders(errorResponse)
@@ -160,7 +171,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     devError('Sync password error:', error)
     const errorResponse = NextResponse.json(
-      { error: 'An unexpected error occurred. Please try again.' },
+      { error: ERROR_MESSAGES.UNEXPECTED_ERROR },
       { status: 500 }
     )
     return applySecurityHeaders(errorResponse)

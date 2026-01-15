@@ -113,7 +113,7 @@ describe('Tutor Signup - Integration Tests (API Flow)', () => {
     await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email);
     await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone);
     await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio);
-    await user.click(screen.getByLabelText(/mathematics/i));
+    await user.click(screen.getAllByLabelText(/mathematics/i)[0]);
     const qualificationSelect = screen.getAllByRole('combobox')[1];
     await user.selectOptions(qualificationSelect, formData.qualificationType);
     await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle);
@@ -142,7 +142,7 @@ describe('Tutor Signup - Integration Tests (API Flow)', () => {
     await user.type(screen.getByPlaceholderText(/enter your email/i), formData.email);
     await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone);
     await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio);
-    await user.click(screen.getByLabelText(/mathematics/i));
+    await user.click(screen.getAllByLabelText(/mathematics/i)[0]);
     const qualificationSelect = screen.getAllByRole('combobox')[1];
     await user.selectOptions(qualificationSelect, formData.qualificationType);
     await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), formData.qualificationTitle);

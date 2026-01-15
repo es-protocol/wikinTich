@@ -1,24 +1,20 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import {
-  UserGroupIcon,
-  AcademicCapIcon,
-  ClockIcon,
-  CurrencyDollarIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ExclamationTriangleIcon,
-  ChartBarIcon,
-  CogIcon,
-  BellIcon,
-  ChevronDownIcon,
-  MagnifyingGlassIcon,
-  FunnelIcon,
-  ArrowRightOnRectangleIcon
-} from '@heroicons/react/24/outline'
 import { supabase } from '@/lib/supabase'
+import {
+  AcademicCapIcon,
+  ArrowRightOnRectangleIcon,
+  BellIcon,
+  ChartBarIcon,
+  ClockIcon,
+  CogIcon,
+  CurrencyDollarIcon,
+  ExclamationTriangleIcon,
+  UserGroupIcon,
+  XCircleIcon
+} from '@heroicons/react/24/outline'
+import { motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
 
 interface SuperAdminProfile {
   id: string
@@ -85,12 +81,56 @@ interface Student {
   }
 }
 
+function NotificationBadge({
+  count,
+  isLoading
+}: {
+  count: number
+  isLoading: boolean
+}) {
+  if (isLoading) {
+    return (
+      <div className="relative flex items-center">
+        <button
+          className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors"
+          aria-label="Loading notifications"
+          disabled
+        >
+          <BellIcon className="w-6 h-6" />
+          <div className="absolute top-1 right-1 h-2 w-2 bg-gray-400 rounded-full animate-pulse" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative flex items-center">
+      <button
+        className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors"
+        aria-label={`${count} unread notification${count !== 1 ? 's' : ''}`}
+        onClick={() => {
+          console.log('Open notifications')
+        }}
+      >
+        <BellIcon className={`w-6 h-6 ${count > 0 ? 'text-blue-600' : 'text-gray-600'}`} />
+        {count > 0 && (
+          <span className="absolute top-0 right-0 flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold text-white bg-red-500 rounded-full border-2 border-white">
+            {count > 99 ? '99+' : count}
+          </span>
+        )}
+      </button>
+    </div>
+  )
+}
+
 export default function SuperAdminDashboard() {
   const [userProfile, setUserProfile] = useState<SuperAdminProfile | null>(null)
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null)
   const [activeSection, setActiveSection] = useState('overview')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false)
 
   // Data states
   const [tutors, setTutors] = useState<Tutor[]>([])
@@ -130,6 +170,20 @@ export default function SuperAdminDashboard() {
       fetchTutors()
     }
   }, [tutorFilter, searchTerm])
+
+  useEffect(() => {
+    if (!userProfile) {
+      return
+    }
+
+    fetchUnreadCount()
+
+    const interval = setInterval(() => {
+      fetchUnreadCount()
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [userProfile])
 
   const checkSuperAdminStatus = async () => {
     try {
@@ -174,6 +228,36 @@ export default function SuperAdminDashboard() {
       setError('Failed to verify super admin status')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const fetchUnreadCount = async () => {
+    if (!userProfile) {
+      return
+    }
+
+    try {
+      setIsLoadingNotifications(true)
+
+      const response = await fetch('/api/admin/notifications?unread_only=true&limit=1', {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch notifications')
+          return
+        }
+        throw new Error(`Failed to fetch notifications: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setUnreadCount(data.unread_count || 0)
+    } catch (err) {
+      console.error('Error fetching unread count:', err)
+    } finally {
+      setIsLoadingNotifications(false)
     }
   }
 
@@ -1042,6 +1126,7 @@ export default function SuperAdminDashboard() {
               <h1 className="text-2xl font-bold text-gray-900">Super Admin Dashboard</h1>
             </div>
             <div className="flex items-center space-x-4">
+              <NotificationBadge count={unreadCount} isLoading={isLoadingNotifications} />
               <div className="text-right">
                 <p className="text-sm text-gray-500">Super Admin</p>
                 <p className="font-medium text-gray-900">{userProfile?.full_name}</p>

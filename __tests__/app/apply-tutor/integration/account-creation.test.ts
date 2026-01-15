@@ -54,6 +54,8 @@ jest.mock('@/lib/services/account-creation-service', () => ({
 }))
 
 // Mock dependencies
+jest.mock('@/lib/cors-config')
+jest.mock('@/lib/server-rate-limiting')
 jest.mock('@/lib/services/security-headers-service')
 
 // Mock logger to avoid console noise in tests
@@ -76,6 +78,8 @@ jest.mock('@/lib/supabase', () => ({
 }))
 
 // Import after mocks
+import { isOriginAllowed } from '@/lib/cors-config'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 import * as accountCreationService from '@/lib/services/account-creation-service'
 
 describe('Tutor Account Creation - Integration Tests', () => {
@@ -141,6 +145,8 @@ describe('Tutor Account Creation - Integration Tests', () => {
     })
     ;(accountCreationService.cleanupPendingRegistration as jest.Mock).mockResolvedValue(undefined)
     ;(applySecurityHeaders as jest.Mock).mockImplementation((response) => response)
+    ;(isOriginAllowed as jest.Mock).mockReturnValue(true)
+    ;(checkServerSideRateLimit as jest.Mock).mockResolvedValue({ allowed: true })
   })
 
   const createMockRequest = (email: string, password: string): NextRequest => {

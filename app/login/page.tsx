@@ -171,11 +171,12 @@ export default function LoginPage() {
           <div className="mt-5 sm:mt-6 text-center space-y-2">
             <p className="text-sm text-gray-600">
               Don't have an account?{' '}
-              <Link 
-                href={ROUTES.REGISTER} 
+              <span className="text-gray-600">Register </span>
+              <Link
+                href={ROUTES.REGISTER}
                 className="text-primary-600 hover:text-primary-700 font-medium"
               >
-                Register here
+                here
               </Link>
             </p>
             <Link 

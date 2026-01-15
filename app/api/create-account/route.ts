@@ -1,4 +1,6 @@
 import { ERROR_MESSAGES } from '@/lib/constants'
+import { getCORSHeaders, isOriginAllowed } from '@/lib/cors-config'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 import {
   cleanupPendingRegistration,
   createAuthUserRecord,
@@ -17,6 +19,13 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
   try {
+    // 1) Origin validation
+    const origin = req.headers.get('origin') || ''
+    if (!isOriginAllowed(origin)) {
+      const response = NextResponse.json({ error: ERROR_MESSAGES.FORBIDDEN }, { status: 403 })
+      return applySecurityHeaders(response)
+    }
+
     // Check if supabaseAdmin is available
     if (!supabaseAdmin) {
       devError('Supabase admin client not available')
@@ -24,15 +33,38 @@ export async function POST(req: NextRequest) {
       return applySecurityHeaders(response)
     }
 
-    // 1) Parse and validate input
-    const { email, password } = await req.json()
+    // 2) Parse JSON body safely
+    let body: { email: string; password: string }
+    try {
+      body = await req.json()
+    } catch {
+      const response = NextResponse.json({ error: ERROR_MESSAGES.INVALID_JSON }, { status: 400 })
+      return applySecurityHeaders(response)
+    }
+
+    const { email, password } = body || ({} as { email: string; password: string })
+
+    // 3) Validate input
     const validationError = validateCreateAccountInput({ email, password })
     if (validationError) {
       const response = NextResponse.json({ error: validationError.error }, { status: validationError.statusCode || 400 })
       return applySecurityHeaders(response)
     }
 
-    // 2) Get pending registration data
+    // 4) Server-side rate limiting for account creation
+    const rateLimitCheck = await checkServerSideRateLimit(req, email, 'registration')
+    if (!rateLimitCheck.allowed) {
+      const response = NextResponse.json(
+        {
+          error: rateLimitCheck.error || ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
+          resetTime: rateLimitCheck.resetTime
+        },
+        { status: 429 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 5) Get pending registration data
     const registrationResult = await getPendingRegistrationData(email)
     if (!registrationResult.success) {
       const response = NextResponse.json(
@@ -48,17 +80,7 @@ export async function POST(req: NextRequest) {
     // Determine role from explicit role field or fallback to registration type
     const role = pendingData.role || (registrationType === 'tutor' ? 'tutor' : 'parent')
 
-    // 3) Create user in Supabase Auth first (required for password reset to work)
-    const authUserResult = await createSupabaseAuthUser(email, password)
-    if (!authUserResult.success) {
-      const response = NextResponse.json(
-        { error: authUserResult.error },
-        { status: authUserResult.statusCode || 500 }
-      )
-      return applySecurityHeaders(response)
-    }
-
-    // 4) Verify account doesn't already exist
+    // 6) Verify account doesn't already exist
     const duplicateCheck = await verifyAccountDoesNotExist(email)
     if (!duplicateCheck.success) {
       const response = NextResponse.json(
@@ -68,7 +90,17 @@ export async function POST(req: NextRequest) {
       return applySecurityHeaders(response)
     }
 
-    // 5) Create user in our custom auth_users table
+    // 7) Create user in Supabase Auth (required for password reset to work)
+    const authUserResult = await createSupabaseAuthUser(email, password)
+    if (!authUserResult.success) {
+      const response = NextResponse.json(
+        { error: authUserResult.error },
+        { status: authUserResult.statusCode || 500 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 8) Create user in our custom auth_users table
     const authUserRecordResult = await createAuthUserRecord(
       email,
       password,
@@ -83,7 +115,7 @@ export async function POST(req: NextRequest) {
       return applySecurityHeaders(response)
     }
 
-    // 6) Create user profile
+    // 9) Create user profile
     const profileResult = await createUserProfile(email, role, pendingData)
     if (!profileResult.success) {
       const response = NextResponse.json(
@@ -93,7 +125,7 @@ export async function POST(req: NextRequest) {
       return applySecurityHeaders(response)
     }
 
-    // 7) Create role-specific records
+    // 10) Create role-specific records
     const roleRecordsResult = role === 'tutor'
       ? await createTutorRecords(profileResult.profileId!, pendingData)
       : await createParentRecords(profileResult.profileId!, pendingData)
@@ -106,11 +138,14 @@ export async function POST(req: NextRequest) {
       return applySecurityHeaders(response)
     }
 
-    // 8) Cleanup pending registration data
+    // 11) Cleanup pending registration data
     await cleanupPendingRegistration(email)
 
     devLog(`Account creation completed successfully for ${email}`)
-    const response = NextResponse.json({ success: true })
+    const response = NextResponse.json(
+      { success: true },
+      { headers: getCORSHeaders(origin) }
+    )
     return applySecurityHeaders(response)
   } catch (error) {
     devError('Error in create account API:', error)

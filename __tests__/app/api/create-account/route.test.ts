@@ -20,6 +20,8 @@ import { NextRequest } from 'next/server'
 
 // Mock dependencies
 jest.mock('@/lib/services/account-creation-service')
+jest.mock('@/lib/cors-config')
+jest.mock('@/lib/server-rate-limiting')
 jest.mock('@/lib/services/security-headers-service')
 jest.mock('@/lib/supabase', () => ({
   supabaseAdmin: {
@@ -32,16 +34,18 @@ jest.mock('@/lib/supabase', () => ({
   },
 }))
 
+import { isOriginAllowed } from '@/lib/cors-config'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 import {
-    cleanupPendingRegistration,
-    createAuthUserRecord,
-    createParentRecords,
-    createSupabaseAuthUser,
-    createTutorRecords,
-    createUserProfile,
-    getPendingRegistrationData,
-    validateCreateAccountInput,
-    verifyAccountDoesNotExist
+  cleanupPendingRegistration,
+  createAuthUserRecord,
+  createParentRecords,
+  createSupabaseAuthUser,
+  createTutorRecords,
+  createUserProfile,
+  getPendingRegistrationData,
+  validateCreateAccountInput,
+  verifyAccountDoesNotExist
 } from '@/lib/services/account-creation-service'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 
@@ -55,11 +59,15 @@ const mockCreateTutorRecords = createTutorRecords as jest.MockedFunction<typeof 
 const mockCreateParentRecords = createParentRecords as jest.MockedFunction<typeof createParentRecords>
 const mockCleanup = cleanupPendingRegistration as jest.MockedFunction<typeof cleanupPendingRegistration>
 const mockApplySecurityHeaders = applySecurityHeaders as jest.MockedFunction<typeof applySecurityHeaders>
+const mockIsOriginAllowed = isOriginAllowed as jest.MockedFunction<typeof isOriginAllowed>
+const mockCheckRateLimit = checkServerSideRateLimit as jest.MockedFunction<typeof checkServerSideRateLimit>
 
 describe('POST /api/create-account - Error Messages', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockApplySecurityHeaders.mockImplementation((response) => response as any)
+    mockIsOriginAllowed.mockReturnValue(true)
+    mockCheckRateLimit.mockResolvedValue({ allowed: true })
   })
 
   describe('Input Validation Errors', () => {

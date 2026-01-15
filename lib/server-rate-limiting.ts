@@ -60,6 +60,10 @@ export async function checkServerSideRateLimit(
   remainingRequests?: number;
   error?: string 
 }> {
+  if (process.env.NODE_ENV === 'development') {
+    return { allowed: true }
+  }
+
   const ip = getClientIP(request)//Extract ip address from incoming request
   // Include action in key to separate rate limits for different actions
   const rateLimitKey = `${action}:${email}:${ip}` //unique key combining action, email and ip address

@@ -1,7 +1,17 @@
 import { ERROR_MESSAGES } from '@/lib/constants'
-import { deleteRegistrationData, getRegistrationData } from '@/lib/registration-storage'
-import { hashPassword } from '@/lib/security'
-import { sanitizeEmail, sanitizeNumericInput, sanitizePhoneNumber, sanitizeTextInput } from '@/lib/services/input-sanitization-service'
+import { getCORSHeaders, isOriginAllowed } from '@/lib/cors-config'
+import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
+import {
+  cleanupPendingRegistration,
+  createAuthUserRecord,
+  createParentRecords,
+  createSupabaseAuthUser,
+  createTutorRecords,
+  createUserProfile,
+  getPendingRegistrationData,
+  validateCreateAccountInput,
+  verifyAccountDoesNotExist
+} from '@/lib/services/account-creation-service'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { supabaseAdmin } from '@/lib/supabase'
 import { devError, devLog } from '@/lib/utils/logger'
@@ -9,184 +19,145 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
   try {
+    // 1) Origin validation
+    const origin = req.headers.get('origin') || ''
+    if (!isOriginAllowed(origin)) {
+      const response = NextResponse.json({ error: ERROR_MESSAGES.FORBIDDEN }, { status: 403 })
+      return applySecurityHeaders(response)
+    }
+
     // Check if supabaseAdmin is available
     if (!supabaseAdmin) {
-      console.error('❌ Supabase admin client not available')
-      return NextResponse.json({ error: 'Service temporarily unavailable' }, { status: 503 })
+      devError('Supabase admin client not available')
+      const response = NextResponse.json({ error: ERROR_MESSAGES.SERVICE_UNAVAILABLE }, { status: 503 })
+      return applySecurityHeaders(response)
     }
 
-    const { email, password } = await req.json()
-
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
+    // 2) Parse JSON body safely
+    let body: { email: string; password: string }
+    try {
+      body = await req.json()
+    } catch {
+      const response = NextResponse.json({ error: ERROR_MESSAGES.INVALID_JSON }, { status: 400 })
+      return applySecurityHeaders(response)
     }
 
-    devLog('Looking for registration data')
-    const registrationResult = await getRegistrationData(email)
-    devLog('Registration result received')
-    
-    if (!registrationResult.success || !registrationResult.data) {
-      devError('Registration data not found')
-      return NextResponse.json({ error: ERROR_MESSAGES.REGISTRATION_DATA_NOT_FOUND }, { status: 404 })
+    const { email, password } = body || ({} as { email: string; password: string })
+
+    // 3) Validate input
+    const validationError = validateCreateAccountInput({ email, password })
+    if (validationError) {
+      const response = NextResponse.json({ error: validationError.error }, { status: validationError.statusCode || 400 })
+      return applySecurityHeaders(response)
     }
 
-    const pendingData = registrationResult.data.registration_data
-    const registrationType = registrationResult.data.registration_type
+    // 4) Server-side rate limiting for account creation
+    const rateLimitCheck = await checkServerSideRateLimit(req, email, 'registration')
+    if (!rateLimitCheck.allowed) {
+      const response = NextResponse.json(
+        {
+          error: rateLimitCheck.error || ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
+          resetTime: rateLimitCheck.resetTime
+        },
+        { status: 429 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 5) Get pending registration data
+    const registrationResult = await getPendingRegistrationData(email)
+    if (!registrationResult.success) {
+      const response = NextResponse.json(
+        { error: registrationResult.error },
+        { status: registrationResult.statusCode || 404 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    const pendingData = registrationResult.data!.registration_data
+    const registrationType = registrationResult.data!.registration_type
 
     // Determine role from explicit role field or fallback to registration type
     const role = pendingData.role || (registrationType === 'tutor' ? 'tutor' : 'parent')
 
-    // 1) auth_users
-    const passwordHash = await hashPassword(password)
-    const { error: authError } = await supabaseAdmin
-      .from('auth_users')
-      .insert({
-        email,
-        password_hash: passwordHash,
-        role,
-        is_active: true
-      })
-
-    if (authError) {
-      return NextResponse.json({ error: authError.message }, { status: 500 })
+    // 6) Verify account doesn't already exist
+    const duplicateCheck = await verifyAccountDoesNotExist(email)
+    if (!duplicateCheck.success) {
+      const response = NextResponse.json(
+        { error: duplicateCheck.error },
+        { status: duplicateCheck.statusCode || 409 }
+      )
+      return applySecurityHeaders(response)
     }
 
-    // 2) profiles with type-specific sanitization
-    const profileName = role === 'tutor' 
-      ? sanitizeTextInput(pendingData.fullName || '')
-      : sanitizeTextInput(pendingData.parentName || '')
-    
-    const profilePhone = role === 'tutor'
-      ? sanitizePhoneNumber(pendingData.phone || '')
-      : sanitizePhoneNumber(pendingData.parentPhone || '')
-
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .insert({
-        email: sanitizeEmail(email),
-        full_name: profileName,
-        phone: profilePhone,
-        role
-      })
-      .select('id')
-      .single()
-
-    if (profileError || !profile) {
-      return NextResponse.json({ error: profileError?.message || 'Profile creation failed' }, { status: 500 })
+    // 7) Create user in Supabase Auth (required for password reset to work)
+    const authUserResult = await createSupabaseAuthUser(email, password)
+    if (!authUserResult.success) {
+      const response = NextResponse.json(
+        { error: authUserResult.error },
+        { status: authUserResult.statusCode || 500 }
+      )
+      return applySecurityHeaders(response)
     }
 
-    // 3) Role-specific account creation
-    if (role === 'tutor') {
-      // Create tutor record
-      const subjectsArray = pendingData.subjects 
-        ? (typeof pendingData.subjects === 'string' 
-            ? pendingData.subjects.split(',').map(s => s.trim()).filter(Boolean)
-            : Array.isArray(pendingData.subjects) 
-              ? pendingData.subjects 
-              : [])
-        : []
-
-      let availabilityData = null
-      if (pendingData.availability) {
-        try {
-          // Try to parse if it's a JSON string, otherwise use as-is
-          availabilityData = typeof pendingData.availability === 'string' 
-            ? JSON.parse(pendingData.availability) 
-            : pendingData.availability
-        } catch {
-          // If parsing fails, store as string
-          availabilityData = pendingData.availability
-        }
-      }
-
-      const { data: tutor, error: tutorError } = await supabaseAdmin
-        .from('tutors')
-        .insert({
-          profile_id: profile.id,
-          bio: sanitizeTextInput(pendingData.bio || ''),
-          subjects: subjectsArray.length > 0 ? subjectsArray : null,
-          availability: availabilityData,
-          is_verified: false,
-          verification_date: null,
-          profile_completion_percentage: 0,
-          profile_completion_data: {},
-          profile_completion_step: 'basic_info',
-          certificates_data: []
-        })
-        .select('id')
-        .single()
-
-      if (tutorError || !tutor) {
-        return NextResponse.json({ error: tutorError?.message || 'Tutor creation failed' }, { status: 500 })
-      }
-
-      // Create tutor_qualifications record if qualification data exists
-      if (pendingData.qualificationType && pendingData.qualificationTitle && pendingData.institution && pendingData.yearObtained) {
-        const yearObtained = pendingData.yearObtained 
-          ? parseInt(sanitizeNumericInput(pendingData.yearObtained)) 
-          : null
-
-        const { error: qualificationError } = await supabaseAdmin
-          .from('tutor_qualifications')
-          .insert({
-            tutor_id: tutor.id,
-            qualification_type: sanitizeTextInput(pendingData.qualificationType),
-            title: sanitizeTextInput(pendingData.qualificationTitle),
-            institution: sanitizeTextInput(pendingData.institution),
-            year_obtained: yearObtained,
-            is_verified: false
-          })
-
-        if (qualificationError) {
-          return NextResponse.json({ error: qualificationError.message || 'Qualification creation failed' }, { status: 500 })
-        }
-      }
-    } else {
-      // Create parent-specific records (students and home_tutoring_requests)
-      const studentAge = pendingData.studentAge ? parseInt(sanitizeNumericInput(pendingData.studentAge)) : null
-      const { data: student, error: studentError } = await supabaseAdmin
-        .from('students')
-        .insert({
-          parent_id: profile.id,
-          name: sanitizeTextInput(pendingData.studentName || ''),
-          age: studentAge,
-          grade_level: sanitizeTextInput(pendingData.gradeLevel || '')
-        })
-        .select('id')
-        .single()
-
-      if (studentError || !student) {
-        return NextResponse.json({ error: studentError?.message || 'Student creation failed' }, { status: 500 })
-      }
-
-      // 4) home_tutoring_requests with comprehensive sanitization
-      const { error: requestError } = await supabaseAdmin
-        .from('home_tutoring_requests')
-        .insert({
-          parent_id: profile.id,
-          student_id: student.id,
-          student_name: sanitizeTextInput(pendingData.studentName || ''),
-          student_age: studentAge,
-          grade_level: sanitizeTextInput(pendingData.gradeLevel || ''),
-          subjects: sanitizeTextInput(pendingData.subjects || ''),
-          preferred_schedule: sanitizeTextInput(pendingData.preferredSchedule || ''),
-          location: sanitizeTextInput(pendingData.location || ''),
-          additional_requirements: sanitizeTextInput(pendingData.additionalRequirements || '')
-        })
-
-      if (requestError) {
-        return NextResponse.json({ error: requestError.message }, { status: 500 })
-      }
+    // 8) Create user in our custom auth_users table
+    const authUserRecordResult = await createAuthUserRecord(
+      email,
+      password,
+      role,
+      authUserResult.user?.id
+    )
+    if (!authUserRecordResult.success) {
+      const response = NextResponse.json(
+        { error: authUserRecordResult.error },
+        { status: authUserRecordResult.statusCode || 500 }
+      )
+      return applySecurityHeaders(response)
     }
 
-    // 5) cleanup pending
-    await deleteRegistrationData(email)
+    // 9) Create user profile
+    const profileResult = await createUserProfile(email, role, pendingData)
+    if (!profileResult.success) {
+      const response = NextResponse.json(
+        { error: profileResult.error },
+        { status: profileResult.statusCode || 500 }
+      )
+      return applySecurityHeaders(response)
+    }
 
-    const response = NextResponse.json({ success: true })
+    // 10) Create role-specific records
+    const roleRecordsResult = role === 'tutor'
+      ? await createTutorRecords(profileResult.profileId!, pendingData)
+      : await createParentRecords(profileResult.profileId!, pendingData)
+
+    if (!roleRecordsResult.success) {
+      const response = NextResponse.json(
+        { error: roleRecordsResult.error },
+        { status: roleRecordsResult.statusCode || 500 }
+      )
+      return applySecurityHeaders(response)
+    }
+
+    // 11) Cleanup pending registration data
+    await cleanupPendingRegistration(email)
+
+    devLog(`Account creation completed successfully for ${email}`)
+    const response = NextResponse.json(
+      { success: true },
+      { headers: getCORSHeaders(origin) }
+    )
     return applySecurityHeaders(response)
   } catch (error) {
     devError('Error in create account API:', error)
-    const errorResponse = NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    // Log the full error details
+    if (error instanceof Error) {
+      devError('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      })
+    }
+    const errorResponse = NextResponse.json({ error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR_MESSAGE }, { status: 500 })
     return applySecurityHeaders(errorResponse)
   }
 }

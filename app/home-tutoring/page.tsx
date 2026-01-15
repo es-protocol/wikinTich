@@ -1,15 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { supabase, getEmailRedirectUrl } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
-import { checkRateLimit, validateEmail, validatePhone, sanitizeInput, validateEmailDetailed, validatePhoneDetailed, getRateLimitResetTime } from '@/lib/security'
-import { storeRegistrationData } from '@/lib/registration-storage'
-import { ERROR_MESSAGES, REGISTRATION_CONSTANTS, REGISTRATION_TYPES, ROUTES, SUPPORTED_COUNTRIES } from '@/lib/constants'
-import { createErrorState, clearErrorState, getErrorMessage } from '@/lib/error-handling'
+import SubjectSelection from '@/app/components/SubjectSelection'
+import { ERROR_MESSAGES, REGISTRATION_CONSTANTS, ROUTES, SUPPORTED_COUNTRIES } from '@/lib/constants'
+import { clearErrorState, createErrorState, getErrorMessage } from '@/lib/error-handling'
 import { useDebouncedCallback } from '@/lib/hooks/useDebouncedValue'
+import { checkRateLimit, getRateLimitResetTime, validateEmailDetailed, validatePhoneDetailed } from '@/lib/security'
 import { DEBOUNCE_DELAYS } from '@/lib/utils/debounce'
+import { AcademicCapIcon, ArrowLeftIcon } from '@heroicons/react/24/outline'
+import { motion } from 'framer-motion'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 
 export default function HomeTutoringRequest() {
   const router = useRouter()
@@ -42,7 +43,7 @@ export default function HomeTutoringRequest() {
     gradeLevel: '',
     
     // Tutoring Requirements
-    subjects: '',
+    subjects: [] as string[], // Changed to array for checkbox component
     preferredSchedule: '',
     location: 'home_visit',
     additionalRequirements: ''
@@ -77,45 +78,66 @@ export default function HomeTutoringRequest() {
     }
   }
 
+  const handleSubjectsChange = (subjects: string[]) => {
+    setFormData(prev => ({
+      ...prev,
+      subjects
+    }))
+    
+    if (touchedFields.has('subjects')) {
+      // Validate subjects array directly
+      validateField('subjects', subjects)
+    }
+  }
+
   // Mark a field as "touched" when the parent moves focus away, then validate it
   const handleBlur = (fieldName: string) => {
     setTouchedFields(prev => new Set(prev).add(fieldName))
     const value = formData[fieldName as keyof typeof formData]
-    validateField(fieldName, value as string)
+    // validateField can handle both string and string[] for subjects
+    validateField(fieldName, value as string | string[])
   }
 
-  const validateField = (fieldName: string, value: string) => {
+  const validateField = (fieldName: string, value: string | string[]) => {
     let errorMessage = ''
 
     switch (fieldName) {
       case 'parentEmail':
-        const emailValidation = validateEmailDetailed(value)
-        errorMessage = emailValidation.isValid ? '' : emailValidation.message
+        if (typeof value === 'string') {
+          const emailValidation = validateEmailDetailed(value)
+          errorMessage = emailValidation.isValid ? '' : emailValidation.message
+        }
         break
       
       case 'parentPhone':
-        const phoneValidation = validatePhoneDetailed(value, countryCode)
-        errorMessage = phoneValidation.isValid ? '' : phoneValidation.message
+        if (typeof value === 'string') {
+          const phoneValidation = validatePhoneDetailed(value, countryCode)
+          errorMessage = phoneValidation.isValid ? '' : phoneValidation.message
+        }
         break
       
       case 'parentName':
       case 'studentName':
-        if (!value.trim()) {
-          errorMessage = `${fieldName === 'parentName' ? 'Parent name' : 'Student name'} is required`
-        } else if (value.trim().length < 2) {
-          errorMessage = 'Name must be at least 2 characters'
+        if (typeof value === 'string') {
+          if (!value.trim()) {
+            errorMessage = `${fieldName === 'parentName' ? 'Parent name' : 'Student name'} is required`
+          } else if (value.trim().length < 2) {
+            errorMessage = 'Name must be at least 2 characters'
+          }
         }
         break
       
       case 'gradeLevel':
-        if (!value) {
+        if (typeof value === 'string' && !value) {
           errorMessage = 'Please select a grade level'
         }
         break
       
       case 'subjects':
-        if (!value.trim()) {
-          errorMessage = 'Please enter at least one subject'
+        // Validation for subjects array
+        const subjectsArray = Array.isArray(value) ? value : []
+        if (subjectsArray.length === 0) {
+          errorMessage = 'Please select at least one subject'
         }
         break
     }
@@ -174,16 +196,22 @@ export default function HomeTutoringRequest() {
       
       const csrfData = await csrfResponse.json()
       
+      // Convert subjects array to comma-separated string for API
+      const submissionData = {
+        ...formData,
+        subjects: Array.isArray(formData.subjects) 
+          ? formData.subjects.join(', ') 
+          : formData.subjects,
+        countryCode // Include selected country code
+      }
+
       const response = await fetch('/api/home-tutoring/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ 
           csrf_token: csrfData.token, 
-          formData: {
-            ...formData,
-            countryCode // Include selected country code
-          }
+          formData: submissionData
         })
       })
 
@@ -201,8 +229,8 @@ export default function HomeTutoringRequest() {
         throw new Error(err.error || 'unknown_error')
       }
 
-      // Redirect to verification page
-      window.location.href = `${ROUTES.VERIFY_EMAIL}?email=${formData.parentEmail}`
+      // Redirect to success page with email in URL
+      window.location.href = `${ROUTES.HOME_TUTORING}/success?email=${encodeURIComponent(formData.parentEmail)}`
     } catch (error) {
       console.error('Error submitting request:', error)
       setError(createErrorState(getErrorMessage(error)))
@@ -212,17 +240,33 @@ export default function HomeTutoringRequest() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-primary-50 py-12">
-      <div className="max-w-4xl mx-auto px-4">
+    <div className="min-h-screen bg-gradient-to-br from-secondary-50 to-primary-50">
+      {/* Header */}
+      <header className="bg-white shadow-sm">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center py-4 sm:py-6 space-y-3 sm:space-y-0">
+            <div className="flex items-center order-1 sm:order-1">
+              <Link href="/" className="flex items-center text-primary-600 hover:text-primary-700 text-sm sm:text-base">
+                <ArrowLeftIcon className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+                Back to Home
+              </Link>
+            </div>
+            <div className="flex items-center order-2 sm:order-2">
+              <AcademicCapIcon className="w-6 h-6 sm:w-8 sm:h-8 text-primary-600 mr-2 sm:mr-3" />
+              <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-900">Request Home Tutoring</h1>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="max-w-4xl mx-auto px-3 sm:px-4 lg:px-8 py-6 sm:py-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
           className="text-center mb-8"
         >
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Request Home Tutoring
-          </h1>
           <p className="text-xl text-gray-600">
             Get qualified tutors for personalized home tutoring sessions
           </p>
@@ -477,36 +521,15 @@ export default function HomeTutoringRequest() {
                 Tutoring Requirements
               </h2>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Subjects Needed *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      name="subjects"
-                      value={formData.subjects}
-                      onChange={handleInputChange}
-                      onBlur={() => handleBlur('subjects')}
-                      required
-                      className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-secondary-500 focus:border-transparent text-gray-900 ${
-                        touchedFields.has('subjects') && fieldErrors.subjects 
-                          ? 'border-red-500' 
-                          : touchedFields.has('subjects') && !fieldErrors.subjects && formData.subjects
-                          ? 'border-green-500'
-                          : 'border-gray-300'
-                      }`}
-                      placeholder="e.g., Mathematics, English, Science"
-                    />
-                    {touchedFields.has('subjects') && !fieldErrors.subjects && formData.subjects && (
-                      <svg className="absolute right-3 top-3.5 w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                  </div>
-                  {touchedFields.has('subjects') && fieldErrors.subjects && (
-                    <p className="text-red-600 text-xs mt-1">{fieldErrors.subjects}</p>
-                  )}
+                <div onBlur={() => handleBlur('subjects')}>
+                  <SubjectSelection
+                    selectedSubjects={formData.subjects}
+                    onSubjectsChange={handleSubjectsChange}
+                    label="Subjects Needed"
+                    required
+                    error={fieldErrors.subjects}
+                    touched={touchedFields.has('subjects')}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -567,16 +590,7 @@ export default function HomeTutoringRequest() {
           </form>
         </motion.div>
 
-        {/* Back to Home */}
-        <div className="text-center mt-8">
-          <a
-            href={ROUTES.HOME}
-            className="text-secondary-600 hover:text-secondary-700 font-medium"
-          >
-            ← Back to Home
-          </a>
-        </div>
-      </div>
+      </main>
     </div>
   )
 } 

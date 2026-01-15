@@ -20,6 +20,7 @@ import { validateCSRFRequest } from '@/lib/services/csrf-service'
 import { sanitizeFormData } from '@/lib/services/input-sanitization-service'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { getEmailRedirectUrl, supabase } from '@/lib/supabase'
+import { checkAccountExists } from '@/lib/utils/account-check'
 import { devError } from '@/lib/utils/logger'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -113,6 +114,22 @@ export async function POST(req: NextRequest) {
         error: rateLimitCheck.error || ERROR_MESSAGES.RATE_LIMIT_EXCEEDED,
         resetTime: rateLimitCheck.resetTime
       }, { status: 429 })
+    }
+
+    // Check if account already exists (prevent duplicate signups)
+    const accountCheck = await checkAccountExists(formData.parentEmail)
+    
+    if (accountCheck.exists) {
+      return NextResponse.json({ 
+        error: 'An account with this email already exists. Please sign in instead.' 
+      }, { status: 409 })
+    }
+    
+    if (accountCheck.error) {
+      devError('Error checking for existing parent account:', accountCheck.error)
+      return NextResponse.json({ 
+        error: 'Failed to verify account status. Please try again.' 
+      }, { status: 500 })
     }
 
     // Send OTP email using Supabase Auth

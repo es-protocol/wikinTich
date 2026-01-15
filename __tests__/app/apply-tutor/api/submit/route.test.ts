@@ -24,6 +24,7 @@ import { storeRegistrationData } from '@/lib/registration-storage'
 import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 import { createCSRFSignature, generateSecureCSRFToken, validateCSRFRequest } from '@/lib/services/csrf-service'
 import { sanitizeFormData } from '@/lib/services/input-sanitization-service'
+import { checkAccountExists } from '@/lib/utils/account-check'
 import { NextRequest } from 'next/server'
 
 // Mock NextResponse for Jest environment
@@ -55,6 +56,7 @@ jest.mock('@/lib/cors-config')
 jest.mock('@/lib/server-rate-limiting')
 jest.mock('@/lib/services/input-sanitization-service')
 jest.mock('@/lib/registration-storage')
+jest.mock('@/lib/utils/account-check')
 jest.mock('@/lib/supabase', () => ({
   supabase: {
     auth: {
@@ -111,8 +113,8 @@ describe('Tutor Application API - Security Tests', () => {
     const url = 'http://localhost:3000/api/apply-tutor/submit'
     
     // Create Request with proper structure - use URL and RequestInit
-    const requestInit: RequestInit = {
-      method: 'POST',
+    const requestInit = {
+      method: 'POST' as const,
       headers,
       body: JSON.stringify({
         csrf_token: csrfToken,
@@ -131,6 +133,7 @@ describe('Tutor Application API - Security Tests', () => {
     ;(isOriginAllowed as jest.Mock).mockReturnValue(true)
     ;(validateCSRFRequest as jest.Mock).mockReturnValue({ isValid: true })
     ;(checkServerSideRateLimit as jest.Mock).mockResolvedValue({ allowed: true })
+    ;(checkAccountExists as jest.Mock).mockResolvedValue({ exists: false, error: null })
     ;(storeRegistrationData as jest.Mock).mockResolvedValue({ success: true })
     ;(sanitizeFormData as jest.Mock).mockImplementation((data) => data)
   })
@@ -330,10 +333,11 @@ describe('Tutor Application API - Security Tests', () => {
       // Assert
       expect(sanitizeFormData).toHaveBeenCalled()
       const sanitizedCall = (sanitizeFormData as jest.Mock).mock.calls[0]
+      // sanitizeFormData is called with transformed registration data object
       expect(sanitizedCall[0].bio).toContain('<script>') // Original contains XSS
       
       // The sanitized version should not contain script tags
-      const sanitizedResult = sanitizeFormData(maliciousData, expect.any(Object))
+      const sanitizedResult = sanitizeFormData(sanitizedCall[0], sanitizedCall[1])
       expect(sanitizedResult.bio).not.toContain('<script>')
     })
 
@@ -366,14 +370,18 @@ describe('Tutor Application API - Security Tests', () => {
       expect(sanitizeFormData).toHaveBeenCalled()
       const sanitizeCall = (sanitizeFormData as jest.Mock).mock.calls[0]
       
-      // Should sanitize all text fields
+      // Should sanitize all text fields (called with transformed registration data object)
       expect(sanitizeCall[1]).toMatchObject({
         fullName: 'text',
-        email: 'email',
         phone: 'phone',
+        email: 'email',
+        countryCode: 'text',
         bio: 'text',
+        subjects: 'text',
+        qualificationType: 'text',
         qualificationTitle: 'text',
         institution: 'text',
+        yearObtained: 'numeric',
       })
     })
   })
@@ -382,7 +390,21 @@ describe('Tutor Application API - Security Tests', () => {
     it('should store registration data in database, not localStorage', async () => {
       // Arrange
       const req = createMockRequest(validTutorData)
-      const sanitizedData = { ...validTutorData, bio: 'Sanitized bio' }
+      // sanitizeFormData is called with transformed registration data object
+      const sanitizedData = {
+        fullName: validTutorData.fullName,
+        phone: validTutorData.phone,
+        email: validTutorData.email,
+        countryCode: validTutorData.countryCode,
+        bio: 'Sanitized bio',
+        subjects: validTutorData.subjects.join(', '),
+        qualificationType: validTutorData.qualificationType,
+        qualificationTitle: validTutorData.qualificationTitle,
+        institution: validTutorData.institution,
+        yearObtained: validTutorData.yearObtained,
+        role: 'tutor',
+        availability: JSON.stringify(validTutorData.availability),
+      }
       ;(sanitizeFormData as jest.Mock).mockReturnValue(sanitizedData)
 
       // Act
@@ -424,7 +446,7 @@ describe('Tutor Application API - Security Tests', () => {
 
       // Assert
       expect(response.status).toBe(500)
-      expect(data.error).toBe('storage_error')
+      expect(data.error).toBe('storage_error') // ERROR_MESSAGES.STORAGE_ERROR_CODE
     })
   })
 
@@ -523,10 +545,13 @@ describe('Tutor Application API - Security Tests', () => {
       // 3. Rate limiting (after CSRF)
       expect(checkServerSideRateLimit).toHaveBeenCalled()
       
-      // 4. Sanitization (before storage)
+      // 4. Account existence check (after rate limiting)
+      expect(checkAccountExists).toHaveBeenCalled()
+      
+      // 5. Sanitization (after OTP, before storage)
       expect(sanitizeFormData).toHaveBeenCalled()
       
-      // 5. Storage (last)
+      // 6. Storage (last)
       expect(storeRegistrationData).toHaveBeenCalled()
     })
   })

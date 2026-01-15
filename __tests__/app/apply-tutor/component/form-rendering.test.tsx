@@ -106,7 +106,8 @@ describe('Tutor Signup Form - Component Tests', () => {
       render(<ApplyTutorPage />)
 
       // Assert - Check for some expected subjects
-      expect(screen.getByLabelText(/mathematics/i)).toBeInTheDocument()
+      // Mathematics appears multiple times (in different categories), use getAllByLabelText
+      expect(screen.getAllByLabelText(/mathematics/i)[0]).toBeInTheDocument()
       expect(screen.getByLabelText(/english/i)).toBeInTheDocument()
       expect(screen.getAllByLabelText(/science/i)[0]).toBeInTheDocument()
       expect(screen.getByLabelText(/history/i)).toBeInTheDocument()
@@ -155,7 +156,7 @@ describe('Tutor Signup Form - Component Tests', () => {
       // Arrange
       const user = userEvent.setup()
       render(<ApplyTutorPage />)
-      const mathCheckbox = screen.getByLabelText(/mathematics/i) as HTMLInputElement
+      const mathCheckbox = screen.getAllByLabelText(/mathematics/i)[0] as HTMLInputElement
 
       // Act - Click to select
       await user.click(mathCheckbox)
@@ -209,7 +210,7 @@ describe('Tutor Signup Form - Component Tests', () => {
       await user.type(screen.getByPlaceholderText(/enter your email/i), 'john@example.com')
       await user.type(screen.getByPlaceholderText(/enter your phone number/i), '76123456') // Valid Sierra Leone phone number
       await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), 'This is a valid bio with more than 50 characters as required by the validation rules for tutor applications.')
-      await user.click(screen.getByLabelText(/mathematics/i))
+      await user.click(screen.getAllByLabelText(/mathematics/i)[0])
       const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
       await user.selectOptions(qualificationSelect, 'degree')
       await user.type(screen.getByPlaceholderText(/bachelor of education, teaching certificate/i), 'Bachelor')

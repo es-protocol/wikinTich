@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { devLog, devError } from '@/lib/utils/logger'
+import { devError, devLog } from '@/lib/utils/logger'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { useEffect } from 'react'
 
 export default function AuthCallback() {
   const router = useRouter()
@@ -12,18 +12,30 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        // Get the hash fragment from the URL
-        const hash = window.location.hash.substring(1)
-        const params = new URLSearchParams(hash)
-        
-        const accessToken = params.get('access_token')
-        const refreshToken = params.get('refresh_token')
-        const email = params.get('email')
-        
-        devLog('Auth callback received with tokens and email')
+        // Get tokens from hash or query params (Supabase can use either)
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        const queryParams = new URLSearchParams(window.location.search)
 
-        if (accessToken && refreshToken) {
-          // Set the session
+        const accessToken = hashParams.get('access_token') || queryParams.get('access_token')
+        const refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token')
+        const code = queryParams.get('code')
+
+        devLog('Auth callback received')
+
+        let sessionEmail: string | null = null
+        let sessionAccessToken: string | null = null
+
+        if (code) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+          if (error) {
+            devError('Code exchange error:', error)
+            router.push('/verify-email?error=session_failed')
+            return
+          }
+
+          sessionEmail = data.session?.user?.email || null
+          sessionAccessToken = data.session?.access_token || null
+        } else if (accessToken && refreshToken) {
           const { data, error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken
@@ -35,33 +47,41 @@ export default function AuthCallback() {
             return
           }
 
-          if (data.user?.email) {
-            // Check if we have server-side registration data via API
-            try {
-              const response = await fetch(`/api/registration-data?email=${encodeURIComponent(data.user.email)}`)
-              const result = await response.json()
-              
-              if (!response.ok || !result.data) {
-                // No registration data found, redirect to registration form
-                devLog('No registration data found, redirecting to registration form')
-                router.push('/home-tutoring?error=incomplete_registration')
-                return
-              }
-              
-              // Registration data found, redirect to set-password
-              router.push(`/set-password?email=${data.user.email}`)
-              return
-            } catch (error) {
-              devError('Error fetching registration data:', error)
+          sessionEmail = data.session?.user?.email || null
+          sessionAccessToken = data.session?.access_token || accessToken
+        } else {
+          devError('No valid tokens found in callback')
+          router.push('/verify-email?error=no_tokens')
+          return
+        }
+
+        if (sessionEmail) {
+          try {
+            const response = await fetch(`/api/registration-data?email=${encodeURIComponent(sessionEmail)}`, {
+              headers: sessionAccessToken
+                ? { Authorization: `Bearer ${sessionAccessToken}` }
+                : undefined
+            })
+            const result = await response.json()
+            
+            if (!response.ok || !result.data) {
+              devLog('No registration data found, redirecting to registration form')
               router.push('/home-tutoring?error=incomplete_registration')
               return
             }
+            
+            router.push(`/set-password?email=${sessionEmail}`)
+            return
+          } catch (error) {
+            devError('Error fetching registration data:', error)
+            router.push('/home-tutoring?error=incomplete_registration')
+            return
           }
         }
 
         // If we get here, something went wrong
-        devError('No valid tokens found in callback')
-        router.push('/verify-email?error=no_tokens')
+        devError('No email found in callback session')
+        router.push('/verify-email?error=missing_email')
       } catch (error) {
         devError('Auth callback error:', error)
         router.push('/verify-email?error=callback_failed')

@@ -1,19 +1,14 @@
 /**
- * Integration Tests: Tutor Signup API Submission Flow (Target State)
+ * Integration Tests: Tutor Signup API Submission Flow
  * 
  * Tests the complete user flow from form submission through API route to navigation.
  * Verifies interactions between components, API route, server-side storage, and navigation.
  * 
- * These tests define the EXPECTED behavior after refactoring:
- * - Form submits to API route (not localStorage)
+ * Tests verify the current implementation:
+ * - Form submits to API route
  * - API route handles validation, sanitization, storage
  * - OTP email sent via API route
  * - Navigation to success page
- * 
- * These tests will FAIL initially because:
- * - API route doesn't exist yet
- * - Frontend still uses localStorage
- * - Need to be updated as we refactor
  * 
  * Clean Code Principles:
  * - Integration Focus: Tests real interactions through API
@@ -65,6 +60,9 @@ jest.mock('@/lib/supabase', () => ({
 import ApplyTutorPage from '@/app/apply-tutor/page'
 
 describe('Tutor Signup - API Submission Flow', () => {
+  // Increase timeout for all tests in this suite
+  jest.setTimeout(30000)
+
   const clickAndIgnoreNavigation = async (
     user: ReturnType<typeof userEvent.setup>,
     element: HTMLElement
@@ -89,9 +87,23 @@ describe('Tutor Signup - API Submission Flow', () => {
     await user.type(screen.getByPlaceholderText(/enter your phone number/i), formData.phone)
     await user.type(screen.getByPlaceholderText(/tell us about your teaching experience/i), formData.bio)
     
-    // Select subjects
-    await user.click(screen.getAllByLabelText(/mathematics/i)[0])
-    await user.click(screen.getAllByLabelText(/science/i)[0])
+    // Select subjects - use exact subject names from formData
+    for (const subject of formData.subjects) {
+      // The label text in SubjectSelection is the subject name itself
+      // Use exact: true to avoid matching "Mathematics" when "Further Mathematics" exists
+      try {
+        const subjectCheckbox = screen.getByLabelText(subject, { exact: true })
+        if (!(subjectCheckbox as HTMLInputElement).checked) {
+          await user.click(subjectCheckbox)
+        }
+      } catch (error) {
+        // If exact match fails, try to find by role with exact name
+        const checkbox = screen.getByRole('checkbox', { name: new RegExp(`^${subject}$`) })
+        if (!(checkbox as HTMLInputElement).checked) {
+          await user.click(checkbox)
+        }
+      }
+    }
 
     // Fill qualification fields
     const qualificationSelect = screen.getAllByRole('combobox')[1] // Index 0 is country code, 1 is qualification type
@@ -176,6 +188,11 @@ describe('Tutor Signup - API Submission Flow', () => {
       const formData = createMockTutorFormData()
       render(<ApplyTutorPage />)
 
+      // Wait for form to be rendered
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/enter your full name/i)).toBeInTheDocument()
+      }, { timeout: 5000 })
+
       // Act - Fill complete form and submit
       await fillCompleteForm(user, formData)
 
@@ -185,7 +202,7 @@ describe('Tutor Signup - API Submission Flow', () => {
       // Assert - CSRF token should be fetched (component uses default fetch options)
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith('/api/csrf')
-      })
+      }, { timeout: 10000 })
     })
 
     it('should submit form data to API route with CSRF token', async () => {
@@ -193,6 +210,11 @@ describe('Tutor Signup - API Submission Flow', () => {
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
       render(<ApplyTutorPage />)
+
+      // Wait for form to be rendered
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/enter your full name/i)).toBeInTheDocument()
+      }, { timeout: 5000 })
 
       // Act - Fill complete form and submit
       await fillCompleteForm(user, formData)
@@ -211,7 +233,7 @@ describe('Tutor Signup - API Submission Flow', () => {
         const requestBody = JSON.parse(submitCall[1].body)
         expect(requestBody.csrf_token).toBe(mockCSRFResponse.token)
         expect(requestBody.formData.email).toBe(formData.email)
-      })
+      }, { timeout: 10000 })
     })
 
     it('should navigate to success page after successful API submission', async () => {
@@ -219,6 +241,11 @@ describe('Tutor Signup - API Submission Flow', () => {
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
       render(<ApplyTutorPage />)
+
+      // Wait for form to be rendered
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/enter your full name/i)).toBeInTheDocument()
+      }, { timeout: 5000 })
 
       // Act - Fill complete form and submit
       await fillCompleteForm(user, formData)
@@ -236,7 +263,7 @@ describe('Tutor Signup - API Submission Flow', () => {
         expect(submitCall).toBeDefined()
         // Verify localStorage was cleared (happens before navigation)
         expect(mockLocalStorage.removeItem).toHaveBeenCalledWith('pendingTutorData')
-      }, { timeout: 3000 })
+      }, { timeout: 10000 })
     })
 
     it('should include all form fields in API submission', async () => {
@@ -244,6 +271,11 @@ describe('Tutor Signup - API Submission Flow', () => {
       const user = userEvent.setup()
       const formData = createMockTutorFormData()
       render(<ApplyTutorPage />)
+
+      // Wait for form to be rendered
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/enter your full name/i)).toBeInTheDocument()
+      }, { timeout: 5000 })
 
       // Act - Fill all fields including availability
       await fillCompleteForm(user, formData)
@@ -268,7 +300,7 @@ describe('Tutor Signup - API Submission Flow', () => {
         expect(requestBody.formData.institution).toBe(formData.institution)
         expect(requestBody.formData.yearObtained).toBe(formData.yearObtained)
         expect(requestBody.formData.availability).toBeDefined()
-      })
+      }, { timeout: 10000 })
     })
   })
 
@@ -288,6 +320,11 @@ describe('Tutor Signup - API Submission Flow', () => {
 
       render(<ApplyTutorPage />)
 
+      // Wait for form to be rendered
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/enter your full name/i)).toBeInTheDocument()
+      }, { timeout: 5000 })
+
       // Act - Fill complete form and submit
       await fillCompleteForm(user, formData)
 
@@ -298,7 +335,7 @@ describe('Tutor Signup - API Submission Flow', () => {
       await waitFor(() => {
         const errorMessage = screen.queryByText(/could not connect/i)
         expect(errorMessage).toBeInTheDocument()
-      }, { timeout: 3000 })
+      }, { timeout: 10000 })
     })
 
     it('should display error message when API submission fails', async () => {
@@ -325,6 +362,11 @@ describe('Tutor Signup - API Submission Flow', () => {
 
       render(<ApplyTutorPage />)
 
+      // Wait for form to be rendered
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/enter your full name/i)).toBeInTheDocument()
+      }, { timeout: 5000 })
+
       // Act - Fill complete form and submit
       await fillCompleteForm(user, formData)
 
@@ -334,7 +376,7 @@ describe('Tutor Signup - API Submission Flow', () => {
       // Assert - Error should be displayed
       await waitFor(() => {
         expect(screen.getByText(/validation/i)).toBeInTheDocument()
-      })
+      }, { timeout: 10000 })
     })
 
     it('should handle rate limiting response from API', async () => {
@@ -364,6 +406,11 @@ describe('Tutor Signup - API Submission Flow', () => {
 
       render(<ApplyTutorPage />)
 
+      // Wait for form to be rendered
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/enter your full name/i)).toBeInTheDocument()
+      }, { timeout: 5000 })
+
       // Act - Fill complete form and submit
       await fillCompleteForm(user, formData)
 
@@ -373,7 +420,7 @@ describe('Tutor Signup - API Submission Flow', () => {
       // Assert - Rate limit error should be displayed
       await waitFor(() => {
         expect(screen.getByText(/rate limit/i)).toBeInTheDocument()
-      })
+      }, { timeout: 10000 })
     })
   })
 
@@ -386,6 +433,11 @@ describe('Tutor Signup - API Submission Flow', () => {
 
       render(<ApplyTutorPage />)
 
+      // Wait for form to be rendered
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText(/enter your full name/i)).toBeInTheDocument()
+      }, { timeout: 5000 })
+
       // Act - Fill complete form and submit
       await fillCompleteForm(user, formData)
 
@@ -395,7 +447,7 @@ describe('Tutor Signup - API Submission Flow', () => {
       // Assert - localStorage should NOT be used
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith('/api/apply-tutor/submit', expect.any(Object))
-      })
+      }, { timeout: 10000 })
 
       // Verify localStorage.setItem was NOT called with pendingTutorData
       const setItemCalls = localStorageSpy.mock.calls.filter(

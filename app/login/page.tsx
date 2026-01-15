@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { EyeIcon, EyeSlashIcon, AcademicCapIcon } from '@heroicons/react/24/outline'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
 import { ROUTES } from '@/lib/constants'
 import { devError } from '@/lib/utils/logger'
+import { AcademicCapIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
+import { motion } from 'framer-motion'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -171,16 +171,17 @@ export default function LoginPage() {
           <div className="mt-5 sm:mt-6 text-center space-y-2">
             <p className="text-sm text-gray-600">
               Don't have an account?{' '}
-              <Link 
-                href={ROUTES.REGISTER} 
+              <span className="text-gray-600">Register </span>
+              <Link
+                href={ROUTES.REGISTER}
                 className="text-primary-600 hover:text-primary-700 font-medium"
               >
-                Register here
+                here
               </Link>
             </p>
             <Link 
-              href="/forgot-password" 
-              className="block text-gray-600 hover:text-gray-700 text-sm"
+              href={ROUTES.FORGOT_PASSWORD} 
+              className="block text-primary-600 hover:text-primary-700 font-medium text-sm"
             >
               Forgot your password?
             </Link>

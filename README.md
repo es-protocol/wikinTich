@@ -126,6 +126,40 @@ The primary implemented workflow in Tutor-Link is the parent signup and home-tut
 
 For a technical view of this workflow, see `docs/API_PARENT_SIGNUP.md` (endpoints and request/response structure) and `docs/DATA_PARENT_SIGNUP.md` (Supabase tables and data lifecycle).
 
+## Using Tutor-Link (key workflow: tutor signup / application)
+
+Tutors can apply to join the platform through the tutor application flow. At a high level, this is how a tutor uses it:
+
+1. **Open the application**
+   - Visit the live demo at `https://wikin-tich.vercel.app/` or run the app locally and open `http://localhost:3000`.
+   - Navigate to the "Apply to be a Tutor" link in the navigation.
+
+2. **Navigate to the tutor application form**
+   - From the landing page, click "Apply to be a Tutor" to access `/apply-tutor`.
+
+3. **Provide tutor details**
+   - Enter personal information (name, email, phone, country code).
+   - Provide a bio describing teaching experience and approach.
+   - Select subjects they can teach.
+   - Add qualification details (type, title, institution, year obtained).
+   - Set availability schedule.
+
+4. **Submit the application**
+   - The form input is validated in the browser and then sent to the server as a JSON payload via `/api/apply-tutor/submit`.
+
+5. **Verify the email via OTP**
+   - Supabase sends a one-time passcode (OTP) or magic link to the email address provided.
+   - The tutor opens the email, clicks the link, and is redirected back to Tutor-Link to complete verification.
+
+6. **Account creation and data persistence**
+   - On successful verification, the temporary registration data is upgraded into permanent records in Supabase (for tutors, profiles, and tutor qualifications).
+   - A tutor account is created so that the tutor can sign in.
+
+7. **Access the tutor dashboard**
+   - The tutor can sign in using the verified email and access the tutor dashboard where they can manage their profile, view sessions, and track payments.
+
+For a technical view of this workflow, see `docs/API_TUTOR_SIGNUP.md` (endpoints and request/response structure) and `docs/DATA_PARENT_SIGNUP.md` (Supabase tables and data lifecycle, including tutor-specific tables).
+
 ## Troubleshooting Tutor-Link
 
 This section covers common issues that can occur when setting up or running Tutor-Link, along with practical fixes.
@@ -210,8 +244,11 @@ The last two documents in this list were created specifically to satisfy the req
 - `docs/API_PARENT_SIGNUP.md`  
   API reference for the parent signup and home-tutoring request workflow, covering the main endpoints, request/response structures, validation, and error handling.
 
+- `docs/API_TUTOR_SIGNUP.md`  
+  API reference for the tutor signup and application workflow, covering the tutor submission endpoint, request/response structures, validation, and error handling.
+
 - `docs/DATA_PARENT_SIGNUP.md`  
-  Data documentation for the parent signup flow, describing the key Supabase tables, their relationships, and how data moves from temporary registration to permanent records.
+  Data documentation for both parent and tutor signup flows, describing the key Supabase tables (including tutors and tutor_qualifications), their relationships, and how data moves from temporary registration to permanent records.
 
 - `docs/THREAT_MODEL.md`  
   Minimal threat model for the parent signup and account creation flow, including a trust-boundary diagram and the main threats and mitigations.  

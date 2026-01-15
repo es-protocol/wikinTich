@@ -31,17 +31,18 @@ export default function TutorApplicationSuccessPage() {
     const emailParam = searchParams.get('email')
     if (emailParam) {
       setEmail(emailParam)
-    } else {
-      // Fallback to localStorage for backward compatibility
-      try {
-        const pendingData = localStorage.getItem(STORAGE_KEYS.PENDING_TUTOR_DATA);
-        if (pendingData) {
-          const data = JSON.parse(pendingData);
-          setEmail(data.email || "");
-        }
-      } catch {
-        setEmail(""); // fallback if parsing fails
+      return
+    }
+
+    // Fallback to localStorage for backward compatibility
+    try {
+      const pendingData = localStorage.getItem(STORAGE_KEYS.PENDING_TUTOR_DATA)
+      if (pendingData) {
+        const data = JSON.parse(pendingData)
+        setEmail(data.email || '')
       }
+    } catch {
+      setEmail('')
     }
   }, [searchParams])
 

@@ -81,12 +81,197 @@ interface Student {
   }
 }
 
+interface AdminNotification {
+  id: string
+  admin_id: string
+  title: string
+  message: string
+  notification_type: 'new_request' | 'tutor_assigned' | 'request_updated' | 'request_cancelled' | 'system' | 'whatsapp_request'
+  related_entity_type: 'home_tutoring_request' | 'pending_registration' | 'tutor' | 'parent' | 'system' | null
+  related_entity_id: string | null
+  priority: 'low' | 'medium' | 'high' | 'critical'
+  is_read: boolean
+  read_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+function getTimeAgo(timestamp: string): string {
+  const now = new Date()
+  const date = new Date(timestamp)
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+  if (seconds < 60) return 'Just now'
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60)
+    return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`
+  }
+  if (seconds < 86400) {
+    const hours = Math.floor(seconds / 3600)
+    return `${hours} hour${hours !== 1 ? 's' : ''} ago`
+  }
+  if (seconds < 604800) {
+    const days = Math.floor(seconds / 86400)
+    return `${days} day${days !== 1 ? 's' : ''} ago`
+  }
+
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+  })
+}
+
+function NotificationItem({
+  notification,
+  onClick,
+}: {
+  notification: AdminNotification
+  onClick: () => void
+}) {
+  const timeAgo = getTimeAgo(notification.created_at)
+
+  return (
+    <li
+      onClick={onClick}
+      className={`
+        px-4 py-3 cursor-pointer transition-colors
+        ${!notification.is_read ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50'}
+      `}
+    >
+      <div className="flex items-start gap-3">
+        {!notification.is_read && (
+          <div className="flex-shrink-0 w-2 h-2 mt-2 bg-blue-500 rounded-full" />
+        )}
+
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-medium truncate ${
+            !notification.is_read ? 'text-gray-900' : 'text-gray-700'
+          }`}>
+            {notification.title}
+          </p>
+          {notification.message && (
+            <p className="mt-1 text-sm text-gray-600 line-clamp-2">
+              {notification.message}
+            </p>
+          )}
+          <p className="mt-1 text-xs text-gray-500">{timeAgo}</p>
+        </div>
+
+        {notification.priority === 'critical' && (
+          <span className="flex-shrink-0 inline-flex items-center px-2 py-0.5 text-xs font-medium text-red-700 bg-red-100 rounded-full">
+            Urgent
+          </span>
+        )}
+      </div>
+    </li>
+  )
+}
+
+function NotificationsDropdown({
+  isOpen,
+  notifications,
+  isLoading,
+  unreadCount,
+  onClose,
+}: {
+  isOpen: boolean
+  notifications: AdminNotification[]
+  isLoading: boolean
+  unreadCount: number
+  onClose: () => void
+}) {
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest('.notifications-dropdown-container')) {
+        onClose()
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isOpen, onClose])
+
+  if (!isOpen) return null
+
+  return (
+    <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-[100] max-h-[500px] flex flex-col">
+      <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+          {unreadCount > 0 && (
+            <span className="text-sm text-gray-500">
+              {unreadCount} unread
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="overflow-y-auto flex-1">
+        {isLoading ? (
+          <div className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto" />
+            <p className="mt-2 text-sm text-gray-500">Loading notifications...</p>
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="p-8 text-center">
+            <BellIcon className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+            <p className="text-gray-500">No notifications yet</p>
+            <p className="text-sm text-gray-400 mt-1">You'll see new requests here</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {notifications.map((notification) => (
+              <NotificationItem
+                key={notification.id}
+                notification={notification}
+                onClick={() => {
+                  onClose()
+                }}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {notifications.length > 0 && (
+        <div className="px-4 py-3 border-t border-gray-200 text-center flex-shrink-0">
+          <button
+            onClick={() => {
+              onClose()
+            }}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
+          >
+            View All Notifications →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NotificationBadge({
   count,
-  isLoading
+  isLoading,
+  onClick,
 }: {
   count: number
   isLoading: boolean
+  onClick: () => void
 }) {
   if (isLoading) {
     return (
@@ -108,9 +293,7 @@ function NotificationBadge({
       <button
         className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors"
         aria-label={`${count} unread notification${count !== 1 ? 's' : ''}`}
-        onClick={() => {
-          console.log('Open notifications')
-        }}
+        onClick={onClick}
       >
         <BellIcon className={`w-6 h-6 ${count > 0 ? 'text-blue-600' : 'text-gray-600'}`} />
         {count > 0 && (
@@ -131,6 +314,9 @@ export default function SuperAdminDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(false)
+  const [notifications, setNotifications] = useState<AdminNotification[]>([])
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [isFetchingNotifications, setIsFetchingNotifications] = useState(false)
 
   // Data states
   const [tutors, setTutors] = useState<Tutor[]>([])
@@ -259,6 +445,47 @@ export default function SuperAdminDashboard() {
     } finally {
       setIsLoadingNotifications(false)
     }
+  }
+
+  const fetchNotifications = async () => {
+    if (!userProfile) {
+      return
+    }
+
+    try {
+      setIsFetchingNotifications(true)
+
+      const response = await fetch('/api/admin/notifications?limit=10', {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch notifications')
+          return
+        }
+        throw new Error(`Failed to fetch notifications: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setNotifications(data.notifications || [])
+
+      if (data.unread_count !== undefined) {
+        setUnreadCount(data.unread_count)
+      }
+    } catch (err) {
+      console.error('Error fetching notifications:', err)
+    } finally {
+      setIsFetchingNotifications(false)
+    }
+  }
+
+  const handleBadgeClick = () => {
+    if (!isDropdownOpen) {
+      fetchNotifications()
+    }
+    setIsDropdownOpen((prev) => !prev)
   }
 
   const fetchSystemStats = async () => {
@@ -1126,7 +1353,20 @@ export default function SuperAdminDashboard() {
               <h1 className="text-2xl font-bold text-gray-900">Super Admin Dashboard</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <NotificationBadge count={unreadCount} isLoading={isLoadingNotifications} />
+              <div className="notifications-dropdown-container relative">
+                <NotificationBadge
+                  count={unreadCount}
+                  isLoading={isLoadingNotifications}
+                  onClick={handleBadgeClick}
+                />
+                <NotificationsDropdown
+                  isOpen={isDropdownOpen}
+                  notifications={notifications}
+                  isLoading={isFetchingNotifications}
+                  unreadCount={unreadCount}
+                  onClose={() => setIsDropdownOpen(false)}
+                />
+              </div>
               <div className="text-right">
                 <p className="text-sm text-gray-500">Super Admin</p>
                 <p className="font-medium text-gray-900">{userProfile?.full_name}</p>

@@ -125,9 +125,11 @@ function getTimeAgo(timestamp: string): string {
 function NotificationItem({
   notification,
   onMarkAsRead,
+  onClose,
 }: {
   notification: AdminNotification
   onMarkAsRead: (id: string) => void
+  onClose: () => void
 }) {
   const timeAgo = getTimeAgo(notification.created_at)
 
@@ -135,6 +137,7 @@ function NotificationItem({
     if (!notification.is_read) {
       onMarkAsRead(notification.id)
     }
+    onClose()
   }
 
   return (
@@ -248,6 +251,7 @@ function NotificationsDropdown({
                 key={notification.id}
                 notification={notification}
                 onMarkAsRead={onMarkAsRead}
+                onClose={onClose}
               />
             ))}
           </ul>

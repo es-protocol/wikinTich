@@ -124,16 +124,22 @@ function getTimeAgo(timestamp: string): string {
 
 function NotificationItem({
   notification,
-  onClick,
+  onMarkAsRead,
 }: {
   notification: AdminNotification
-  onClick: () => void
+  onMarkAsRead: (id: string) => void
 }) {
   const timeAgo = getTimeAgo(notification.created_at)
 
+  const handleClick = () => {
+    if (!notification.is_read) {
+      onMarkAsRead(notification.id)
+    }
+  }
+
   return (
     <li
-      onClick={onClick}
+      onClick={handleClick}
       className={`
         px-4 py-3 cursor-pointer transition-colors
         ${!notification.is_read ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50'}
@@ -174,12 +180,14 @@ function NotificationsDropdown({
   isLoading,
   unreadCount,
   onClose,
+  onMarkAsRead,
 }: {
   isOpen: boolean
   notifications: AdminNotification[]
   isLoading: boolean
   unreadCount: number
   onClose: () => void
+  onMarkAsRead: (id: string) => void
 }) {
   useEffect(() => {
     if (!isOpen) return
@@ -239,9 +247,7 @@ function NotificationsDropdown({
               <NotificationItem
                 key={notification.id}
                 notification={notification}
-                onClick={() => {
-                  onClose()
-                }}
+                onMarkAsRead={onMarkAsRead}
               />
             ))}
           </ul>
@@ -486,6 +492,46 @@ export default function SuperAdminDashboard() {
       fetchNotifications()
     }
     setIsDropdownOpen((prev) => !prev)
+  }
+
+  const markAsRead = async (notificationId: string) => {
+    if (!userProfile) {
+      return
+    }
+
+    const notification = notifications.find((item) => item.id === notificationId)
+    if (notification?.is_read) {
+      return
+    }
+
+    const optimisticReadAt = new Date().toISOString()
+    setNotifications((prev) =>
+      prev.map((item) =>
+        item.id === notificationId
+          ? { ...item, is_read: true, read_at: optimisticReadAt }
+          : item
+      )
+    )
+    setUnreadCount((prev) => Math.max(0, prev - 1))
+
+    try {
+      const response = await fetch(`/api/admin/notifications/${notificationId}/read`, {
+        method: 'PATCH',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to mark notification as read')
+          await Promise.all([fetchNotifications(), fetchUnreadCount()])
+          return
+        }
+        throw new Error(`Failed to mark as read: ${response.status}`)
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error)
+      await Promise.all([fetchNotifications(), fetchUnreadCount()])
+    }
   }
 
   const fetchSystemStats = async () => {
@@ -1365,6 +1411,7 @@ export default function SuperAdminDashboard() {
                   isLoading={isFetchingNotifications}
                   unreadCount={unreadCount}
                   onClose={() => setIsDropdownOpen(false)}
+                  onMarkAsRead={markAsRead}
                 />
               </div>
               <div className="text-right">

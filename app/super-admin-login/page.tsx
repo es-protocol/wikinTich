@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
 import { CogIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
+import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
+import { useState } from 'react'
 
 export default function SuperAdminLogin() {
   const [email, setEmail] = useState('')
@@ -13,27 +13,31 @@ export default function SuperAdminLogin() {
   const [error, setError] = useState('')
   const router = useRouter()
 
-  // TEMPORARY: Hardcoded credentials for development
-  const VALID_EMAIL = 'wikindoam@gmail.com'
-  const VALID_PASSWORD = 'bobismyfather'
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError('')
 
     try {
-      // TEMPORARY: Simple credential check
-      if (email === VALID_EMAIL && password === VALID_PASSWORD) {
-        // Store login state
-        localStorage.setItem('superAdminLoggedIn', 'true')
-        localStorage.setItem('superAdminEmail', email)
-        
-        // Redirect to dashboard
-        router.push('/super-admin-dashboard')
-      } else {
-        setError('Invalid email or password')
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password, role: 'super_admin' }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        setError(data.error || 'Invalid email or password')
+        return
       }
+
+      // Store login state
+      localStorage.setItem('superAdminLoggedIn', 'true')
+      localStorage.setItem('superAdminEmail', email)
+      
+      // Redirect to dashboard
+      router.push('/super-admin-dashboard')
     } catch (error) {
       console.error('Login error:', error)
       setError('An error occurred during login')

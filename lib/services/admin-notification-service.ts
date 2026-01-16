@@ -13,7 +13,6 @@ export type AdminNotificationPriority = 'low' | 'medium' | 'high' | 'critical'
 
 export type RelatedEntityType =
   | 'home_tutoring_request'
-  | 'pending_registration'
   | 'tutor'
   | 'parent'
   | 'system'
@@ -66,28 +65,42 @@ export async function createAdminNotifications(
 
     devLog(`Creating notifications for ${adminUsers.length} admin(s)`)
 
-    const notificationPromises = adminUsers.map((admin) =>
-      adminClient
-        .from('admin_notifications')
-        .insert({
-          admin_id: admin.id,
-          title: params.title,
-          message: params.message,
-          notification_type: params.notificationType,
-          related_entity_type: params.relatedEntityType,
-          related_entity_id: params.relatedEntityId,
-          priority: params.priority || 'medium',
-          is_read: false,
-        })
+    const results = await Promise.all(
+      adminUsers.map(async (admin) => {
+        const { error } = await adminClient
+          .from('admin_notifications')
+          .insert({
+            admin_id: admin.id,
+            title: params.title,
+            message: params.message,
+            notification_type: params.notificationType,
+            related_entity_type: params.relatedEntityType,
+            related_entity_id: params.relatedEntityId,
+            priority: params.priority || 'medium',
+            is_read: false,
+            email_sent: false,
+          })
+          .select('id')
+          .single()
+
+        if (error) {
+          devError('Failed to create admin notification', {
+            adminId: admin.id,
+            error,
+          })
+          return { ok: false }
+        }
+
+        return { ok: true }
+      })
     )
 
-    const results = await Promise.allSettled(notificationPromises)
-    const failures = results.filter((result) => result.status === 'rejected')
+    const failures = results.filter((result) => !result.ok)
     if (failures.length > 0) {
-      devError(`Failed to create ${failures.length} notification(s)`, failures)
+      devError(`Failed to create ${failures.length} notification(s)`)
     }
 
-    const successes = results.filter((result) => result.status === 'fulfilled')
+    const successes = results.filter((result) => result.ok)
     devLog(`Successfully created ${successes.length} notification(s)`)
   } catch (error) {
     devError('Error creating admin notifications:', error)
@@ -108,7 +121,7 @@ export async function notifyAdminsOfNewRequest(
     notificationType: 'new_request',
     title: 'New Home Tutoring Request',
     message: `${registrationData.parentName} requested tutoring for ${registrationData.studentName} (${registrationData.gradeLevel})`,
-    relatedEntityType: 'pending_registration',
+    relatedEntityType: 'home_tutoring_request',
     relatedEntityId: pendingRegistrationId,
     priority: 'high',
   })

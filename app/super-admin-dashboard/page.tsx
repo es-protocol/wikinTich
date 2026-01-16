@@ -905,13 +905,19 @@ export default function SuperAdminDashboard() {
     }).format(amount)
   }
 
-  const handleLogout = () => {
-    // Clear login state
-    localStorage.removeItem('superAdminLoggedIn')
-    localStorage.removeItem('superAdminEmail')
-    
-    // Redirect to login page
-    window.location.href = '/super-admin-login'
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/logout', { method: 'POST', credentials: 'include' })
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      // Clear login state
+      localStorage.removeItem('superAdminLoggedIn')
+      localStorage.removeItem('superAdminEmail')
+      
+      // Redirect to login page
+      window.location.href = '/super-admin-login'
+    }
   }
 
   const renderSectionContent = () => {

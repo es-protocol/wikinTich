@@ -98,6 +98,17 @@ interface AdminNotification {
   updated_at: string
 }
 
+interface PendingRegistration {
+  id: string
+  parent_name: string
+  parent_email: string
+  student_name: string
+  grade_level: string
+  subjects: string
+  created_at: string
+  expires_at: string
+}
+
 function getTimeAgo(timestamp: string): string {
   const now = new Date()
   const date = new Date(timestamp)
@@ -337,6 +348,8 @@ export default function SuperAdminDashboard() {
   const [isLoadingTutors, setIsLoadingTutors] = useState(false)
   const [isLoadingRequests, setIsLoadingRequests] = useState(false)
   const [isLoadingStudents, setIsLoadingStudents] = useState(false)
+  const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([])
+  const [isLoadingPendingRegistrations, setIsLoadingPendingRegistrations] = useState(false)
 
   // Matching states
   const [showMatchModal, setShowMatchModal] = useState(false)
@@ -365,6 +378,7 @@ export default function SuperAdminDashboard() {
       fetchTutors()
       fetchRequests()
       fetchStudents()
+      fetchPendingRegistrations()
     }
   }, [userProfile])
 
@@ -720,6 +734,29 @@ export default function SuperAdminDashboard() {
       console.error('Error fetching students:', error)
     } finally {
       setIsLoadingStudents(false)
+    }
+  }
+
+  const fetchPendingRegistrations = async () => {
+    try {
+      setIsLoadingPendingRegistrations(true)
+
+      const response = await fetch('/api/admin/pending-registrations', {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        console.error('Error fetching pending registrations:', response.status)
+        return
+      }
+
+      const data = await response.json()
+      setPendingRegistrations(data.pending_registrations || [])
+    } catch (error) {
+      console.error('Error fetching pending registrations:', error)
+    } finally {
+      setIsLoadingPendingRegistrations(false)
     }
   }
 
@@ -1426,6 +1463,97 @@ export default function SuperAdminDashboard() {
           </div>
         )
 
+      case 'pending-registrations':
+        return (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">Pending Registrations</h2>
+              <button
+                onClick={fetchPendingRegistrations}
+                className="text-sm font-medium text-blue-600 hover:text-blue-800"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              {isLoadingPendingRegistrations ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="mt-2 text-gray-600">Loading pending registrations...</p>
+                </div>
+              ) : pendingRegistrations.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-gray-500">No pending registrations right now.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Parent
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Student
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Subjects
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Submitted
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {pendingRegistrations.map((registration) => (
+                        <tr key={registration.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {registration.parent_name || 'Parent'}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {registration.parent_email}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {registration.student_name || 'Student'}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                Grade {registration.grade_level || 'N/A'}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {registration.subjects || '—'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              Awaiting Verification
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatDate(registration.created_at)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
 
       default:
         return (
@@ -1518,6 +1646,7 @@ export default function SuperAdminDashboard() {
               { id: 'overview', name: 'Overview', icon: ChartBarIcon },
               { id: 'tutors', name: 'Tutors', icon: AcademicCapIcon },
               { id: 'requests', name: 'Requests', icon: ClockIcon },
+              { id: 'pending-registrations', name: 'Pending Registrations', icon: ExclamationTriangleIcon },
               { id: 'students', name: 'Students', icon: UserGroupIcon }
             ].map((tab) => (
               <button

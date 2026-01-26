@@ -498,7 +498,8 @@ export default function DashboardWithChildren() {
   // Notification state
   const [notifications, setNotifications] = useState<Array<{
     id: string
-    type: 'session_proposed' | 'session_approved' | 'session_rejected' | 'session_scheduled'
+    title: string
+    notificationType: string
     message: string
     sessionId?: string
     timestamp: Date
@@ -558,6 +559,18 @@ export default function DashboardWithChildren() {
       })
     }
   }, [userProfile, selectedStudent])
+
+  useEffect(() => {
+    if (!userProfile) {
+      return
+    }
+
+    const interval = setInterval(() => {
+      fetchParentNotifications()
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [userProfile])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -1301,22 +1314,10 @@ export default function DashboardWithChildren() {
 
       // Transform notifications to match the local state format
       const transformedNotifications = (result.data || []).map((notif: any) => {
-        let type: 'session_proposed' | 'session_approved' | 'session_rejected' | 'session_scheduled' = 'session_approved'
-        
-        // Map notification titles to types
-        if (notif.title?.includes('Approved')) {
-          type = 'session_approved'
-        } else if (notif.title?.includes('Rejected')) {
-          type = 'session_rejected'
-        } else if (notif.title?.includes('Scheduled')) {
-          type = 'session_scheduled'
-        } else if (notif.title?.includes('Proposed')) {
-          type = 'session_proposed'
-        }
-        
         return {
           id: notif.id,
-          type,
+          title: notif.title || 'Notification',
+          notificationType: notif.notification_type || 'system',
           message: notif.message,
           sessionId: undefined, // Could be extracted from message if needed
           timestamp: new Date(notif.created_at),
@@ -1354,11 +1355,12 @@ export default function DashboardWithChildren() {
       setShowNotificationsDropdown(false)
 
       // Handle different notification types
-      switch (notification.type) {
-        case 'session_proposed':
-        case 'session_approved':
-        case 'session_rejected':
-        case 'session_scheduled':
+      switch (notification.notificationType) {
+        case 'match':
+          setActiveSection('requests')
+          break
+        case 'session':
+        case 'home_tutoring':
           // Switch to sessions tab
           setActiveSection('sessions')
           break
@@ -2749,7 +2751,7 @@ export default function DashboardWithChildren() {
                                   <p className={`text-sm font-medium ${
                                     notification.is_read ? 'text-gray-700' : 'text-blue-900'
                                   }`}>
-                                    {notification.type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                    {notification.title}
                                   </p>
                                   <p className={`text-xs mt-1 ${
                                     notification.is_read ? 'text-gray-600' : 'text-blue-700'

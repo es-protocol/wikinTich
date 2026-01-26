@@ -268,6 +268,18 @@ export default function TutorDashboard() {
     }
   }, [showProfileDropdown, showNotificationsDropdown])
 
+  useEffect(() => {
+    if (!tutorData) {
+      return
+    }
+
+    const interval = setInterval(() => {
+      fetchNotifications(tutorData, { silent: true })
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [tutorData])
+
 
 
   const loadDashboardData = async () => {
@@ -521,9 +533,14 @@ export default function TutorDashboard() {
     }
   }
 
-  const fetchNotifications = async (tutor: TutorData) => {
+  const fetchNotifications = async (
+    tutor: TutorData,
+    options?: { silent?: boolean }
+  ) => {
     try {
-      setIsLoadingNotifications(true)
+      if (!options?.silent) {
+        setIsLoadingNotifications(true)
+      }
       
       if (!tutor) return
 
@@ -541,7 +558,9 @@ export default function TutorDashboard() {
     } catch (error) {
       console.error('Error fetching notifications:', error)
     } finally {
-      setIsLoadingNotifications(false)
+      if (!options?.silent) {
+        setIsLoadingNotifications(false)
+      }
     }
   }
 

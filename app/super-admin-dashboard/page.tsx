@@ -375,6 +375,12 @@ export default function SuperAdminDashboard() {
   }, [tutorFilter, searchTerm])
 
   useEffect(() => {
+    if (userProfile) {
+      fetchRequests()
+    }
+  }, [requestFilter, userProfile])
+
+  useEffect(() => {
     if (!userProfile) {
       return
     }

@@ -14,7 +14,7 @@ import {
   XCircleIcon
 } from '@heroicons/react/24/outline'
 import { motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 interface SuperAdminProfile {
   id: string
@@ -38,6 +38,7 @@ interface Tutor {
   profile_id: string
   bio: string
   subjects: string[]
+  availability?: Record<string, { available?: boolean; hours?: string }> | null
   is_verified: boolean
   verification_date: string | null
   created_at: string
@@ -45,6 +46,7 @@ interface Tutor {
     full_name: string
     email: string
     phone: string
+    location?: string | null
   }
 }
 
@@ -342,6 +344,11 @@ export default function SuperAdminDashboard() {
   const [availableTutors, setAvailableTutors] = useState<Tutor[]>([])
   const [selectedTutorId, setSelectedTutorId] = useState('')
   const [isMatching, setIsMatching] = useState(false)
+  const [tutorSearchTerm, setTutorSearchTerm] = useState('')
+  const [tutorSubjectFilter, setTutorSubjectFilter] = useState('all')
+  const [tutorLocationFilter, setTutorLocationFilter] = useState('')
+  const [tutorAvailabilityFilter, setTutorAvailabilityFilter] = useState('all')
+  const [confirmMatch, setConfirmMatch] = useState(false)
   
   // Filter states
   const [tutorFilter, setTutorFilter] = useState('all') // all, verified, pending
@@ -787,6 +794,11 @@ export default function SuperAdminDashboard() {
   const openMatchModal = async (request: HomeTutoringRequest) => {
     setSelectedRequest(request)
     setSelectedTutorId('')
+    setTutorSearchTerm('')
+    setTutorSubjectFilter('all')
+    setTutorLocationFilter('')
+    setTutorAvailabilityFilter('all')
+    setConfirmMatch(false)
     
     // Fetch available tutors (verified tutors)
     const { data: tutors, error } = await supabase
@@ -796,7 +808,8 @@ export default function SuperAdminDashboard() {
         profiles (
           full_name,
           email,
-          phone
+          phone,
+          location
         )
       `)
       .eq('is_verified', true)
@@ -888,6 +901,54 @@ export default function SuperAdminDashboard() {
       setIsMatching(false)
     }
   }
+
+  const requestSubjects = useMemo(() => {
+    if (!selectedRequest?.subjects) {
+      return []
+    }
+    return selectedRequest.subjects
+      .split(',')
+      .map((subject) => subject.trim())
+      .filter((subject) => subject.length > 0)
+  }, [selectedRequest])
+
+  const filteredTutors = useMemo(() => {
+    const searchLower = tutorSearchTerm.trim().toLowerCase()
+    const locationLower = tutorLocationFilter.trim().toLowerCase()
+
+    return availableTutors.filter((tutor) => {
+      const subjects = Array.isArray(tutor.subjects) ? tutor.subjects : []
+      const subjectMatch =
+        tutorSubjectFilter === 'all' ||
+        subjects.some((subject) => subject.toLowerCase() === tutorSubjectFilter.toLowerCase())
+
+      const profileLocation = tutor.profiles?.location || ''
+      const locationMatch =
+        locationLower.length === 0 ||
+        profileLocation.toLowerCase().includes(locationLower)
+
+      const availabilityMatch =
+        tutorAvailabilityFilter === 'all' ||
+        Boolean(tutor.availability && Object.values(tutor.availability).some((slot) => slot?.available))
+
+      const nameMatch =
+        searchLower.length === 0 ||
+        tutor.profiles.full_name.toLowerCase().includes(searchLower) ||
+        tutor.profiles.email.toLowerCase().includes(searchLower)
+
+      return subjectMatch && locationMatch && availabilityMatch && nameMatch
+    })
+  }, [
+    availableTutors,
+    tutorSearchTerm,
+    tutorSubjectFilter,
+    tutorLocationFilter,
+    tutorAvailabilityFilter,
+  ])
+
+  const selectedTutor = useMemo(() => {
+    return availableTutors.find((tutor) => tutor.id === selectedTutorId) || null
+  }, [availableTutors, selectedTutorId])
 
 
   const formatDate = (dateString: string) => {
@@ -1491,35 +1552,123 @@ export default function SuperAdminDashboard() {
                </button>
              </div>
 
-             <div className="mb-6">
-               <h4 className="font-medium text-gray-900 mb-2">Request Details:</h4>
-               <div className="bg-gray-50 rounded-lg p-4">
-                 <p><strong>Student:</strong> {selectedRequest.student_name}</p>
-                 <p><strong>Subjects:</strong> {selectedRequest.subjects}</p>
-                 <p><strong>Grade Level:</strong> {selectedRequest.grade_level}</p>
-                 <p><strong>Location:</strong> {selectedRequest.location}</p>
-               </div>
-             </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Request Details</h4>
+                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                  <p><strong>Student:</strong> {selectedRequest.student_name}</p>
+                  <p><strong>Subjects:</strong> {selectedRequest.subjects}</p>
+                  <p><strong>Grade Level:</strong> {selectedRequest.grade_level}</p>
+                  <p><strong>Schedule:</strong> {selectedRequest.preferred_schedule}</p>
+                  <p><strong>Location:</strong> {selectedRequest.location}</p>
+                </div>
+                <div className="mt-4 text-sm text-gray-600">
+                  <p><strong>Parent:</strong> {selectedRequest.profiles.full_name}</p>
+                  <p>{selectedRequest.profiles.email}</p>
+                  <p>{selectedRequest.profiles.phone}</p>
+                </div>
+              </div>
 
-             <div className="mb-6">
-               <label className="block text-sm font-medium text-gray-700 mb-2">
-                 Select a Tutor:
-               </label>
-               <select
-                 value={selectedTutorId}
-                 onChange={(e) => setSelectedTutorId(e.target.value)}
-                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
-               >
-                 <option value="">Choose a tutor...</option>
-                 {availableTutors.map((tutor) => (
-                   <option key={tutor.id} value={tutor.id}>
-                     {tutor.profiles.full_name} - {Array.isArray(tutor.subjects) ? tutor.subjects.join(', ') : tutor.subjects}
-                   </option>
-                 ))}
-               </select>
-             </div>
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Available Tutors</h4>
+                <div className="grid grid-cols-1 gap-3 mb-4">
+                  <input
+                    type="text"
+                    value={tutorSearchTerm}
+                    onChange={(event) => setTutorSearchTerm(event.target.value)}
+                    placeholder="Search by name or email"
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <select
+                      value={tutorSubjectFilter}
+                      onChange={(event) => setTutorSubjectFilter(event.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                    >
+                      <option value="all">All subjects</option>
+                      {requestSubjects.map((subject) => (
+                        <option key={subject} value={subject}>
+                          {subject}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={tutorAvailabilityFilter}
+                      onChange={(event) => setTutorAvailabilityFilter(event.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                    >
+                      <option value="all">Any availability</option>
+                      <option value="available">Has availability</option>
+                    </select>
+                  </div>
+                  <input
+                    type="text"
+                    value={tutorLocationFilter}
+                    onChange={(event) => setTutorLocationFilter(event.target.value)}
+                    placeholder="Filter by location (optional)"
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                  />
+                  <p className="text-xs text-gray-500">Showing verified tutors only.</p>
+                </div>
 
-             <div className="flex justify-end space-x-3">
+                <div className="max-h-[320px] overflow-y-auto space-y-3 pr-1">
+                  {filteredTutors.length === 0 ? (
+                    <div className="text-center text-sm text-gray-500 py-6">
+                      No tutors match the current filters.
+                    </div>
+                  ) : (
+                    filteredTutors.map((tutor) => {
+                      const subjects = Array.isArray(tutor.subjects) ? tutor.subjects.join(', ') : tutor.subjects
+                      const isSelected = tutor.id === selectedTutorId
+                      return (
+                        <button
+                          key={tutor.id}
+                          type="button"
+                          onClick={() => setSelectedTutorId(tutor.id)}
+                          className={`w-full text-left border rounded-lg p-3 transition-colors ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">{tutor.profiles.full_name}</p>
+                              <p className="text-xs text-gray-500">{tutor.profiles.email}</p>
+                              {tutor.profiles.location && (
+                                <p className="text-xs text-gray-500">Location: {tutor.profiles.location}</p>
+                              )}
+                              <p className="text-xs text-gray-600 mt-1">{subjects}</p>
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              {tutor.availability ? 'Availability set' : 'No availability'}
+                            </span>
+                          </div>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 space-y-3">
+              <div className="text-sm text-gray-600">
+                <strong>Selected tutor:</strong>{' '}
+                {selectedTutor ? selectedTutor.profiles.full_name : 'None selected'}
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={confirmMatch}
+                  onChange={(event) => setConfirmMatch(event.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                I confirm this tutor match is correct.
+              </label>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
                <button
                  onClick={() => setShowMatchModal(false)}
                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
@@ -1528,7 +1677,7 @@ export default function SuperAdminDashboard() {
                </button>
                <button
                  onClick={matchTutorToRequest}
-                 disabled={!selectedTutorId || isMatching}
+                disabled={!selectedTutorId || !confirmMatch || isMatching}
                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                >
                  {isMatching ? 'Matching...' : 'Match Tutor'}

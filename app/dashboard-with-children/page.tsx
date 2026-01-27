@@ -545,18 +545,25 @@ export default function DashboardWithChildren() {
 
   useEffect(() => {
     if (userProfile) {
-      // Run all data fetching in parallel for faster loading
-      Promise.all([
-        fetchTutoringRequests(),
-        fetchSessions(),
-        fetchTutorData(),
-        fetchStudentProgress(),
-        fetchSessionReports(),
-        fetchParentNotifications()
-      ]).catch((error) => {
-        console.error('Error loading dashboard data:', error)
-        // Individual functions already handle their own errors
-      })
+      // Fetch requests first, then fetch tutor data with the requests
+      const loadData = async () => {
+        try {
+          // Fetch requests first (we need them for tutor data)
+          const requests = await fetchTutoringRequests()
+          
+          // Run remaining data fetching in parallel
+          await Promise.all([
+            fetchSessions(),
+            fetchTutorData(requests),
+            fetchStudentProgress(),
+            fetchSessionReports(),
+            fetchParentNotifications()
+          ])
+        } catch (error) {
+          console.error('Error loading dashboard data:', error)
+        }
+      }
+      loadData()
     }
   }, [userProfile, selectedStudent])
 
@@ -621,11 +628,11 @@ export default function DashboardWithChildren() {
     }
   }
 
-  const fetchTutoringRequests = async () => {
+  const fetchTutoringRequests = async (): Promise<TutoringRequest[]> => {
     try {
       setIsLoadingRequests(true)
       
-      if (!userProfile) return
+      if (!userProfile) return []
 
       const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=requests`, {
         credentials: 'include' // Include session cookie
@@ -634,7 +641,7 @@ export default function DashboardWithChildren() {
 
       if (!response.ok) {
         console.error('Error fetching tutoring requests:', result.error)
-        return
+        return []
       }
 
       // Filter by selected student if one is selected
@@ -644,8 +651,10 @@ export default function DashboardWithChildren() {
       }
 
       setTutoringRequests(filteredRequests)
+      return filteredRequests
     } catch (error) {
       console.error('Error fetching tutoring requests:', error)
+      return []
     } finally {
       setIsLoadingRequests(false)
     }
@@ -1157,7 +1166,7 @@ export default function DashboardWithChildren() {
     }
   }
 
-  const fetchTutorData = async () => {
+  const fetchTutorData = async (requests?: TutoringRequest[]) => {
     try {
       setIsLoadingTutorData(true)
       
@@ -1173,57 +1182,44 @@ export default function DashboardWithChildren() {
         setTutorProposals(proposals || [])
       }
 
-      // Fetch tutor display info from tutors table with profile data
-      const { data: displayInfo, error: displayError } = await supabase
-        .from('tutors')
-        .select(`
-          id,
-          profile_id,
-          bio,
-          subjects,
-          availability,
-          is_verified,
-          verification_date,
-          profiles!inner(
-            full_name,
-            email,
-            phone
-          )
-        `)
-        .returns<{
-          id: string
-          profile_id: string
-          bio: string | null
-          subjects: string[] | null
-          availability: any
-          is_verified: boolean
-          verification_date: string | null
-          profiles: {
-            full_name: string
-            email: string
-            phone: string | null
-          }
-        }[]>()
+      // Use passed requests or fall back to state
+      const requestsToUse = requests || tutoringRequests
+      
+      // Get matched tutor IDs from tutoring requests
+      const matchedTutorIds = requestsToUse
+        .filter(r => r.matched_tutor_id)
+        .map(r => r.matched_tutor_id as string)
+      
+      const uniqueTutorIds = Array.from(new Set(matchedTutorIds))
+      
+      if (uniqueTutorIds.length > 0) {
+        // Fetch tutor display info via API (bypasses RLS)
+        const response = await fetch(`/api/parent/matched-tutor?tutor_ids=${uniqueTutorIds.join(',')}`, {
+          method: 'GET',
+          credentials: 'include',
+        })
 
-      if (displayError) {
-        console.error('Error fetching tutor display info:', displayError)
-      } else {
-        const transformedInfo = displayInfo?.map(tutor => ({
-          id: tutor.id,
-          tutor_id: tutor.id,
-          display_name: tutor.profiles.full_name,
-          subjects_taught: Array.isArray(tutor.subjects) ? tutor.subjects.filter(s => s !== null && s !== undefined) : (tutor.subjects ? [tutor.subjects] : []),
-          experience_years: 0, // Default value
-          education_level: 'Not specified', // Default value
-          bio_summary: tutor.bio || 'No bio available',
-          availability_summary: tutor.availability ? JSON.stringify(tutor.availability) : 'Not specified',
-          rating: 0, // Default value
-          total_reviews: 0, // Default value
-          is_featured: false, // Default value
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })) || []
-        setTutorDisplayInfo(transformedInfo)
+        if (response.ok) {
+          const data = await response.json()
+          const transformedInfo = data.tutors?.map((tutor: any) => ({
+            id: tutor.tutor_id,
+            tutor_id: tutor.tutor_id,
+            display_name: tutor.display_name,
+            subjects_taught: Array.isArray(tutor.subjects) ? tutor.subjects.filter((s: any) => s !== null && s !== undefined) : (tutor.subjects ? [tutor.subjects] : []),
+            experience_years: 0,
+            education_level: 'Not specified',
+            bio_summary: tutor.bio || 'No bio available',
+            availability_summary: 'Not specified',
+            rating: 0,
+            total_reviews: 0,
+            is_featured: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })) || []
+          setTutorDisplayInfo(transformedInfo)
+        } else {
+          console.error('Error fetching tutor display info via API:', response.status)
+        }
       }
 
       // Fetch tutor reviews

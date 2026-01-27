@@ -17,12 +17,14 @@ import {
   BellIcon,
   CalendarIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   Cog6ToothIcon,
   DocumentTextIcon,
   EnvelopeIcon,
   PhoneIcon,
   PhotoIcon,
   StarIcon,
+  UserGroupIcon,
   UserIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline'
@@ -544,17 +546,19 @@ export default function TutorDashboard() {
       
       if (!tutor) return
 
-      const { data: notifData, error } = await supabase
-        .from('tutor_notifications')
-        .select('*')
-        .eq('tutor_id', tutor.id)
-        .order('created_at', { ascending: false })
+      // Use API to fetch notifications (bypasses RLS)
+      const response = await fetch('/api/tutor/notifications', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      if (error) {
-        console.error('Error fetching notifications:', error)
-      } else {
-        setNotifications(notifData || [])
+      if (!response.ok) {
+        console.error('Error fetching notifications:', response.status)
+        return
       }
+
+      const data = await response.json()
+      setNotifications(data.notifications || [])
     } catch (error) {
       console.error('Error fetching notifications:', error)
     } finally {
@@ -567,108 +571,31 @@ export default function TutorDashboard() {
   const fetchMatchedStudents = async (tutor: TutorData) => {
     try {
       console.log('Debug: fetchMatchedStudents started')
-      console.log('Debug: tutor.id =', tutor.id)
       
       if (!tutor) return
 
-      // Get accepted tutor proposals to find matched students
-      console.log('Debug: Fetching accepted tutor proposals for tutor_id:', tutor.id)
-      const { data: acceptedProposals, error: proposalsError } = await supabase
-        .from('tutor_proposals')
-        .select(`
-          student_id,
-          students!inner(name, parent_id),
-          profiles!inner(full_name)
-        `)
-        .eq('tutor_id', tutor.id)
-        .eq('status', 'accepted')
+      // Use API to fetch matched students (bypasses RLS)
+      const response = await fetch('/api/tutor/matched-students', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      console.log('Debug: Accepted proposals query result:', { acceptedProposals, proposalsError })
-
-      if (proposalsError) {
-        console.error('Error fetching matched students:', proposalsError)
+      if (!response.ok) {
+        console.error('Error fetching matched students:', response.status)
         return
       }
 
-      // Get home tutoring requests for additional context
-      console.log('Debug: Fetching home tutoring requests with matched_tutor_id:', tutor.id)
-      const { data: requests, error: requestsError } = await supabase
-        .from('home_tutoring_requests')
-        .select('student_id, subjects, matched_tutor_id, status')
-        .eq('matched_tutor_id', tutor.id)
+      const data = await response.json()
+      console.log('Debug: Matched students from API:', data.students)
 
-      console.log('Debug: Home tutoring requests query result:', { requests, requestsError })
-
-      if (requestsError) {
-        console.error('Error fetching requests:', requestsError)
-      }
-
-      // Let's also check ALL tutor proposals for this tutor to see what exists
-      console.log('Debug: Fetching ALL tutor proposals for tutor_id:', tutor.id)
-      const { data: allProposals, error: allProposalsError } = await supabase
-        .from('tutor_proposals')
-        .select('student_id, status, created_at')
-        .eq('tutor_id', tutor.id)
-
-      console.log('Debug: All proposals query result:', { allProposals, allProposalsError })
-
-      // Let's also check ALL home tutoring requests to see if any have this tutor as matched
-      console.log('Debug: Fetching ALL home tutoring requests to check for matches')
-      const { data: allRequests, error: allRequestsError } = await supabase
-        .from('home_tutoring_requests')
-        .select('id, student_id, matched_tutor_id, status')
-        .limit(20)
-
-      console.log('Debug: All requests query result:', { allRequests, allRequestsError })
-
-      // Combine data to create matched students list
-      let students = acceptedProposals?.map(proposal => {
-        const request = requests?.find(r => r.student_id === proposal.student_id)
-        return {
-          student_id: proposal.student_id,
-          student_name: (proposal.students as any).name,
-          parent_id: (proposal.students as any).parent_id,
-          parent_name: (proposal.profiles as any).full_name,
-          subjects: request?.subjects || 'General'
-        }
-      }) || []
-
-      // If no students found through proposals, try to find them through home tutoring requests
-      if (students.length === 0 && requests && requests.length > 0) {
-        console.log('Debug: No students found through proposals, trying to find through requests')
-        
-        // Get student details for the requests that have this tutor as matched_tutor_id
-        const studentIds = requests.map(r => r.student_id)
-        console.log('Debug: Student IDs from requests:', studentIds)
-        
-        if (studentIds.length > 0) {
-          const { data: studentDetails, error: studentDetailsError } = await supabase
-            .from('students')
-            .select(`
-              id,
-              name,
-              parent_id,
-              profiles!inner(full_name)
-            `)
-            .in('id', studentIds)
-
-          console.log('Debug: Student details query result:', { studentDetails, studentDetailsError })
-
-          if (studentDetails && !studentDetailsError) {
-            students = studentDetails.map(student => {
-              const request = requests.find(r => r.student_id === student.id)
-              return {
-                student_id: student.id,
-                student_name: student.name,
-                parent_id: student.parent_id,
-                parent_name: (student.profiles as any).full_name,
-                subjects: request?.subjects || 'General'
-              }
-            })
-            console.log('Debug: Students found through requests:', students)
-          }
-        }
-      }
+      const students = data.students?.map((student: any) => ({
+        student_id: student.student_id,
+        student_name: student.student_name,
+        parent_id: student.parent_id,
+        parent_name: student.parent_name,
+        subjects: student.subjects || 'General',
+        grade_level: student.grade_level || null
+      })) || []
 
       console.log('Debug: Final matched students list:', students)
       console.log('Debug: Number of matched students:', students.length)
@@ -1753,15 +1680,64 @@ export default function TutorDashboard() {
                 )}
               </motion.div>
 
+              {/* My Matched Students */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.25 }}
+                className="bg-white rounded-2xl shadow-lg p-6"
+              >
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <UserGroupIcon className="w-5 h-5 mr-2 text-primary-600" />
+                  My Matched Students
+                </h3>
+                {matchedStudents.length === 0 ? (
+                  <div className="text-center py-6">
+                    <UserGroupIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No students matched yet.</p>
+                    <p className="text-sm text-gray-400 mt-1">You&apos;ll see your assigned students here once matched by admin.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {matchedStudents.map((student) => (
+                      <div 
+                        key={student.student_id} 
+                        className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-primary-300 hover:bg-primary-50/30 transition-all cursor-pointer"
+                        onClick={() => {
+                          setSelectedStudent(student.student_id)
+                          setActiveSection('sessions')
+                        }}
+                      >
+                        <div className="flex items-center space-x-4">
+                          <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+                            <UserIcon className="w-5 h-5 text-primary-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{student.student_name}</p>
+                            <p className="text-sm text-gray-500">{student.subjects}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            Active
+                          </span>
+                          <ChevronRightIcon className="w-5 h-5 text-gray-400" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+
               {/* Recent Notifications */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.3 }}
+                transition={{ duration: 0.6, delay: 0.35 }}
                 className="bg-white rounded-2xl shadow-lg p-6"
               >
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                  <span className="mr-2">🔔</span>
+                  <BellIcon className="w-5 h-5 mr-2 text-yellow-500" />
                   Recent Notifications
                 </h3>
                 {isLoadingNotifications ? (
@@ -1784,6 +1760,102 @@ export default function TutorDashboard() {
                 )}
               </motion.div>
             </div>
+          </div>
+        )
+
+      case 'students':
+        return (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                    <UserGroupIcon className="w-6 h-6 mr-2 text-primary-600" />
+                    My Matched Students
+                  </h2>
+                  <p className="text-gray-600 mt-1">
+                    {matchedStudents.length === 0 
+                      ? 'No students have been assigned to you yet.' 
+                      : `You have ${matchedStudents.length} student${matchedStudents.length > 1 ? 's' : ''} assigned to you.`
+                    }
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-3xl font-bold text-primary-600">{matchedStudents.length}</div>
+                  <div className="text-sm text-gray-500">Active Students</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Students Grid */}
+            {matchedStudents.length === 0 ? (
+              <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
+                <UserGroupIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Students Yet</h3>
+                <p className="text-gray-500 max-w-md mx-auto">
+                  Once an admin matches you with students, they will appear here. 
+                  You&apos;ll be able to manage sessions, track progress, and communicate with parents.
+                </p>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {matchedStudents.map((student) => (
+                  <motion.div
+                    key={student.student_id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow"
+                  >
+                    {/* Card Header */}
+                    <div className="bg-gradient-to-r from-primary-500 to-primary-600 p-4">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center">
+                          <UserIcon className="w-8 h-8 text-white" />
+                        </div>
+                        <div className="text-white">
+                          <h3 className="font-bold text-lg">{student.student_name}</h3>
+                          <p className="text-primary-100 text-sm">{student.subjects}</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Card Body */}
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-center text-sm text-gray-600">
+                        <UserIcon className="w-4 h-4 mr-2 text-gray-400" />
+                        <span>Parent: {student.parent_name || 'N/A'}</span>
+                      </div>
+                      
+                      <div className="flex items-center text-sm text-gray-600">
+                        <CalendarIcon className="w-4 h-4 mr-2 text-gray-400" />
+                        <span>Grade: {student.grade_level || 'Not specified'}</span>
+                      </div>
+
+                      <div className="pt-3 border-t border-gray-100">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                          Active
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Card Actions */}
+                    <div className="px-4 pb-4 flex space-x-2">
+                      <button
+                        onClick={() => {
+                          setSelectedStudent(student.student_id)
+                          setActiveSection('sessions')
+                        }}
+                        className="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+                      >
+                        Manage Sessions
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </div>
         )
 
@@ -2716,15 +2788,16 @@ export default function TutorDashboard() {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <nav className="flex space-x-8 mb-8">
+      {/* Navigation Tabs - positioned below fixed header */}
+      <div className="fixed top-[88px] left-0 right-0 z-40 bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="flex space-x-8 overflow-x-auto py-3">
           {[
             { id: 'overview', name: 'Overview', icon: '📊' },
+            { id: 'students', name: 'My Students', icon: '👨‍🎓' },
             { id: 'sessions', name: 'Sessions', icon: '📅' },
             { id: 'documents', name: 'Documents', icon: '📄' },
             { id: 'payments', name: 'Payments', icon: '💰' }
-            // { id: 'performance', name: 'Performance', icon: '📈' } // Commented out for MVP
           ].map((tab) => (
             <button
               key={tab.id}
@@ -2739,11 +2812,12 @@ export default function TutorDashboard() {
               <span>{tab.name}</span>
             </button>
           ))}
-        </nav>
+          </nav>
+        </div>
       </div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-24">
+      {/* Main Content - with top margin for fixed header + tabs */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-36">
         {renderSectionContent()}
       </main>
 

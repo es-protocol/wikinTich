@@ -193,10 +193,16 @@ export const DB_TABLES = {
   PROFILES: 'profiles',
   STUDENTS: 'students',
   HOME_TUTORING_REQUESTS: 'home_tutoring_requests',
+  HOME_TUTORING_SESSIONS: 'home_tutoring_sessions',
+  HOME_TUTORING_PAYMENTS: 'home_tutoring_payments',
   TUTORS: 'tutors',
   TUTOR_QUALIFICATIONS: 'tutor_qualifications',
+  TUTOR_STUDENT_MATCHES: 'tutor_student_matches',
   PENDING_REGISTRATIONS: 'pending_registrations',
-  FAILED_LOGIN_ATTEMPTS: 'failed_login_attempts'
+  FAILED_LOGIN_ATTEMPTS: 'failed_login_attempts',
+  ADMIN_NOTIFICATIONS: 'admin_notifications',
+  PARENT_NOTIFICATIONS: 'parent_notifications',
+  TUTOR_NOTIFICATIONS: 'tutor_notifications',
 } as const
 
 // Route paths
@@ -216,6 +222,62 @@ export const ROUTES = {
   DASHBOARD_TUTOR: '/tutor-dashboard',
   DASHBOARD_SCHOOL_ADMIN: '/school-admin-dashboard',
   DASHBOARD_SUPER_ADMIN: '/super-admin-dashboard'
+} as const
+
+// Admin notification types
+export const ADMIN_NOTIFICATION_TYPES = {
+  NEW_REQUEST: 'new_request',
+  TUTOR_ASSIGNED: 'tutor_assigned',
+  REQUEST_UPDATED: 'request_updated',
+  REQUEST_CANCELLED: 'request_cancelled',
+  SYSTEM: 'system',
+  WHATSAPP_REQUEST: 'whatsapp_request',
+} as const
+
+// Related entity types for notifications
+export const RELATED_ENTITY_TYPES = {
+  HOME_TUTORING_REQUEST: 'home_tutoring_request',
+  PENDING_REGISTRATION: 'pending_registration',
+  TUTOR: 'tutor',
+  PARENT: 'parent',
+  SYSTEM: 'system',
+} as const
+
+// Admin dashboard sections
+export const ADMIN_DASHBOARD_SECTIONS = {
+  OVERVIEW: 'overview',
+  TUTORS: 'tutors',
+  REQUESTS: 'requests',
+  PENDING_REGISTRATIONS: 'pending-registrations',
+  STUDENTS: 'students',
+  SESSIONS: 'sessions',
+  PAYMENTS: 'payments',
+} as const
+
+// Notification polling interval (in milliseconds)
+export const NOTIFICATION_POLLING_INTERVAL_MS = 30 * TIME_CONSTANTS.SECOND
+
+// Admin API endpoints
+export const ADMIN_API_ENDPOINTS = {
+  STATS: '/api/admin/stats',
+  NOTIFICATIONS: '/api/admin/notifications',
+  PENDING_REGISTRATIONS: '/api/admin/pending-registrations',
+  REQUESTS: '/api/admin/requests',
+  TUTORS: '/api/admin/tutors',
+  TUTORS_AVAILABLE: '/api/admin/tutors/available',
+  STUDENTS: '/api/admin/students',
+  MATCH: '/api/admin/match',
+} as const
+
+// Tutor API endpoints
+export const TUTOR_API_ENDPOINTS = {
+  NOTIFICATIONS: '/api/tutor/notifications',
+  MATCHED_STUDENTS: '/api/tutor/matched-students',
+} as const
+
+// Parent API endpoints
+export const PARENT_API_ENDPOINTS = {
+  MATCHED_TUTOR: '/api/parent/matched-tutor',
 } as const
 
 // Available subjects for tutoring

@@ -1,5 +1,6 @@
 'use client'
 
+// Super Admin Dashboard - Manages tutors, students, requests, and system notifications
 import { supabase } from '@/lib/supabase'
 import {
   AcademicCapIcon,
@@ -46,7 +47,6 @@ interface Tutor {
     full_name: string
     email: string
     phone: string
-    location?: string | null
   }
 }
 
@@ -138,10 +138,12 @@ function getTimeAgo(timestamp: string): string {
 function NotificationItem({
   notification,
   onMarkAsRead,
+  onNavigate,
   onClose,
 }: {
   notification: AdminNotification
   onMarkAsRead: (id: string) => void
+  onNavigate: (notification: AdminNotification) => void
   onClose: () => void
 }) {
   const timeAgo = getTimeAgo(notification.created_at)
@@ -150,6 +152,7 @@ function NotificationItem({
     if (!notification.is_read) {
       onMarkAsRead(notification.id)
     }
+    onNavigate(notification)
     onClose()
   }
 
@@ -197,6 +200,7 @@ function NotificationsDropdown({
   unreadCount,
   onClose,
   onMarkAsRead,
+  onNavigate,
 }: {
   isOpen: boolean
   notifications: AdminNotification[]
@@ -204,6 +208,7 @@ function NotificationsDropdown({
   unreadCount: number
   onClose: () => void
   onMarkAsRead: (id: string) => void
+  onNavigate: (notification: AdminNotification) => void
 }) {
   useEffect(() => {
     if (!isOpen) return
@@ -264,6 +269,7 @@ function NotificationsDropdown({
                 key={notification.id}
                 notification={notification}
                 onMarkAsRead={onMarkAsRead}
+                onNavigate={onNavigate}
                 onClose={onClose}
               />
             ))}
@@ -359,7 +365,6 @@ export default function SuperAdminDashboard() {
   const [isMatching, setIsMatching] = useState(false)
   const [tutorSearchTerm, setTutorSearchTerm] = useState('')
   const [tutorSubjectFilter, setTutorSubjectFilter] = useState('all')
-  const [tutorLocationFilter, setTutorLocationFilter] = useState('')
   const [tutorAvailabilityFilter, setTutorAvailabilityFilter] = useState('all')
   const [confirmMatch, setConfirmMatch] = useState(false)
   
@@ -410,42 +415,35 @@ export default function SuperAdminDashboard() {
 
   const checkSuperAdminStatus = async () => {
     try {
-      // Check if super admin is logged in
-      const isLoggedIn = localStorage.getItem('superAdminLoggedIn')
-      const superAdminEmail = localStorage.getItem('superAdminEmail')
-      
-      if (!isLoggedIn || !superAdminEmail) {
+      // Verify session via secure API endpoint
+      const response = await fetch('/api/session', {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        // Session invalid or expired - redirect to login
         window.location.href = '/super-admin-login'
         return
       }
 
-      // Get user profile from database
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('email', superAdminEmail)
-        .single()
+      const sessionData = await response.json()
+      const user = sessionData.user
 
-      if (profileError || !profile) {
-        console.error('Profile error:', profileError)
-        // If profile doesn't exist in database, create a temporary one
-        const tempProfile = {
-          id: 'temp-super-admin',
-          full_name: 'Super Admin',
-          email: superAdminEmail,
-          role: 'super_admin'
-        }
-        setUserProfile(tempProfile)
-      } else {
-        // Use existing profile or create super admin profile
-        const superAdminProfile = {
-          id: profile.id,
-          full_name: profile.full_name || 'Super Admin',
-          email: profile.email,
-          role: 'super_admin'
-        }
-        setUserProfile(superAdminProfile)
+      // Verify user has super_admin role
+      if (!user || user.role !== 'super_admin') {
+        setError('Access denied. Super admin privileges required.')
+        return
       }
+
+      // Set user profile from session data
+      const superAdminProfile = {
+        id: user.id,
+        full_name: user.full_name || 'Super Admin',
+        email: user.email,
+        role: 'super_admin'
+      }
+      setUserProfile(superAdminProfile)
     } catch (error) {
       console.error('Error checking super admin status:', error)
       setError('Failed to verify super admin status')
@@ -525,6 +523,24 @@ export default function SuperAdminDashboard() {
     setIsDropdownOpen((prev) => !prev)
   }
 
+  const handleNotificationNavigate = (notification: AdminNotification) => {
+    switch (notification.notification_type) {
+      case 'new_request':
+      case 'tutor_assigned':
+      case 'request_updated':
+      case 'request_cancelled':
+        // All request-related notifications navigate to the Requests tab
+        setActiveSection('requests')
+        break
+      case 'whatsapp_request':
+        setActiveSection('pending-registrations')
+        break
+      default:
+        setActiveSection('overview')
+        break
+    }
+  }
+
   const markAsRead = async (notificationId: string) => {
     if (!userProfile) {
       return
@@ -567,61 +583,30 @@ export default function SuperAdminDashboard() {
 
   const fetchSystemStats = async () => {
     try {
-      // Fetch total tutors
-      const { count: totalTutors } = await supabase
-        .from('tutors')
-        .select('*', { count: 'exact', head: true })
+      // Use server-side API to fetch stats (bypasses RLS restrictions)
+      const response = await fetch('/api/admin/stats', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      // Fetch pending tutors (unverified)
-      const { count: pendingTutors } = await supabase
-        .from('tutors')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_verified', false)
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch admin stats')
+          return
+        }
+        throw new Error(`Failed to fetch stats: ${response.status}`)
+      }
 
-      // Fetch total students
-      const { count: totalStudents } = await supabase
-        .from('students')
-        .select('*', { count: 'exact', head: true })
-
-      // Fetch total requests
-      const { count: totalRequests } = await supabase
-        .from('home_tutoring_requests')
-        .select('*', { count: 'exact', head: true })
-
-      // Fetch pending requests
-      const { count: pendingRequests } = await supabase
-        .from('home_tutoring_requests')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending')
-
-
-      // Calculate average rating
-      const { data: ratings } = await supabase
-        .from('tutor_reviews')
-        .select('rating')
-
-      const averageRating = ratings && ratings.length > 0 
-        ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length 
-        : 0
-
-      // Calculate total revenue (simplified)
-      const { data: payments } = await supabase
-        .from('home_tutoring_payments')
-        .select('amount')
-        .eq('payment_status', 'paid')
-
-      const totalRevenue = payments && payments.length > 0
-        ? payments.reduce((sum, p) => sum + Number(p.amount), 0)
-        : 0
+      const stats = await response.json()
 
       setSystemStats({
-        totalTutors: totalTutors || 0,
-        totalStudents: totalStudents || 0,
-        totalRequests: totalRequests || 0,
-        pendingTutors: pendingTutors || 0,
-        pendingRequests: pendingRequests || 0,
-        totalRevenue: totalRevenue,
-        averageRating: averageRating
+        totalTutors: stats.totalTutors || 0,
+        totalStudents: stats.totalStudents || 0,
+        totalRequests: stats.totalRequests || 0,
+        pendingTutors: stats.pendingTutors || 0,
+        pendingRequests: stats.pendingRequests || 0,
+        totalRevenue: stats.totalRevenue || 0,
+        averageRating: stats.averageRating || 0,
       })
     } catch (error) {
       console.error('Error fetching system stats:', error)
@@ -632,38 +617,31 @@ export default function SuperAdminDashboard() {
     try {
       setIsLoadingTutors(true)
       
-      let query = supabase
-        .from('tutors')
-        .select(`
-          *,
-          profiles (
-            full_name,
-            email,
-            phone
-          )
-        `)
-        .order('created_at', { ascending: false })
-
-      // Apply filters
-      if (tutorFilter === 'verified') {
-        query = query.eq('is_verified', true)
-      } else if (tutorFilter === 'pending') {
-        query = query.eq('is_verified', false)
+      // Build query params
+      const params = new URLSearchParams()
+      if (tutorFilter !== 'all') {
+        params.set('filter', tutorFilter)
       }
-
-      // Apply search
       if (searchTerm) {
-        query = query.or(`profiles.full_name.ilike.%${searchTerm}%,profiles.email.ilike.%${searchTerm}%`)
+        params.set('search', searchTerm)
       }
 
-      const { data, error } = await query
+      const url = `/api/admin/tutors${params.toString() ? `?${params.toString()}` : ''}`
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      if (error) {
-        console.error('Error fetching tutors:', error)
-        return
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch tutors')
+          return
+        }
+        throw new Error(`Failed to fetch tutors: ${response.status}`)
       }
 
-      setTutors(data || [])
+      const data = await response.json()
+      setTutors(data.tutors || [])
     } catch (error) {
       console.error('Error fetching tutors:', error)
     } finally {
@@ -675,33 +653,28 @@ export default function SuperAdminDashboard() {
     try {
       setIsLoadingRequests(true)
       
-      let query = supabase
-        .from('home_tutoring_requests')
-        .select(`
-          *,
-          profiles (
-            full_name,
-            email,
-            phone
-          )
-        `)
-        .order('created_at', { ascending: false })
-
-      // Apply filters
-      if (requestFilter === 'pending') {
-        query = query.eq('status', 'pending')
-      } else if (requestFilter === 'matched') {
-        query = query.eq('status', 'matched')
+      // Build query params
+      const params = new URLSearchParams()
+      if (requestFilter !== 'all') {
+        params.set('status', requestFilter)
       }
 
-      const { data, error } = await query
+      const url = `/api/admin/requests${params.toString() ? `?${params.toString()}` : ''}`
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      if (error) {
-        console.error('Error fetching requests:', error)
-        return
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch requests')
+          return
+        }
+        throw new Error(`Failed to fetch requests: ${response.status}`)
       }
 
-      setRequests(data || [])
+      const data = await response.json()
+      setRequests(data.requests || [])
     } catch (error) {
       console.error('Error fetching requests:', error)
     } finally {
@@ -713,23 +686,21 @@ export default function SuperAdminDashboard() {
     try {
       setIsLoadingStudents(true)
       
-      const { data, error } = await supabase
-        .from('students')
-        .select(`
-          *,
-          profiles (
-            full_name,
-            email
-          )
-        `)
-        .order('created_at', { ascending: false })
+      const response = await fetch('/api/admin/students', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      if (error) {
-        console.error('Error fetching students:', error)
-        return
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch students')
+          return
+        }
+        throw new Error(`Failed to fetch students: ${response.status}`)
       }
 
-      setStudents(data || [])
+      const data = await response.json()
+      setStudents(data.students || [])
     } catch (error) {
       console.error('Error fetching students:', error)
     } finally {
@@ -839,32 +810,29 @@ export default function SuperAdminDashboard() {
     setSelectedTutorId('')
     setTutorSearchTerm('')
     setTutorSubjectFilter('all')
-    setTutorLocationFilter('')
     setTutorAvailabilityFilter('all')
     setConfirmMatch(false)
     
-    // Fetch available tutors (verified tutors)
-    const { data: tutors, error } = await supabase
-      .from('tutors')
-      .select(`
-        *,
-        profiles (
-          full_name,
-          email,
-          phone,
-          location
-        )
-      `)
-      .eq('is_verified', true)
-      .order('created_at', { ascending: false })
+    try {
+      // Fetch available tutors (verified tutors) via API
+      const response = await fetch('/api/admin/tutors/available', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-    if (error) {
+      if (!response.ok) {
+        console.error('Error fetching available tutors:', response.status)
+        alert('Failed to load available tutors. Please try again.')
+        return
+      }
+
+      const data = await response.json()
+      setAvailableTutors(data.tutors || [])
+      setShowMatchModal(true)
+    } catch (error) {
       console.error('Error fetching available tutors:', error)
-      return
+      alert('Failed to load available tutors. Please try again.')
     }
-
-    setAvailableTutors(tutors || [])
-    setShowMatchModal(true)
   }
 
   const matchTutorToRequest = async () => {
@@ -876,57 +844,28 @@ export default function SuperAdminDashboard() {
     try {
       setIsMatching(true)
 
-      // Update request status to matched
-      const { error: requestError } = await supabase
-        .from('home_tutoring_requests')
-        .update({
-          status: 'matched',
-          matched_tutor_id: selectedTutorId
-        })
-        .eq('id', selectedRequest.id)
+      // Use API to perform the match
+      const response = await fetch('/api/admin/match', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId: selectedRequest.id,
+          tutorId: selectedTutorId,
+          studentName: selectedRequest.student_name,
+          subjects: selectedRequest.subjects,
+          parentId: selectedRequest.parent_id,
+        }),
+      })
 
-      if (requestError) {
-        console.error('Error updating request:', requestError)
-        alert('Failed to match tutor to request')
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Error matching tutor:', errorData)
+        alert(errorData.error || 'Failed to match tutor to request')
         return
       }
-
-      // Create a match record
-      const { error: matchError } = await supabase
-        .from('tutor_student_matches')
-        .insert({
-          tutor_id: selectedTutorId,
-          student_id: selectedRequest.parent_id, // Using parent_id as student_id for now
-          request_id: selectedRequest.id,
-          status: 'active',
-          created_at: new Date().toISOString()
-        })
-
-      if (matchError) {
-        console.error('Error creating match:', matchError)
-      }
-
-      // Send notification to tutor
-      await supabase
-        .from('tutor_notifications')
-        .insert({
-          tutor_id: selectedTutorId,
-          title: 'New Student Match',
-          message: `You have been matched with ${selectedRequest.student_name} for ${selectedRequest.subjects} tutoring.`,
-          notification_type: 'match',
-          category: 'general'
-        })
-
-      // Send notification to parent
-      await supabase
-        .from('parent_notifications')
-        .insert({
-          parent_id: selectedRequest.parent_id,
-          title: 'Tutor Matched',
-          message: `A tutor has been matched with ${selectedRequest.student_name} for ${selectedRequest.subjects} tutoring.`,
-          notification_type: 'match',
-          category: 'general'
-        })
 
       // Refresh data
       await fetchRequests()
@@ -957,18 +896,12 @@ export default function SuperAdminDashboard() {
 
   const filteredTutors = useMemo(() => {
     const searchLower = tutorSearchTerm.trim().toLowerCase()
-    const locationLower = tutorLocationFilter.trim().toLowerCase()
 
     return availableTutors.filter((tutor) => {
       const subjects = Array.isArray(tutor.subjects) ? tutor.subjects : []
       const subjectMatch =
         tutorSubjectFilter === 'all' ||
         subjects.some((subject) => subject.toLowerCase() === tutorSubjectFilter.toLowerCase())
-
-      const profileLocation = tutor.profiles?.location || ''
-      const locationMatch =
-        locationLower.length === 0 ||
-        profileLocation.toLowerCase().includes(locationLower)
 
       const availabilityMatch =
         tutorAvailabilityFilter === 'all' ||
@@ -979,13 +912,12 @@ export default function SuperAdminDashboard() {
         tutor.profiles.full_name.toLowerCase().includes(searchLower) ||
         tutor.profiles.email.toLowerCase().includes(searchLower)
 
-      return subjectMatch && locationMatch && availabilityMatch && nameMatch
+      return subjectMatch && availabilityMatch && nameMatch
     })
   }, [
     availableTutors,
     tutorSearchTerm,
     tutorSubjectFilter,
-    tutorLocationFilter,
     tutorAvailabilityFilter,
   ])
 
@@ -1131,7 +1063,11 @@ export default function SuperAdminDashboard() {
                 </button>
 
                 <button
-                  onClick={() => setActiveSection('requests')}
+                  onClick={() =>
+                    setActiveSection(
+                      pendingRegistrations.length > 0 ? 'pending-registrations' : 'requests'
+                    )
+                  }
                   className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   <ClockIcon className="w-5 h-5 text-purple-600 mr-3" />
@@ -1617,6 +1553,7 @@ export default function SuperAdminDashboard() {
                   unreadCount={unreadCount}
                   onClose={() => setIsDropdownOpen(false)}
                   onMarkAsRead={markAsRead}
+                  onNavigate={handleNotificationNavigate}
                 />
               </div>
               <div className="text-right">
@@ -1638,10 +1575,10 @@ export default function SuperAdminDashboard() {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
+      {/* Navigation Tabs - positioned below fixed header */}
+      <div className="pt-20 bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="-mb-px flex space-x-8 overflow-x-auto">
             {[
               { id: 'overview', name: 'Overview', icon: ChartBarIcon },
               { id: 'tutors', name: 'Tutors', icon: AcademicCapIcon },
@@ -1652,7 +1589,7 @@ export default function SuperAdminDashboard() {
               <button
                 key={tab.id}
                 onClick={() => setActiveSection(tab.id)}
-                className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                   activeSection === tab.id
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1666,8 +1603,8 @@ export default function SuperAdminDashboard() {
         </div>
       </div>
 
-             {/* Main Content */}
-       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-24">
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
          {renderSectionContent()}
        </main>
 
@@ -1736,13 +1673,6 @@ export default function SuperAdminDashboard() {
                       <option value="available">Has availability</option>
                     </select>
                   </div>
-                  <input
-                    type="text"
-                    value={tutorLocationFilter}
-                    onChange={(event) => setTutorLocationFilter(event.target.value)}
-                    placeholder="Filter by location (optional)"
-                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
-                  />
                   <p className="text-xs text-gray-500">Showing verified tutors only.</p>
                 </div>
 
@@ -1770,9 +1700,6 @@ export default function SuperAdminDashboard() {
                             <div>
                               <p className="text-sm font-semibold text-gray-900">{tutor.profiles.full_name}</p>
                               <p className="text-xs text-gray-500">{tutor.profiles.email}</p>
-                              {tutor.profiles.location && (
-                                <p className="text-xs text-gray-500">Location: {tutor.profiles.location}</p>
-                              )}
                               <p className="text-xs text-gray-600 mt-1">{subjects}</p>
                             </div>
                             <span className="text-xs text-gray-500">

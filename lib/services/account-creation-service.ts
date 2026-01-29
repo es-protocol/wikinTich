@@ -13,6 +13,7 @@
 import { DB_ERROR_CODES, ERROR_MESSAGES } from '@/lib/constants'
 import { deleteRegistrationData, getRegistrationData } from '@/lib/registration-storage'
 import { hashPassword, validatePasswordComplexity } from '@/lib/security'
+import { updateNotificationEntityId } from '@/lib/services/admin-notification-service'
 import { sanitizeEmail, sanitizeNumericInput, sanitizePhoneNumber, sanitizeTextInput } from '@/lib/services/input-sanitization-service'
 import { supabaseAdmin } from '@/lib/supabase'
 import { checkAccountExists } from '@/lib/utils/account-check'
@@ -28,6 +29,10 @@ export interface CreateAccountResult {
   success: boolean
   error?: string
   statusCode?: number
+}
+
+export interface CreateParentRecordsResult extends CreateAccountResult {
+  requestId?: string
 }
 
 /**
@@ -453,11 +458,17 @@ export async function createTutorRecords(
 
 /**
  * Creates parent-specific records (student + home_tutoring_requests)
+ * 
+ * @param profileId - The parent's profile ID
+ * @param pendingData - The pending registration data
+ * @param pendingRegistrationId - The original pending registration ID (for notification linking)
+ * @returns Result with optional requestId for notification updates
  */
 export async function createParentRecords(
   profileId: string,
-  pendingData: any
-): Promise<CreateAccountResult> {
+  pendingData: any,
+  pendingRegistrationId?: string
+): Promise<CreateParentRecordsResult> {
   if (!supabaseAdmin) {
     return {
       success: false,
@@ -487,8 +498,8 @@ export async function createParentRecords(
     }
   }
 
-  // Create home_tutoring_requests record
-  const { error: requestError } = await supabaseAdmin
+  // Create home_tutoring_requests record and capture the new ID
+  const { data: request, error: requestError } = await supabaseAdmin
     .from('home_tutoring_requests')
     .insert({
       parent_id: profileId,
@@ -501,16 +512,29 @@ export async function createParentRecords(
       location: sanitizeTextInput(pendingData.location || ''),
       additional_requirements: sanitizeTextInput(pendingData.additionalRequirements || '')
     })
+    .select('id')
+    .single()
 
-  if (requestError) {
+  if (requestError || !request) {
     return {
       success: false,
-      error: requestError.message,
+      error: requestError?.message || 'Failed to create tutoring request',
       statusCode: 500
     }
   }
 
-  return { success: true }
+  // Update admin notification to link to the new home_tutoring_requests ID
+  if (pendingRegistrationId && request.id) {
+    const updateResult = await updateNotificationEntityId(pendingRegistrationId, request.id)
+    if (!updateResult.success) {
+      // Log the error but don't fail the account creation
+      devError('Failed to update notification entity ID:', updateResult.error)
+    } else {
+      devLog(`Notification entity ID updated: ${pendingRegistrationId} -> ${request.id}`)
+    }
+  }
+
+  return { success: true, requestId: request.id }
 }
 
 /**

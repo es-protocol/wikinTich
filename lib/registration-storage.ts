@@ -60,12 +60,15 @@ export const storeRegistrationData = async (
     
     const { data: result, error } = await supabaseAdmin
       .from('pending_registrations')
-      .upsert({
-        email,
-        registration_data: data,
-        registration_type: type,
-        expires_at: expiresAt
-      })
+      .upsert(
+        {
+          email,
+          registration_data: data,
+          registration_type: type,
+          expires_at: expiresAt
+        },
+        { onConflict: 'email' }
+      )
       .select('id')
       .single()
 

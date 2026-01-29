@@ -1,3 +1,8 @@
+import {
+  ADMIN_NOTIFICATION_TYPES,
+  DB_TABLES,
+  RELATED_ENTITY_TYPES,
+} from '@/lib/constants'
 import { supabaseAdmin } from '@/lib/supabase'
 import { devError, devLog } from '@/lib/utils/logger'
 
@@ -13,6 +18,7 @@ export type AdminNotificationPriority = 'low' | 'medium' | 'high' | 'critical'
 
 export type RelatedEntityType =
   | 'home_tutoring_request'
+  | 'pending_registration'
   | 'tutor'
   | 'parent'
   | 'system'
@@ -118,11 +124,66 @@ export async function notifyAdminsOfNewRequest(
   }
 ): Promise<void> {
   await createAdminNotifications({
-    notificationType: 'new_request',
+    notificationType: ADMIN_NOTIFICATION_TYPES.NEW_REQUEST,
     title: 'New Home Tutoring Request',
     message: `${registrationData.parentName} requested tutoring for ${registrationData.studentName} (${registrationData.gradeLevel})`,
-    relatedEntityType: 'home_tutoring_request',
+    relatedEntityType: RELATED_ENTITY_TYPES.HOME_TUTORING_REQUEST,
     relatedEntityId: pendingRegistrationId,
     priority: 'high',
   })
+}
+
+/**
+ * Updates the related_entity_id for notifications after home_tutoring_request is created.
+ * 
+ * This function is called during account creation to link the notification
+ * to the actual home_tutoring_requests record instead of the pending_registrations record.
+ * 
+ * @param oldEntityId - The original pending_registrations ID used when notification was created
+ * @param newRequestId - The new home_tutoring_requests ID to link to
+ */
+export async function updateNotificationEntityId(
+  oldEntityId: string,
+  newRequestId: string
+): Promise<{ success: boolean; error?: string }> {
+  const adminClient = supabaseAdmin
+  if (!adminClient) {
+    devError('Supabase admin client not available - cannot update notifications')
+    return { success: false, error: 'Database service unavailable' }
+  }
+
+  // Validate inputs are valid UUIDs (basic check)
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!uuidRegex.test(oldEntityId) || !uuidRegex.test(newRequestId)) {
+    devError('Invalid UUID format for notification update', { oldEntityId, newRequestId })
+    return { success: false, error: 'Invalid entity ID format' }
+  }
+
+  try {
+    devLog(`Updating notification entity ID from ${oldEntityId} to ${newRequestId}`)
+
+    const { data, error } = await adminClient
+      .from(DB_TABLES.ADMIN_NOTIFICATIONS)
+      .update({ related_entity_id: newRequestId })
+      .eq('related_entity_id', oldEntityId)
+      .eq('notification_type', ADMIN_NOTIFICATION_TYPES.NEW_REQUEST)
+      .eq('related_entity_type', RELATED_ENTITY_TYPES.HOME_TUTORING_REQUEST)
+      .select('id')
+
+    if (error) {
+      devError('Failed to update notification entity ID:', error)
+      return { success: false, error: error.message }
+    }
+
+    const updatedCount = data?.length || 0
+    devLog(`Successfully updated ${updatedCount} notification(s) with new entity ID`)
+
+    return { success: true }
+  } catch (error) {
+    devError('Error updating notification entity ID:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }
+  }
 }

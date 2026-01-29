@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
 
     const pendingData = registrationResult.data!.registration_data
     const registrationType = registrationResult.data!.registration_type
+    const pendingRegistrationId = registrationResult.data!.id
 
     // Determine role from explicit role field or fallback to registration type
     const role = pendingData.role || (registrationType === 'tutor' ? 'tutor' : 'parent')
@@ -125,10 +126,10 @@ export async function POST(req: NextRequest) {
       return applySecurityHeaders(response)
     }
 
-    // 10) Create role-specific records
+    // 10) Create role-specific records (pass pendingRegistrationId for notification linking)
     const roleRecordsResult = role === 'tutor'
       ? await createTutorRecords(profileResult.profileId!, pendingData)
-      : await createParentRecords(profileResult.profileId!, pendingData)
+      : await createParentRecords(profileResult.profileId!, pendingData, pendingRegistrationId)
 
     if (!roleRecordsResult.success) {
       const response = NextResponse.json(

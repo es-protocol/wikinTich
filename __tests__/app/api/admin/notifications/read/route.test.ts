@@ -130,7 +130,9 @@ describe('PATCH /api/admin/notifications/[id]/read', () => {
     expect(body).toEqual({ error: 'Notification not found' })
   })
 
-  it('returns 403 when admin does not own the notification', async () => {
+  // Note: Ownership check removed - any super_admin can mark any admin notification as read
+  // This allows notifications to persist across admin profile recreations
+  it('allows any super_admin to mark any notification as read', async () => {
     mockGetSession.mockReturnValue({
       userId: 'admin-1',
       email: 'admin@example.com',
@@ -141,22 +143,39 @@ describe('PATCH /api/admin/notifications/[id]/read', () => {
       createdAt: Date.now(),
     })
 
-    mockFrom.mockImplementation(() => ({
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
-      single: jest.fn().mockResolvedValue({
-        data: { id: 'notif-1', admin_id: 'other-admin', is_read: false },
-        error: null,
-      }),
-    }))
+    const updatedNotification = {
+      id: 'notif-1',
+      admin_id: 'other-admin', // Different admin created this notification
+      is_read: true,
+      read_at: new Date().toISOString(),
+    }
+
+    mockFrom
+      .mockImplementationOnce(() => ({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: { id: 'notif-1', admin_id: 'other-admin', is_read: false },
+          error: null,
+        }),
+      }))
+      .mockImplementationOnce(() => ({
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({ data: updatedNotification, error: null }),
+      }))
 
     const res = await PATCH(createRequest('00000000-0000-0000-0000-000000000000'), {
       params: { id: '00000000-0000-0000-0000-000000000000' },
     })
 
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body).toEqual({ error: 'Forbidden - You can only mark your own notifications as read' })
+    expect(body).toEqual({
+      success: true,
+      notification: updatedNotification,
+    })
   })
 
   it('returns success when notification is already read', async () => {

@@ -1,3 +1,4 @@
+import { DB_TABLES, USER_ROLES } from '@/lib/constants'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { getSessionFromRequest } from '@/lib/session-management'
 import { supabaseAdmin } from '@/lib/supabase'
@@ -30,7 +31,7 @@ export async function PATCH(
       return applySecurityHeaders(unauthorizedResponse)
     }
 
-    if (session.role !== 'super_admin') {
+    if (session.role !== USER_ROLES.SUPER_ADMIN) {
       const forbiddenResponse = NextResponse.json(
         { error: 'Forbidden - Admin access required' },
         { status: 403 }
@@ -48,9 +49,10 @@ export async function PATCH(
       return applySecurityHeaders(errorResponse)
     }
 
+    // Fetch notification without admin_id filter - role check above ensures only super_admins can access
     const { data: existingNotification, error: fetchError } = await adminClient
-      .from('admin_notifications')
-      .select('id, admin_id, is_read')
+      .from(DB_TABLES.ADMIN_NOTIFICATIONS)
+      .select('id, is_read')
       .eq('id', notificationId)
       .single()
 
@@ -63,14 +65,8 @@ export async function PATCH(
       return applySecurityHeaders(errorResponse)
     }
 
-    if (existingNotification.admin_id !== session.userId) {
-      devError('Admin tried to mark notification they do not own')
-      const forbiddenResponse = NextResponse.json(
-        { error: 'Forbidden - You can only mark your own notifications as read' },
-        { status: 403 }
-      )
-      return applySecurityHeaders(forbiddenResponse)
-    }
+    // Any super_admin can mark any admin notification as read
+    // This allows notifications to work regardless of which admin profile created them
 
     if (existingNotification.is_read) {
       devLog('Notification already marked as read')
@@ -82,13 +78,12 @@ export async function PATCH(
     }
 
     const { data, error } = await adminClient
-      .from('admin_notifications')
+      .from(DB_TABLES.ADMIN_NOTIFICATIONS)
       .update({
         is_read: true,
         read_at: new Date().toISOString(),
       })
       .eq('id', notificationId)
-      .eq('admin_id', session.userId)
       .select()
       .single()
 

@@ -141,7 +141,7 @@ describe('GET /api/admin/notifications', () => {
       offset: 10,
     })
 
-    expect(mainQuery.eq).toHaveBeenCalledWith('admin_id', 'admin-1')
+    // Note: admin_id filter removed - all super_admins can see all notifications
     expect(mainQuery.eq).toHaveBeenCalledWith('is_read', false)
     expect(mainQuery.order).toHaveBeenCalledWith('is_read', { ascending: true })
     expect(mainQuery.order).toHaveBeenCalledWith('created_at', { ascending: false })
@@ -308,7 +308,7 @@ describe('GET /api/admin/notifications', () => {
     const res = await GET(req)
 
     expect(res.status).toBe(200)
-    expect(mainQuery.eq).toHaveBeenCalledWith('admin_id', 'admin-1')
+    // Note: admin_id filter removed - all super_admins can see all notifications
     expect(mainQuery.eq).not.toHaveBeenCalledWith('is_read', false)
   })
 })

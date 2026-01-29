@@ -84,14 +84,31 @@ describe('Super Admin Notifications Dropdown', () => {
     jest.clearAllMocks()
   })
 
-  it('opens the dropdown on bell click', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        notifications: [],
-        unread_count: 0,
-      }),
+  // Helper to create fetch mock that handles both session and notification endpoints
+  const createFetchMock = (notificationsData: any = { notifications: [], unread_count: 0 }) => {
+    return jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/session')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            user: {
+              id: 'admin-1',
+              email: 'admin@example.com',
+              role: 'super_admin',
+              full_name: 'Super Admin',
+            }
+          }),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => notificationsData,
+      })
     }) as jest.Mock
+  }
+
+  it('opens the dropdown on bell click', async () => {
+    global.fetch = createFetchMock()
 
     const user = userEvent.setup()
     render(<SuperAdminDashboard />)
@@ -103,13 +120,7 @@ describe('Super Admin Notifications Dropdown', () => {
   })
 
   it('closes the dropdown on outside click', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        notifications: [],
-        unread_count: 0,
-      }),
-    }) as jest.Mock
+    global.fetch = createFetchMock()
 
     const user = userEvent.setup()
     render(<SuperAdminDashboard />)
@@ -126,13 +137,7 @@ describe('Super Admin Notifications Dropdown', () => {
   })
 
   it('closes the dropdown on Escape key', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        notifications: [],
-        unread_count: 0,
-      }),
-    }) as jest.Mock
+    global.fetch = createFetchMock()
 
     const user = userEvent.setup()
     render(<SuperAdminDashboard />)
@@ -149,27 +154,24 @@ describe('Super Admin Notifications Dropdown', () => {
   })
 
   it('shows unread indicator and closes when clicking a notification', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        unread_count: 1,
-        notifications: [
-          {
-            id: 'notif-1',
-            title: 'New Home Tutoring Request',
-            message: 'Grade 5 Math tutoring',
-            notification_type: 'new_request',
-            related_entity_type: 'pending_registration',
-            related_entity_id: 'pending-1',
-            priority: 'high',
-            is_read: false,
-            read_at: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ],
-      }),
-    }) as jest.Mock
+    global.fetch = createFetchMock({
+      unread_count: 1,
+      notifications: [
+        {
+          id: 'notif-1',
+          title: 'New Home Tutoring Request',
+          message: 'Grade 5 Math tutoring',
+          notification_type: 'new_request',
+          related_entity_type: 'pending_registration',
+          related_entity_id: 'pending-1',
+          priority: 'high',
+          is_read: false,
+          read_at: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ],
+    })
 
     const user = userEvent.setup()
     render(<SuperAdminDashboard />)
@@ -190,27 +192,24 @@ describe('Super Admin Notifications Dropdown', () => {
   })
 
   it('shows unread count text and view all link', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        unread_count: 2,
-        notifications: [
-          {
-            id: 'notif-1',
-            title: 'Notification 1',
-            message: 'Message 1',
-            notification_type: 'system',
-            related_entity_type: null,
-            related_entity_id: null,
-            priority: 'low',
-            is_read: false,
-            read_at: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ],
-      }),
-    }) as jest.Mock
+    global.fetch = createFetchMock({
+      unread_count: 2,
+      notifications: [
+        {
+          id: 'notif-1',
+          title: 'Notification 1',
+          message: 'Message 1',
+          notification_type: 'system',
+          related_entity_type: null,
+          related_entity_id: null,
+          priority: 'low',
+          is_read: false,
+          read_at: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ],
+    })
 
     const user = userEvent.setup()
     render(<SuperAdminDashboard />)

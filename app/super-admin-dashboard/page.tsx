@@ -1,5 +1,6 @@
 'use client'
 
+// Super Admin Dashboard - Manages tutors, students, requests, and system notifications
 import { supabase } from '@/lib/supabase'
 import {
   AcademicCapIcon,

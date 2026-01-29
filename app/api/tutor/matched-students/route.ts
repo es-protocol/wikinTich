@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
     const matchedStudents: MatchedStudent[] = []
 
     if (requests && requests.length > 0) {
-      const parentIds = [...new Set(requests.map(r => r.parent_id))]
+      const parentIds = Array.from(new Set(requests.map(r => r.parent_id)))
       
       const { data: parentProfiles, error: parentError } = await adminClient
         .from(DB_TABLES.PROFILES)

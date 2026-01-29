@@ -84,9 +84,25 @@ describe('Super Admin Dashboard Notification Badge', () => {
   })
 
   it('shows unread count badge when notifications are present', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ unread_count: 5 }),
+    global.fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/session')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            user: {
+              id: 'admin-1',
+              email: 'admin@example.com',
+              role: 'super_admin',
+              full_name: 'Super Admin',
+            }
+          }),
+        })
+      }
+      // Notifications endpoint
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ unread_count: 5 }),
+      })
     }) as jest.Mock
 
     render(<SuperAdminDashboard />)
@@ -97,9 +113,24 @@ describe('Super Admin Dashboard Notification Badge', () => {
   })
 
   it('does not render badge when unread count is zero', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ unread_count: 0 }),
+    global.fetch = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/session')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            user: {
+              id: 'admin-1',
+              email: 'admin@example.com',
+              role: 'super_admin',
+              full_name: 'Super Admin',
+            }
+          }),
+        })
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ unread_count: 0 }),
+      })
     }) as jest.Mock
 
     render(<SuperAdminDashboard />)
@@ -114,7 +145,27 @@ describe('Super Admin Dashboard Notification Badge', () => {
       resolveFetch = resolve
     })
 
-    global.fetch = jest.fn().mockReturnValue(fetchPromise) as jest.Mock
+    // First call is /api/session, resolve immediately
+    // Second call is notifications, return the promise we control
+    let callCount = 0
+    global.fetch = jest.fn().mockImplementation((url: string) => {
+      callCount++
+      if (url.includes('/api/session')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            user: {
+              id: 'admin-1',
+              email: 'admin@example.com',
+              role: 'super_admin',
+              full_name: 'Super Admin',
+            }
+          }),
+        })
+      }
+      // Notifications - return controlled promise
+      return fetchPromise
+    }) as jest.Mock
 
     render(<SuperAdminDashboard />)
 

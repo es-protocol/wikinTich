@@ -1564,18 +1564,34 @@ export default function TutorDashboard() {
       // Close dropdown
       setShowNotificationsDropdown(false)
 
-      // Handle different notification types
+      // Navigate to Sessions tab and switch to the relevant filter based on notification type
+      setActiveSection('sessions')
       switch (notification.notification_type) {
+        case 'session_accepted':
+          setSessionFilter('approved')
+          break
+        case 'session_change_requested':
+          setSessionFilter('change_requested')
+          break
+        case 'session_cancelled':
+          setSessionFilter('cancelled')
+          break
+        case 'session_rescheduled':
+          setSessionFilter('scheduled')
+          break
+        case 'session_confirmed':
+          setSessionFilter('approved')
+          break
+        case 'session_completed':
+          setSessionFilter('completed')
+          break
+        case 'session_reminder':
+          setSessionFilter('scheduled')
+          break
         case 'home_tutoring':
-          // Switch to sessions tab and show relevant session
-          setActiveSection('sessions')
-          break
         case 'session':
-          // Switch to sessions tab
-          setActiveSection('sessions')
-          break
         default:
-          // For other types, just close the dropdown
+          setSessionFilter('all')
           break
       }
     } catch (error) {

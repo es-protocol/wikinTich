@@ -1337,18 +1337,31 @@ export default function DashboardWithChildren() {
       // Close dropdown
       setShowNotificationsDropdown(false)
 
-      // Handle different notification types
+      // Navigate to the relevant tab and filter based on notification type (same logic as tutor dashboard)
       switch (notification.notificationType) {
         case 'match':
           setActiveSection('requests')
           break
         case 'session':
         case 'home_tutoring':
-          // Switch to sessions tab
           setActiveSection('sessions')
+          // Infer session filter from notification title when possible (parent_notifications uses generic 'session' type)
+          const title = (notification.title || '').toLowerCase()
+          if (title.includes('cancelled')) {
+            setSessionFilter('cancelled')
+          } else if (title.includes('rescheduled') || title.includes('proposed') || title.includes('recurring')) {
+            setSessionFilter('pending')
+          } else if (title.includes('change')) {
+            setSessionFilter('change_requested')
+          } else if (title.includes('accepted') || title.includes('confirmed')) {
+            setSessionFilter('approved')
+          } else if (title.includes('completed')) {
+            setSessionFilter('completed')
+          } else {
+            setSessionFilter('all')
+          }
           break
         default:
-          // For other types, just close the dropdown
           break
       }
     } catch (error) {

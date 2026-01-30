@@ -1,41 +1,35 @@
 'use client'
 
-import { useState, useEffect, Fragment, FormEvent } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useAuth } from '@/lib/auth-context'
-import { supabase } from '@/lib/supabase'
-import { 
-  UserIcon, 
-  AcademicCapIcon, 
-  CalendarIcon, 
-  CreditCardIcon, 
-  ChatBubbleLeftRightIcon, 
-  BellIcon,
-  CogIcon,
-  DocumentTextIcon,
-  ClockIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  PlusIcon,
-  XMarkIcon,
-  EyeIcon,
-  PencilIcon,
-  TrashIcon,
-  UsersIcon,
-  CalendarDaysIcon,
-  UserGroupIcon,
-  UserPlusIcon,
-  ArrowRightOnRectangleIcon
-} from '@heroicons/react/24/outline'
-import { sanitizeInput } from '@/lib/security'
 import {
-  ProfileHeaderSkeleton,
-  StudentCardSkeleton,
-  SessionCardSkeleton,
-  RequestCardSkeleton,
-  StatCardSkeleton,
-  EmptyState
+    EmptyState,
+    RequestCardSkeleton,
+    SessionCardSkeleton,
+    StudentCardSkeleton
 } from '@/app/components/SkeletonLoader'
+import { useAuth } from '@/lib/auth-context'
+import { sanitizeInput } from '@/lib/security'
+import { supabase } from '@/lib/supabase'
+import {
+    AcademicCapIcon,
+    ArrowRightOnRectangleIcon,
+    BellIcon,
+    CalendarDaysIcon,
+    CalendarIcon,
+    CheckCircleIcon,
+    ClockIcon,
+    CreditCardIcon,
+    DocumentTextIcon,
+    ExclamationTriangleIcon,
+    PencilIcon,
+    PlusIcon,
+    TrashIcon,
+    UserGroupIcon,
+    UserIcon,
+    UserPlusIcon,
+    XMarkIcon
+} from '@heroicons/react/24/outline'
+import { motion } from 'framer-motion'
+import { FormEvent, Fragment, useEffect, useState } from 'react'
 
 interface Student {
   id: string
@@ -75,11 +69,30 @@ interface Session {
   end_time: string
   duration_hours: number
   amount: number
-  status: 'scheduled' | 'approved' | 'completed' | 'cancelled' | 'no_show'  // Added 'approved' status
+  status: 'scheduled' | 'approved' | 'change_requested' | 'rescheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
   notes: string | null
   created_at: string
   updated_at: string | null
   created_by?: string  // Add this field to track who created the session
+  // New fields for session scheduling
+  title?: string
+  description?: string
+  subjects?: string[]
+  change_request_message?: string
+  change_requested_at?: string
+  change_requested_by?: 'tutor' | 'parent'
+  is_recurring?: boolean
+  recurrence_rule?: {
+    frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly'
+    interval: number
+    days_of_week?: string[]
+    end_date?: string
+    end_after_occurrences?: number
+  }
+  recurring_parent_id?: string
+  location_type?: 'home' | 'online' | 'other'
+  location_address?: string
+  meeting_link?: string
 }
 
 interface NewChildForm {
@@ -422,7 +435,14 @@ export default function DashboardWithChildren() {
   // Modal states
   const [showNewChildModal, setShowNewChildModal] = useState(false)
   const [showNewRequestModal, setShowNewRequestModal] = useState(false)
-  const [showNewSessionModal, setShowNewSessionModal] = useState(false)
+  
+  // Session action modal states
+  const [showRequestChangeModal, setShowRequestChangeModal] = useState(false)
+  const [sessionForChangeRequest, setSessionForChangeRequest] = useState<Session | null>(null)
+  const [changeRequestMessage, setChangeRequestMessage] = useState('')
+  const [showCancelSessionModal, setShowCancelSessionModal] = useState(false)
+  const [sessionToCancel, setSessionToCancel] = useState<Session | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
   const [showQuickActionsModal, setShowQuickActionsModal] = useState(false)
   const [showRequestDetailsModal, setShowRequestDetailsModal] = useState(false)
   const [showChildDetailsModal, setShowChildDetailsModal] = useState(false)
@@ -481,14 +501,6 @@ export default function DashboardWithChildren() {
     location: 'home_visit',
     additional_requirements: ''
   })
-  const [newSessionForm, setNewSessionForm] = useState({
-    student_id: '',
-    request_id: '',
-    session_date: '',
-    start_time: '',
-    end_time: '',
-    notes: ''
-  })
   const [profileForm, setProfileForm] = useState<ProfileForm>({
     full_name: '',
     email: '',
@@ -505,6 +517,9 @@ export default function DashboardWithChildren() {
     timestamp: Date
     is_read: boolean
   }>>([])
+
+  // CSRF token for session state-changing requests (accept, request-change, cancel)
+  const [csrfToken, setCsrfToken] = useState<string | null>(null)
 
   const fetchUserProfile = async () => {
     try {
@@ -536,6 +551,21 @@ export default function DashboardWithChildren() {
       fetchUserProfile()
     }
   }, [user, authLoading])
+
+  // Fetch CSRF token when user is loaded (required for session accept/request-change/cancel)
+  useEffect(() => {
+    if (!user) return
+    const loadCsrfToken = async () => {
+      try {
+        const res = await fetch('/api/csrf', { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (data?.token) setCsrfToken(data.token)
+      } catch {
+        // Non-blocking; session APIs will return 400 if token missing
+      }
+    }
+    loadCsrfToken()
+  }, [user])
 
   useEffect(() => {
     if (userProfile) {
@@ -666,31 +696,26 @@ export default function DashboardWithChildren() {
       
       if (!userProfile) return
 
-      const response = await fetch(`/api/dashboard?userId=${userProfile.id}&type=sessions`, {
-        credentials: 'include' // Include session cookie
+      // Use dedicated parent sessions API (reliable join); dashboard API sessions query can fail on tutors join
+      const url = selectedStudent
+        ? `/api/parent/sessions?limit=200&student_id=${selectedStudent.id}`
+        : '/api/parent/sessions?limit=200'
+      const response = await fetch(url, {
+        credentials: 'include',
       })
       const result = await response.json()
 
       if (!response.ok) {
         console.error('Error fetching sessions:', result.error)
+        setSessions([])
         return
       }
 
-      // Filter by selected student if one is selected
-      let filteredSessions = result.data || []
-      if (selectedStudent) {
-        filteredSessions = filteredSessions.filter((session: any) => session.student_id === selectedStudent.id)
-      }
-
-      console.log('Debug: fetchSessions returned data:', filteredSessions)
-      console.log('Debug: Number of sessions:', filteredSessions?.length || 0)
-      if (filteredSessions && filteredSessions.length > 0) {
-        console.log('Debug: First session status:', filteredSessions[0].status)
-      }
-
-      setSessions(filteredSessions)
+      const sessionsList = result.sessions ?? result.data ?? []
+      setSessions(sessionsList)
     } catch (error) {
       console.error('Error fetching sessions:', error)
+      setSessions([])
     } finally {
       setIsLoadingSessions(false)
     }
@@ -785,137 +810,44 @@ export default function DashboardWithChildren() {
     }
   }
 
-  const handleNewSession = async (e: FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
-
-    try {
-      if (!newSessionForm.student_id) {
-        alert('Please select a child first')
-        return
-      }
-
-      // Find the selected student
-      const selectedStudentForSession = students.find(s => s.id === newSessionForm.student_id)
-      if (!selectedStudentForSession) {
-        alert('Selected child not found')
-        return
-      }
-
-      // If a specific request is selected, use that
-      let matchedRequest = null
-      let tutorId = null
-
-      if (newSessionForm.request_id) {
-        matchedRequest = tutoringRequests.find(r => r.id === newSessionForm.request_id)
-        if (matchedRequest && matchedRequest.matched_tutor_id) {
-          tutorId = matchedRequest.matched_tutor_id
-        }
-      } else {
-        // Find any matched request for this student
-        matchedRequest = tutoringRequests.find(r => 
-          r.student_id === newSessionForm.student_id && 
-          (r.status === 'matched' || r.status === 'in_progress')
-        )
-        if (matchedRequest && matchedRequest.matched_tutor_id) {
-          tutorId = matchedRequest.matched_tutor_id
-        }
-      }
-
-      if (!tutorId) {
-        alert('No matched tutor found for this child. Please wait for a tutor to be assigned.')
-        return
-      }
-
-      // Calculate duration from start and end time
-      const startTime = new Date(`2000-01-01T${newSessionForm.start_time}`)
-      const endTime = new Date(`2000-01-01T${newSessionForm.end_time}`)
-      const durationHours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60)
-
-      const { data, error } = await supabase
-        .from('home_tutoring_sessions')
-        .insert([{
-          request_id: matchedRequest?.id || null,
-          tutor_id: tutorId,
-          student_id: newSessionForm.student_id,
-          session_date: newSessionForm.session_date,
-          start_time: newSessionForm.start_time,
-          end_time: newSessionForm.end_time,
-          duration_hours: durationHours,
-          amount: 70000, // Default amount
-          status: 'scheduled', // Use 'scheduled' status for new sessions
-          notes: sanitizeInput(newSessionForm.notes),
-          created_by: 'parent' // Add this field to track who created the session
-        }])
-        .select()
-
-      if (error) {
-        console.error('Error creating session:', error)
-        console.error('Session data being inserted:', {
-          request_id: matchedRequest?.id || null,
-          tutor_id: tutorId,
-          student_id: newSessionForm.student_id,
-          session_date: newSessionForm.session_date,
-          start_time: newSessionForm.start_time,
-          end_time: newSessionForm.end_time,
-          duration_hours: durationHours,
-          amount: 70000,
-          status: 'scheduled',
-          notes: newSessionForm.notes,
-          created_by: 'parent'
-        })
-        alert(`Failed to create session: ${error.message}`)
-        return
-      }
-
-      // Create notification for tutor when parent creates a session
-      try {
-        await supabase
-          .from('tutor_notifications')
-          .insert({
-            tutor_id: tutorId,
-            title: 'New Session Proposal',
-            message: `Parent has created a new session for ${selectedStudentForSession.name} on ${new Date(newSessionForm.session_date).toLocaleDateString()}`,
-            notification_type: 'home_tutoring',
-            category: 'home_tutoring'
-          })
-      } catch (notifError) {
-        console.error('Error creating tutor notification:', notifError)
-        // Don't fail the session creation if notification fails
-      }
-
-      setNewSessionForm({
-        student_id: '',
-        request_id: '',
-        session_date: '',
-        start_time: '',
-        end_time: '',
-        notes: ''
-      })
-      setShowNewSessionModal(false)
-      await fetchSessions()
-              alert('Session created successfully! The tutor will be notified and can approve or reject.')
-    } catch (error) {
-      console.error('Error creating session:', error)
-      alert('Failed to create session. Please try again.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
   const handleSessionAction = async (sessionId: string, action: 'approve' | 'reject' | 'complete') => {
     try {
-      // Use status values that are actually allowed by the database constraint
-      // According to the updated schema: ['scheduled', 'approved', 'completed', 'cancelled', 'no_show']
-      let newStatus = 'scheduled'
-      if (action === 'approve') newStatus = 'approved'  // Use 'approved' status for approval
-      else if (action === 'reject') newStatus = 'cancelled'  // Use 'cancelled' status for rejection
-      else if (action === 'complete') newStatus = 'completed'  // Use 'completed' for completion
+      // For approve action, use the new API
+      if (action === 'approve') {
+        setIsSubmitting(true)
+        const response = await fetch(`/api/parent/sessions/${sessionId}/accept`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ csrf_token: csrfToken ?? '' }),
+        })
+        
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to accept session')
+        }
+        
+        await fetchSessions()
+        setShowSessionDetailsModal(false)
+        setSelectedSession(null)
+        alert('Session accepted successfully!')
+        return
+      }
+
+      // For reject, show cancel modal
+      if (action === 'reject') {
+        const session = sessions.find(s => s.id === sessionId)
+        if (session) {
+          setSessionToCancel(session)
+          setShowCancelSessionModal(true)
+        }
+        return
+      }
+
+      // For complete (backwards compatible)
+      const newStatus = action === 'complete' ? 'completed' : 'scheduled'
       
-      console.log(`Debug: handleSessionAction called with action: ${action}`)
-      console.log(`Debug: Updating session ${sessionId} to status: ${newStatus}`)
-      
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('home_tutoring_sessions')
         .update({ status: newStatus })
         .eq('id', sessionId)
@@ -926,29 +858,6 @@ export default function DashboardWithChildren() {
         alert('Failed to update session. Please try again.')
         return
       }
-
-      console.log('Debug: Session update successful, returned data:', data)
-      console.log('Debug: New session status:', data?.[0]?.status)
-      
-      // Create notification for tutor when parent approves/rejects their session
-      try {
-        const session = sessions.find(s => s.id === sessionId)
-        if (session && session.created_by === 'tutor') {
-          // This is a tutor-created session, notify the tutor
-          await supabase
-            .from('tutor_notifications')
-            .insert({
-              tutor_id: session.tutor_id,
-              title: `Session ${action === 'approve' ? 'Approved' : 'Rejected'}`,
-              message: `Your session for ${new Date(session.session_date).toLocaleDateString()} has been ${action === 'approve' ? 'approved' : 'rejected'} by the parent.`,
-              notification_type: 'home_tutoring',
-              category: 'home_tutoring'
-            })
-        }
-      } catch (notifError) {
-        console.error('Error creating tutor notification:', notifError)
-        // Don't fail the session action if notification fails
-      }
       
       await fetchSessions()
       setShowSessionDetailsModal(false)
@@ -957,8 +866,100 @@ export default function DashboardWithChildren() {
       alert(`Session ${action}d successfully!`)
     } catch (error) {
       console.error('Error updating session:', error)
-      alert('Failed to update session. Please try again.')
+      alert(error instanceof Error ? error.message : 'Failed to update session. Please try again.')
+    } finally {
+      setIsSubmitting(false)
     }
+  }
+
+  // Request Change for a session
+  const handleRequestChange = async () => {
+    if (!sessionForChangeRequest || !changeRequestMessage.trim()) {
+      alert('Please provide a message explaining the changes you need')
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+      
+      const response = await fetch(`/api/parent/sessions/${sessionForChangeRequest.id}/request-change`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ csrf_token: csrfToken ?? '', message: changeRequestMessage }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to request change')
+      }
+
+      // Reset modal state
+      setShowRequestChangeModal(false)
+      setSessionForChangeRequest(null)
+      setChangeRequestMessage('')
+      
+      await fetchSessions()
+      alert('Change request sent successfully! The tutor will be notified.')
+    } catch (error) {
+      console.error('Error requesting change:', error)
+      alert(error instanceof Error ? error.message : 'Failed to request change. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Cancel session with reason
+  const handleCancelSession = async () => {
+    if (!sessionToCancel || !cancelReason.trim()) {
+      alert('Please provide a reason for cancellation')
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+      
+      const response = await fetch(`/api/parent/sessions/${sessionToCancel.id}/cancel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ csrf_token: csrfToken ?? '', reason: cancelReason }),
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to cancel session')
+      }
+
+      // Reset modal state
+      setShowCancelSessionModal(false)
+      setSessionToCancel(null)
+      setCancelReason('')
+      setShowSessionDetailsModal(false)
+      setSelectedSession(null)
+      
+      await fetchSessions()
+      alert('Session cancelled successfully!')
+    } catch (error) {
+      console.error('Error cancelling session:', error)
+      alert(error instanceof Error ? error.message : 'Failed to cancel session. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Open request change modal
+  const openRequestChangeModal = (session: Session) => {
+    setSessionForChangeRequest(session)
+    setChangeRequestMessage('')
+    setShowRequestChangeModal(true)
+  }
+
+  // Open cancel modal
+  const openCancelModal = (session: Session) => {
+    setSessionToCancel(session)
+    setCancelReason('')
+    setShowCancelSessionModal(true)
   }
 
   const handleViewChildDetails = (child: Student) => {
@@ -1082,6 +1083,14 @@ export default function DashboardWithChildren() {
   }
 
   const handleDeleteSession = async (sessionId: string) => {
+    // Find the session and open the cancel modal
+    const session = sessions.find(s => s.id === sessionId)
+    if (session) {
+      openCancelModal(session)
+      return
+    }
+    
+    // Fallback to direct delete if session not found
     if (!confirm('Are you sure you want to delete this session? This action cannot be undone.')) {
       return
     }
@@ -1104,24 +1113,6 @@ export default function DashboardWithChildren() {
       console.error('Error deleting session:', error)
       alert('Failed to delete session. Please try again.')
     }
-  }
-
-  const handleEditSession = (session: Session) => {
-    // Populate the new session form with existing session data
-    setNewSessionForm({
-      student_id: session.student_id || '',
-      request_id: session.request_id || '',
-      session_date: session.session_date,
-      start_time: session.start_time,
-      end_time: session.end_time,
-      notes: session.notes || ''
-    })
-    
-    // Show the new session modal (which will now act as edit modal)
-    setShowNewSessionModal(true)
-    
-    // Store the session being edited
-    setSelectedSession(session)
   }
 
   const handleUpdateProfile = async (e: FormEvent) => {
@@ -1328,21 +1319,17 @@ export default function DashboardWithChildren() {
 
   const handleNotificationClick = async (notification: any) => {
     try {
-      // Mark notification as read if it's not already read
+      // Mark notification as read via API (persists; client Supabase can be blocked by RLS)
       if (!notification.is_read) {
-        const { error } = await supabase
-          .from('parent_notifications')
-          .update({ is_read: true })
-          .eq('id', notification.id)
-
-        if (error) {
-          console.error('Error marking notification click:', error)
-        } else {
-          // Update local state
-          setNotifications(prev => 
-            prev.map(n => 
-              n.id === notification.id ? { ...n, is_read: true } : n
-            )
+        const response = await fetch('/api/parent/notifications/read', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ notificationIds: [notification.id] }),
+        })
+        if (response.ok) {
+          setNotifications(prev =>
+            prev.map(n => (n.id === notification.id ? { ...n, is_read: true } : n))
           )
         }
       }
@@ -1373,20 +1360,14 @@ export default function DashboardWithChildren() {
     try {
       if (!userProfile) return
 
-      // Mark all notifications as read in database
-      const { error } = await supabase
-        .from('parent_notifications')
-        .update({ is_read: true })
-        .eq('parent_id', userProfile.id)
-        .eq('is_read', false)
-
-      if (error) {
-        console.error('Error marking all notifications as read:', error)
-      } else {
-        // Update local state
-        setNotifications(prev => 
-          prev.map(n => ({ ...n, is_read: true }))
-        )
+      const response = await fetch('/api/parent/notifications/read', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ markAll: true }),
+      })
+      if (response.ok) {
+        setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
       }
     } catch (error) {
       console.error('Error marking all notifications as read:', error)
@@ -1526,6 +1507,18 @@ export default function DashboardWithChildren() {
 
   const getFilteredSessions = () => {
     if (sessionFilter === 'all') return sessions
+    
+    // Group related statuses
+    if (sessionFilter === 'pending') {
+      return sessions.filter(s => s.status === 'scheduled' || s.status === 'rescheduled')
+    }
+    if (sessionFilter === 'approved') {
+      return sessions.filter(s => s.status === 'approved' || s.status === 'confirmed')
+    }
+    if (sessionFilter === 'cancelled') {
+      return sessions.filter(s => s.status === 'cancelled' || s.status === 'no_show')
+    }
+    
     return sessions.filter(session => session.status === sessionFilter)
   }
 
@@ -1841,12 +1834,7 @@ export default function DashboardWithChildren() {
                       <div className="text-center py-8">
                         <ClockIcon className="w-12 h-12 text-gray-400 mx-auto" />
                         <p className="mt-2 text-gray-600">No upcoming sessions for {selectedStudent.name}</p>
-                        <button 
-                          onClick={() => setShowNewSessionModal(true)}
-                          className="mt-4 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700"
-                        >
-                          Propose Session
-                        </button>
+                        <p className="text-sm text-gray-500 mt-1">Sessions will appear here once tutors propose them.</p>
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -2095,23 +2083,17 @@ export default function DashboardWithChildren() {
                 <h3 className="text-lg font-medium text-gray-900">
                   Sessions {selectedStudent ? `for ${selectedStudent.name}` : ''}
                 </h3>
-                <button 
-                  onClick={() => setShowNewSessionModal(true)}
-                  className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center"
-                >
-                  <PlusIcon className="w-4 h-4 mr-2" />
-                  Propose Session
-                </button>
               </div>
               
               {/* Filter Tabs */}
-              <div className="flex space-x-4 border-b border-gray-200">
+              <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
                 {[
                   { id: 'all', name: 'All', count: sessions.length },
-                  { id: 'scheduled', name: 'Scheduled', count: sessions.filter(s => s.status === 'scheduled').length },
-                  { id: 'approved', name: 'Approved', count: sessions.filter(s => s.status === 'approved').length },
+                  { id: 'pending', name: 'Pending', count: sessions.filter(s => s.status === 'scheduled' || s.status === 'rescheduled').length },
+                  { id: 'change_requested', name: 'Change Requested', count: sessions.filter(s => s.status === 'change_requested').length },
+                  { id: 'approved', name: 'Approved', count: sessions.filter(s => s.status === 'approved' || s.status === 'confirmed').length },
                   { id: 'completed', name: 'Completed', count: sessions.filter(s => s.status === 'completed').length },
-                  { id: 'cancelled', name: 'Cancelled', count: sessions.filter(s => s.status === 'cancelled').length }
+                  { id: 'cancelled', name: 'Cancelled', count: sessions.filter(s => s.status === 'cancelled' || s.status === 'no_show').length }
                 ].map((filter) => (
                   <button
                     key={filter.id}
@@ -2143,8 +2125,10 @@ export default function DashboardWithChildren() {
               ) : getFilteredSessions().length === 0 ? (
                 <div className="text-center py-8">
                   <CalendarIcon className="w-12 h-12 text-gray-400 mx-auto" />
-                  <p className="mt-2 text-gray-600">No sessions found</p>
-                  <p className="text-sm text-gray-500">Propose sessions once tutors are matched</p>
+                  <p className="mt-2 text-gray-600">No {sessionFilter === 'all' ? '' : sessionFilter === 'pending' ? 'pending ' : sessionFilter + ' '}sessions found</p>
+                  <p className="text-sm text-gray-500">
+                    {sessionFilter === 'change_requested' ? 'No sessions awaiting tutor response' : 'Sessions will appear here once tutors are matched and propose them'}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -2153,31 +2137,84 @@ export default function DashboardWithChildren() {
                       key={session.id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                      className={`border rounded-lg p-4 hover:shadow-md transition-shadow ${
+                        session.status === 'change_requested'
+                          ? 'border-orange-200 bg-orange-50'
+                          : session.status === 'approved' || session.status === 'confirmed'
+                          ? 'border-blue-200 bg-blue-50'
+                          : session.status === 'completed'
+                          ? 'border-green-200 bg-green-50'
+                          : session.status === 'cancelled' || session.status === 'no_show'
+                          ? 'border-red-200 bg-red-50'
+                          : 'border-gray-200'
+                      }`}
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
                         <div className="flex-1">
-                          <div className="flex items-center space-x-3">
+                          <div className="flex flex-wrap items-center gap-2">
                             <h4 className="text-lg font-medium text-gray-900">
-                              Session on {formatDate(session.session_date)}
+                              {session.title || `Session on ${formatDate(session.session_date)}`}
                             </h4>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(session.status)}`}>
-                              {getStatusIcon(session.status)}
-                              <span className="ml-1">{session.status}</span>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              session.status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                              session.status === 'rescheduled' ? 'bg-purple-100 text-purple-800' :
+                              session.status === 'change_requested' ? 'bg-orange-100 text-orange-800' :
+                              session.status === 'approved' ? 'bg-blue-100 text-blue-800' :
+                              session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                              session.status === 'completed' ? 'bg-green-100 text-green-800' :
+                              session.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                              session.status === 'no_show' ? 'bg-gray-100 text-gray-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {session.status === 'change_requested' ? 'Change Requested' : 
+                               session.status === 'no_show' ? 'No Show' :
+                               session.status.charAt(0).toUpperCase() + session.status.slice(1)}
                             </span>
+                            {session.is_recurring && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                Recurring
+                              </span>
+                            )}
+                            {session.created_by === 'tutor' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                Proposed by Tutor
+                              </span>
+                            )}
                           </div>
                           <p className="text-sm text-gray-600 mt-1">
-                            {session.start_time} - {session.end_time} ({formatDuration(session.duration_hours)})
+                            {formatDate(session.session_date)} • {session.start_time} - {session.end_time} ({formatDuration(session.duration_hours)})
                           </p>
-                          <p className="text-sm text-gray-500 mt-1">
-                            Amount: {session.amount.toLocaleString()} Leones
-                          </p>
+                          {session.location_type && (
+                            <p className="text-sm text-gray-500 mt-1">
+                              Location: {session.location_type === 'home' ? 'At Home' : session.location_type === 'online' ? 'Online' : 'Other'}
+                              {session.location_type === 'online' && session.meeting_link && (
+                                <a href={session.meeting_link} target="_blank" rel="noopener noreferrer" className="ml-2 text-primary-600 hover:underline">
+                                  Join Meeting
+                                </a>
+                              )}
+                            </p>
+                          )}
+                          {session.notes && (
+                            <p className="text-sm text-gray-500 mt-1">Notes: {session.notes}</p>
+                          )}
+                          
+                          {/* Change Request Message - if parent requested change */}
+                          {session.status === 'change_requested' && session.change_request_message && (
+                            <div className="mt-3 p-3 bg-orange-100 rounded-lg border border-orange-200">
+                              <p className="text-sm font-medium text-orange-800">Your Change Request:</p>
+                              <p className="text-sm text-orange-700 mt-1">{session.change_request_message}</p>
+                              <p className="text-xs text-orange-600 mt-1">Waiting for tutor to respond...</p>
+                            </div>
+                          )}
                         </div>
-                        <div className="text-right">
+                        
+                        <div className="flex flex-col items-end gap-2">
                           <p className="text-sm text-gray-500">
                             Created: {formatDate(session.created_at)}
                           </p>
-                          <div className="flex space-x-2 mt-2">
+                          
+                          {/* Session Actions */}
+                          <div className="flex flex-wrap gap-2 justify-end">
                             <button
                               onClick={() => {
                                 setSelectedSession(session)
@@ -2187,39 +2224,50 @@ export default function DashboardWithChildren() {
                             >
                               View Details
                             </button>
-                            {/* Show Edit/Cancel buttons only for scheduled sessions created by parent */}
-                            {session.status === 'scheduled' && session.created_by === 'parent' && (
-                              <>
-                                <button
-                                  onClick={() => handleEditSession(session)}
-                                  className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                                >
-                                  Edit Session
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteSession(session.id)}
-                                  className="text-red-600 hover:text-red-700 text-sm font-medium"
-                                >
-                                  Cancel Session
-                                </button>
-                              </>
-                            )}
-                            {/* Show Approve/Reject buttons only for scheduled sessions created by tutor */}
-                            {session.status === 'scheduled' && session.created_by === 'tutor' && (
+                            
+                            {/* Tutor-proposed sessions (scheduled/rescheduled): Accept / Request Change / Decline */}
+                            {(session.status === 'scheduled' || session.status === 'rescheduled') && session.created_by === 'tutor' && (
                               <>
                                 <button
                                   onClick={() => handleSessionAction(session.id, 'approve')}
-                                  className="text-green-600 hover:text-blue-700 text-sm font-medium"
+                                  disabled={isSubmitting}
+                                  className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                  Approve Session
+                                  {isSubmitting ? 'Accepting...' : 'Accept'}
                                 </button>
                                 <button
-                                  onClick={() => handleSessionAction(session.id, 'reject')}
-                                  className="text-red-600 hover:text-red-700 text-sm font-medium"
+                                  onClick={() => openRequestChangeModal(session)}
+                                  className="bg-orange-600 text-white px-3 py-1 rounded text-sm hover:bg-orange-700"
                                 >
-                                  Reject Session
+                                  Request Change
+                                </button>
+                                <button
+                                  onClick={() => openCancelModal(session)}
+                                  className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                                >
+                                  Decline
                                 </button>
                               </>
+                            )}
+                            
+                            {/* Parent-created sessions (scheduled): Cancel only */}
+                            {session.status === 'scheduled' && session.created_by === 'parent' && (
+                              <button
+                                onClick={() => openCancelModal(session)}
+                                className="text-red-600 hover:text-red-700 text-sm font-medium"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                            
+                            {/* Approved/Confirmed sessions: Can still cancel */}
+                            {(session.status === 'approved' || session.status === 'confirmed') && (
+                              <button
+                                onClick={() => openCancelModal(session)}
+                                className="text-red-600 hover:text-red-700 text-sm font-medium"
+                              >
+                                Cancel Session
+                              </button>
                             )}
                           </div>
                         </div>
@@ -3039,127 +3087,6 @@ export default function DashboardWithChildren() {
         </div>
       )}
 
-      {/* New Session Modal */}
-      {showNewSessionModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4"
-          >
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 className="text-lg font-medium text-gray-900">Schedule New Session</h3>
-              <button
-                onClick={() => setShowNewSessionModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <XMarkIcon className="w-6 h-6" />
-              </button>
-            </div>
-            <form onSubmit={handleNewSession} className="px-6 py-4">
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Child
-                  </label>
-                  <select
-                    required
-                    value={newSessionForm.student_id}
-                    onChange={(e) => setNewSessionForm({...newSessionForm, student_id: e.target.value, request_id: ''})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
-                  >
-                    <option value="">Select a child</option>
-                    {students.map(student => (
-                      <option key={student.id} value={student.id}>{student.name} - {student.grade_level}</option>
-                    ))}
-                  </select>
-                </div>
-                {newSessionForm.student_id && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Request (Optional)
-                    </label>
-                    <select
-                      value={newSessionForm.request_id}
-                      onChange={(e) => setNewSessionForm({...newSessionForm, request_id: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
-                    >
-                      <option value="">No specific request</option>
-                      {tutoringRequests.filter(r => r.student_id === newSessionForm.student_id && (r.status === 'matched' || r.status === 'in_progress')).map(r => (
-                        <option key={r.id} value={r.id}>{r.subjects} - {r.status}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Session Date
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={newSessionForm.session_date}
-                    onChange={(e) => setNewSessionForm({...newSessionForm, session_date: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Start Time
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={newSessionForm.start_time}
-                    onChange={(e) => setNewSessionForm({...newSessionForm, start_time: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    End Time
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={newSessionForm.end_time}
-                    onChange={(e) => setNewSessionForm({...newSessionForm, end_time: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes (for tutor)
-                  </label>
-                  <textarea
-                    value={newSessionForm.notes}
-                    onChange={(e) => setNewSessionForm({...newSessionForm, notes: e.target.value})}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowNewSessionModal(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                >
-                  {isSubmitting ? 'Proposing...' : 'Propose Session'}
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
-
       {/* Quick Actions Modal */}
       {showQuickActionsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -3289,13 +3216,13 @@ export default function DashboardWithChildren() {
 
       {/* Session Details Modal */}
       {showSessionDetailsModal && selectedSession && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4"
+            className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
           >
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
               <h3 className="text-lg font-medium text-gray-900">Session Details</h3>
               <button
                 onClick={() => setShowSessionDetailsModal(false)}
@@ -3305,87 +3232,289 @@ export default function DashboardWithChildren() {
               </button>
             </div>
             <div className="p-6 space-y-4">
-              <div>
-                <h4 className="text-md font-medium text-gray-900">Session Details</h4>
-                <p className="text-sm text-gray-600">Date: {formatDate(selectedSession.session_date)}</p>
-                <p className="text-sm text-gray-600">Time: {selectedSession.start_time} - {selectedSession.end_time}</p>
-                <p className="text-sm text-gray-600">Duration: {formatDuration(selectedSession.duration_hours)}</p>
-                <p className="text-sm text-gray-600">Amount: {selectedSession.amount.toLocaleString()} Leones</p>
-                <p className="text-sm text-gray-600">Status: {selectedSession.status.replace('_', ' ')}</p>
-                <p className="text-sm text-gray-600">Notes: {selectedSession.notes}</p>
-                <p className="text-sm text-gray-600">Created At: {formatDate(selectedSession.created_at)}</p>
+              <div className="space-y-3">
+                {selectedSession.title && (
+                  <h4 className="text-lg font-medium text-gray-900">{selectedSession.title}</h4>
+                )}
+                
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    selectedSession.status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                    selectedSession.status === 'rescheduled' ? 'bg-purple-100 text-purple-800' :
+                    selectedSession.status === 'change_requested' ? 'bg-orange-100 text-orange-800' :
+                    selectedSession.status === 'approved' ? 'bg-blue-100 text-blue-800' :
+                    selectedSession.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                    selectedSession.status === 'completed' ? 'bg-green-100 text-green-800' :
+                    selectedSession.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {selectedSession.status === 'change_requested' ? 'Change Requested' : 
+                     selectedSession.status === 'no_show' ? 'No Show' :
+                     selectedSession.status.charAt(0).toUpperCase() + selectedSession.status.slice(1)}
+                  </span>
+                  {selectedSession.is_recurring && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                      Recurring
+                    </span>
+                  )}
+                  {selectedSession.created_by === 'tutor' && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                      Proposed by Tutor
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500">Date</p>
+                    <p className="font-medium text-gray-900">{formatDate(selectedSession.session_date)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Time</p>
+                    <p className="font-medium text-gray-900">{selectedSession.start_time} - {selectedSession.end_time}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Duration</p>
+                    <p className="font-medium text-gray-900">{formatDuration(selectedSession.duration_hours)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500">Amount</p>
+                    <p className="font-medium text-gray-900">{selectedSession.amount.toLocaleString()} Leones</p>
+                  </div>
+                </div>
+                
+                {selectedSession.location_type && (
+                  <div className="text-sm">
+                    <p className="text-gray-500">Location</p>
+                    <p className="font-medium text-gray-900">
+                      {selectedSession.location_type === 'home' ? 'At Home' : selectedSession.location_type === 'online' ? 'Online' : 'Other'}
+                      {selectedSession.location_type === 'online' && selectedSession.meeting_link && (
+                        <a href={selectedSession.meeting_link} target="_blank" rel="noopener noreferrer" className="ml-2 text-primary-600 hover:underline">
+                          Join Meeting
+                        </a>
+                      )}
+                    </p>
+                  </div>
+                )}
+                
+                {selectedSession.notes && (
+                  <div className="text-sm">
+                    <p className="text-gray-500">Notes</p>
+                    <p className="text-gray-900">{selectedSession.notes}</p>
+                  </div>
+                )}
+                
+                {/* Change Request Message */}
+                {selectedSession.status === 'change_requested' && selectedSession.change_request_message && (
+                  <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                    <p className="text-sm font-medium text-orange-800">Your Change Request:</p>
+                    <p className="text-sm text-orange-700 mt-1">{selectedSession.change_request_message}</p>
+                    <p className="text-xs text-orange-600 mt-2">Waiting for tutor to respond...</p>
+                  </div>
+                )}
               </div>
               
-              {/* Session Management Buttons - Show different actions based on who created the session */}
-              {selectedSession.status === 'scheduled' && selectedSession.created_by === 'parent' && (
-                <div className="flex space-x-3 mb-4">
+              {/* Session Actions */}
+              <div className="border-t border-gray-200 pt-4 space-y-3">
+                {/* Tutor-proposed sessions (scheduled/rescheduled): Accept / Request Change / Decline */}
+                {(selectedSession.status === 'scheduled' || selectedSession.status === 'rescheduled') && selectedSession.created_by === 'tutor' && (
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => handleSessionAction(selectedSession.id, 'approve')}
+                      disabled={isSubmitting}
+                      className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isSubmitting ? 'Accepting...' : 'Accept Session'}
+                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setShowSessionDetailsModal(false)
+                          openRequestChangeModal(selectedSession)
+                        }}
+                        className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+                      >
+                        Request Change
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowSessionDetailsModal(false)
+                          openCancelModal(selectedSession)
+                        }}
+                        className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Approved/Confirmed sessions */}
+                {(selectedSession.status === 'approved' || selectedSession.status === 'confirmed') && (
                   <button
-                    onClick={() => handleEditSession(selectedSession)}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Edit Session
-                  </button>
-                  <button
-                    onClick={() => handleDeleteSession(selectedSession.id)}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                    onClick={() => {
+                      setShowSessionDetailsModal(false)
+                      openCancelModal(selectedSession)
+                    }}
+                    className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                   >
                     Cancel Session
                   </button>
-                </div>
-              )}
+                )}
+                
+                <button
+                  onClick={() => setShowSessionDetailsModal(false)}
+                  className="w-full px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Request Change Modal */}
+      {showRequestChangeModal && sessionForChangeRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-lg shadow-xl max-w-md w-full"
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-medium text-gray-900">Request Change</h3>
+              <button
+                onClick={() => {
+                  setShowRequestChangeModal(false)
+                  setSessionForChangeRequest(null)
+                  setChangeRequestMessage('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              {/* Session Info */}
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">
+                  <strong>Session:</strong> {formatDate(sessionForChangeRequest.session_date)} at {sessionForChangeRequest.start_time}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Duration:</strong> {formatDuration(sessionForChangeRequest.duration_hours)}
+                </p>
+              </div>
               
-              {selectedSession.status === 'scheduled' && selectedSession.created_by === 'tutor' && (
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'approve')}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                  >
-                    Approve Session
-                  </button>
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'reject')}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                  >
-                    Reject Session
-                  </button>
-                </div>
-              )}
-              {selectedSession.status === 'approved' && (
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'complete')}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Mark as Completed
-                  </button>
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'reject')}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                  >
-                    Cancel Session
-                  </button>
-                </div>
-              )}
-              {selectedSession.status === 'completed' && (
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'reject')}
-                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                  >
-                    Cancel Session
-                  </button>
-                </div>
-              )}
-              {selectedSession.status === 'cancelled' && (
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => handleSessionAction(selectedSession.id, 'approve')}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                  >
-                    Reschedule Session
-                  </button>
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  What changes do you need? *
+                </label>
+                <textarea
+                  value={changeRequestMessage}
+                  onChange={(e) => setChangeRequestMessage(e.target.value)}
+                  rows={4}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
+                  placeholder="E.g., Can we reschedule to 3pm instead of 2pm? Or move to a different day?"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  The tutor will be notified and can propose a new time.
+                </p>
+              </div>
+
+              <div className="mt-6 flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRequestChangeModal(false)
+                    setSessionForChangeRequest(null)
+                    setChangeRequestMessage('')
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRequestChange}
+                  disabled={isSubmitting || !changeRequestMessage.trim()}
+                  className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Sending...' : 'Send Request'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Cancel Session Modal */}
+      {showCancelSessionModal && sessionToCancel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-lg shadow-xl max-w-md w-full"
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-medium text-gray-900">Cancel Session</h3>
+              <button
+                onClick={() => {
+                  setShowCancelSessionModal(false)
+                  setSessionToCancel(null)
+                  setCancelReason('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
+                <p className="text-sm text-red-800">
+                  You are about to cancel the session on <strong>{formatDate(sessionToCancel.session_date)}</strong> at <strong>{sessionToCancel.start_time}</strong>.
+                </p>
+                {sessionToCancel.is_recurring && (
+                  <p className="text-sm text-red-700 mt-2">
+                    Note: This will only cancel this single session, not the entire series.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for cancellation *
+                </label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  rows={3}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-gray-900"
+                  placeholder="Please provide a reason..."
+                />
+              </div>
+
+              <div className="mt-6 flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCancelSessionModal(false)
+                    setSessionToCancel(null)
+                    setCancelReason('')
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Keep Session
+                </button>
+                <button
+                  onClick={handleCancelSession}
+                  disabled={isSubmitting || !cancelReason.trim()}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Cancelling...' : 'Cancel Session'}
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>

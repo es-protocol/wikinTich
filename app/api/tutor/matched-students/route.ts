@@ -75,10 +75,12 @@ export async function GET(request: NextRequest) {
     devLog('Fetching matched students for tutor:', tutorRecord.id)
 
     // Fetch home tutoring requests where this tutor is matched
+    // student_id is required: sessions table FK references students.id
     const { data: requests, error: requestsError } = await adminClient
       .from(DB_TABLES.HOME_TUTORING_REQUESTS)
       .select(`
         id,
+        student_id,
         student_name,
         student_age,
         grade_level,
@@ -120,12 +122,16 @@ export async function GET(request: NextRequest) {
         devError('Error fetching parent profiles:', parentError)
       }
 
-      // Build matched students list
+      // Build matched students list (only include requests with a linked student - required for session FK)
       for (const request of requests) {
+        if (!request.student_id) {
+          devLog('Skipping request without student_id:', request.id)
+          continue
+        }
         const parentProfile = parentProfiles?.find(p => p.id === request.parent_id)
         
         matchedStudents.push({
-          student_id: request.id, // Using request ID as student identifier
+          student_id: request.student_id, // Real student FK for home_tutoring_sessions
           student_name: request.student_name,
           parent_id: request.parent_id,
           parent_name: parentProfile?.full_name || 'Unknown Parent',

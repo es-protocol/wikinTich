@@ -203,6 +203,7 @@ export const DB_TABLES = {
   ADMIN_NOTIFICATIONS: 'admin_notifications',
   PARENT_NOTIFICATIONS: 'parent_notifications',
   TUTOR_NOTIFICATIONS: 'tutor_notifications',
+  SESSION_AUDIT_LOG: 'session_audit_log',
 } as const
 
 // Route paths
@@ -307,3 +308,76 @@ export const AVAILABLE_SUBJECTS = [
   'Social Studies',
   'Verbal Reasoning'
 ] as const
+
+// ============================================
+// Session Scheduling Constants
+// ============================================
+
+// Session notification types (extends notification system)
+export const SESSION_NOTIFICATION_TYPES = {
+  /** Tutor proposed a new session */
+  SESSION_PROPOSED: 'session_proposed',
+  /** Parent accepted a proposed session */
+  SESSION_ACCEPTED: 'session_accepted',
+  /** Parent/Tutor requested changes to a session */
+  SESSION_CHANGE_REQUESTED: 'session_change_requested',
+  /** Tutor rescheduled a session */
+  SESSION_RESCHEDULED: 'session_rescheduled',
+  /** Both parties confirmed the session */
+  SESSION_CONFIRMED: 'session_confirmed',
+  /** Session was cancelled */
+  SESSION_CANCELLED: 'session_cancelled',
+  /** Reminder for upcoming session */
+  SESSION_REMINDER: 'session_reminder',
+  /** Session was marked as completed */
+  SESSION_COMPLETED: 'session_completed',
+} as const
+
+// Session API endpoints
+export const SESSION_API_ENDPOINTS = {
+  // Tutor session endpoints
+  TUTOR_SESSIONS: '/api/tutor/sessions',
+  // Parent session endpoints
+  PARENT_SESSIONS: '/api/parent/sessions',
+} as const
+
+// Session error messages
+export const SESSION_ERROR_MESSAGES = {
+  // Not found errors
+  SESSION_NOT_FOUND: 'Session not found',
+  REQUEST_NOT_FOUND: 'Tutoring request not found',
+  STUDENT_NOT_FOUND: 'Student not found',
+  // Status errors
+  SESSION_ALREADY_CANCELLED: 'Session has already been cancelled',
+  SESSION_ALREADY_COMPLETED: 'Session has already been completed',
+  INVALID_SESSION_STATUS: 'Invalid session status for this operation',
+  CANNOT_MODIFY_PAST_SESSION: 'Cannot modify a session that has already occurred',
+  // Validation errors
+  INVALID_SESSION_DATE: 'Session date must be in the future',
+  INVALID_SESSION_TIME: 'End time must be after start time',
+  SESSION_DURATION_TOO_SHORT: 'Session duration must be at least 30 minutes',
+  SESSION_DURATION_TOO_LONG: 'Session duration cannot exceed 8 hours',
+  CHANGE_REQUEST_REQUIRED: 'A message is required when requesting changes',
+  CANCELLATION_REASON_REQUIRED: 'A reason is required when cancelling a session',
+  INVALID_RECURRENCE_RULE: 'Invalid recurrence rule configuration',
+  // Authorization errors
+  UNAUTHORIZED_SESSION_ACCESS: 'You do not have permission to access this session',
+  UNAUTHORIZED_SESSION_CREATE: 'You do not have permission to create sessions for this student',
+  UNAUTHORIZED_SESSION_MODIFY: 'You do not have permission to modify this session',
+  // General errors
+  SESSION_CREATE_FAILED: 'Failed to create session',
+  SESSION_UPDATE_FAILED: 'Failed to update session',
+  SESSION_DELETE_FAILED: 'Failed to delete session',
+} as const
+
+// Session success messages
+export const SESSION_SUCCESS_MESSAGES = {
+  SESSION_CREATED: 'Session proposed successfully',
+  SESSION_ACCEPTED: 'Session accepted successfully',
+  SESSION_RESCHEDULED: 'Session rescheduled successfully',
+  SESSION_CANCELLED: 'Session cancelled successfully',
+  CHANGE_REQUEST_SENT: 'Change request sent successfully',
+  SESSION_COMPLETED: 'Session marked as completed',
+  SESSION_CONFIRMED: 'Session confirmed successfully',
+  RECURRING_SESSIONS_CREATED: 'Recurring sessions created successfully',
+} as const

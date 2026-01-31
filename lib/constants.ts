@@ -193,10 +193,20 @@ export const DB_TABLES = {
   PROFILES: 'profiles',
   STUDENTS: 'students',
   HOME_TUTORING_REQUESTS: 'home_tutoring_requests',
+  HOME_TUTORING_SESSIONS: 'home_tutoring_sessions',
+  HOME_TUTORING_PAYMENTS: 'home_tutoring_payments',
   TUTORS: 'tutors',
   TUTOR_QUALIFICATIONS: 'tutor_qualifications',
+  TUTOR_STUDENT_MATCHES: 'tutor_student_matches',
   PENDING_REGISTRATIONS: 'pending_registrations',
-  FAILED_LOGIN_ATTEMPTS: 'failed_login_attempts'
+  FAILED_LOGIN_ATTEMPTS: 'failed_login_attempts',
+  ADMIN_NOTIFICATIONS: 'admin_notifications',
+  PARENT_NOTIFICATIONS: 'parent_notifications',
+  TUTOR_NOTIFICATIONS: 'tutor_notifications',
+  SESSION_AUDIT_LOG: 'session_audit_log',
+  CONVERSATIONS: 'conversations',
+  MESSAGES: 'messages',
+  MESSAGE_AUDIT_LOG: 'message_audit_log',
 } as const
 
 // Route paths
@@ -216,6 +226,62 @@ export const ROUTES = {
   DASHBOARD_TUTOR: '/tutor-dashboard',
   DASHBOARD_SCHOOL_ADMIN: '/school-admin-dashboard',
   DASHBOARD_SUPER_ADMIN: '/super-admin-dashboard'
+} as const
+
+// Admin notification types
+export const ADMIN_NOTIFICATION_TYPES = {
+  NEW_REQUEST: 'new_request',
+  TUTOR_ASSIGNED: 'tutor_assigned',
+  REQUEST_UPDATED: 'request_updated',
+  REQUEST_CANCELLED: 'request_cancelled',
+  SYSTEM: 'system',
+  WHATSAPP_REQUEST: 'whatsapp_request',
+} as const
+
+// Related entity types for notifications
+export const RELATED_ENTITY_TYPES = {
+  HOME_TUTORING_REQUEST: 'home_tutoring_request',
+  PENDING_REGISTRATION: 'pending_registration',
+  TUTOR: 'tutor',
+  PARENT: 'parent',
+  SYSTEM: 'system',
+} as const
+
+// Admin dashboard sections
+export const ADMIN_DASHBOARD_SECTIONS = {
+  OVERVIEW: 'overview',
+  TUTORS: 'tutors',
+  REQUESTS: 'requests',
+  PENDING_REGISTRATIONS: 'pending-registrations',
+  STUDENTS: 'students',
+  SESSIONS: 'sessions',
+  PAYMENTS: 'payments',
+} as const
+
+// Notification polling interval (in milliseconds)
+export const NOTIFICATION_POLLING_INTERVAL_MS = 30 * TIME_CONSTANTS.SECOND
+
+// Admin API endpoints
+export const ADMIN_API_ENDPOINTS = {
+  STATS: '/api/admin/stats',
+  NOTIFICATIONS: '/api/admin/notifications',
+  PENDING_REGISTRATIONS: '/api/admin/pending-registrations',
+  REQUESTS: '/api/admin/requests',
+  TUTORS: '/api/admin/tutors',
+  TUTORS_AVAILABLE: '/api/admin/tutors/available',
+  STUDENTS: '/api/admin/students',
+  MATCH: '/api/admin/match',
+} as const
+
+// Tutor API endpoints
+export const TUTOR_API_ENDPOINTS = {
+  NOTIFICATIONS: '/api/tutor/notifications',
+  MATCHED_STUDENTS: '/api/tutor/matched-students',
+} as const
+
+// Parent API endpoints
+export const PARENT_API_ENDPOINTS = {
+  MATCHED_TUTOR: '/api/parent/matched-tutor',
 } as const
 
 // Available subjects for tutoring
@@ -245,3 +311,95 @@ export const AVAILABLE_SUBJECTS = [
   'Social Studies',
   'Verbal Reasoning'
 ] as const
+
+// ============================================
+// Session Scheduling Constants
+// ============================================
+
+// Session notification types (extends notification system)
+export const SESSION_NOTIFICATION_TYPES = {
+  /** Tutor proposed a new session */
+  SESSION_PROPOSED: 'session_proposed',
+  /** Parent accepted a proposed session */
+  SESSION_ACCEPTED: 'session_accepted',
+  /** Parent/Tutor requested changes to a session */
+  SESSION_CHANGE_REQUESTED: 'session_change_requested',
+  /** Tutor rescheduled a session */
+  SESSION_RESCHEDULED: 'session_rescheduled',
+  /** Both parties confirmed the session */
+  SESSION_CONFIRMED: 'session_confirmed',
+  /** Session was cancelled */
+  SESSION_CANCELLED: 'session_cancelled',
+  /** Reminder for upcoming session */
+  SESSION_REMINDER: 'session_reminder',
+  /** Session was marked as completed */
+  SESSION_COMPLETED: 'session_completed',
+} as const
+
+// Session API endpoints
+export const SESSION_API_ENDPOINTS = {
+  // Tutor session endpoints
+  TUTOR_SESSIONS: '/api/tutor/sessions',
+  // Parent session endpoints
+  PARENT_SESSIONS: '/api/parent/sessions',
+} as const
+
+// Session error messages
+export const SESSION_ERROR_MESSAGES = {
+  // Not found errors
+  SESSION_NOT_FOUND: 'Session not found',
+  REQUEST_NOT_FOUND: 'Tutoring request not found',
+  STUDENT_NOT_FOUND: 'Student not found',
+  // Status errors
+  SESSION_ALREADY_CANCELLED: 'Session has already been cancelled',
+  SESSION_ALREADY_COMPLETED: 'Session has already been completed',
+  INVALID_SESSION_STATUS: 'Invalid session status for this operation',
+  CANNOT_MODIFY_PAST_SESSION: 'Cannot modify a session that has already occurred',
+  // Validation errors
+  INVALID_SESSION_DATE: 'Session date must be in the future',
+  INVALID_SESSION_TIME: 'End time must be after start time',
+  SESSION_DURATION_TOO_SHORT: 'Session duration must be at least 30 minutes',
+  SESSION_DURATION_TOO_LONG: 'Session duration cannot exceed 8 hours',
+  CHANGE_REQUEST_REQUIRED: 'A message is required when requesting changes',
+  CANCELLATION_REASON_REQUIRED: 'A reason is required when cancelling a session',
+  INVALID_RECURRENCE_RULE: 'Invalid recurrence rule configuration',
+  // Authorization errors
+  UNAUTHORIZED_SESSION_ACCESS: 'You do not have permission to access this session',
+  UNAUTHORIZED_SESSION_CREATE: 'You do not have permission to create sessions for this student',
+  UNAUTHORIZED_SESSION_MODIFY: 'You do not have permission to modify this session',
+  // General errors
+  SESSION_CREATE_FAILED: 'Failed to create session',
+  SESSION_UPDATE_FAILED: 'Failed to update session',
+  SESSION_DELETE_FAILED: 'Failed to delete session',
+} as const
+
+// Session success messages
+export const SESSION_SUCCESS_MESSAGES = {
+  SESSION_CREATED: 'Session proposed successfully',
+  SESSION_ACCEPTED: 'Session accepted successfully',
+  SESSION_RESCHEDULED: 'Session rescheduled successfully',
+  SESSION_CANCELLED: 'Session cancelled successfully',
+  CHANGE_REQUEST_SENT: 'Change request sent successfully',
+  SESSION_COMPLETED: 'Session marked as completed',
+  SESSION_CONFIRMED: 'Session confirmed successfully',
+  RECURRING_SESSIONS_CREATED: 'Recurring sessions created successfully',
+} as const
+
+// ============================================
+// In-app Messaging Constants
+// ============================================
+
+export const MESSAGE_CONSTANTS = {
+  MAX_BODY_LENGTH: 2000,
+  DEFAULT_PAGE_LIMIT: 50,
+  MAX_PAGE_LIMIT: 100,
+} as const
+
+export const MESSAGE_ERROR_MESSAGES = {
+  CONVERSATION_NOT_FOUND: 'Conversation not found',
+  UNAUTHORIZED_CONVERSATION_ACCESS: 'You do not have permission to access this conversation',
+  REQUEST_NOT_MATCHED: 'This request is not matched to you',
+  MESSAGE_BODY_REQUIRED: 'Message content is required',
+  MESSAGE_BODY_TOO_LONG: 'Message is too long',
+  MESSAGE_SEND_FAILED: 'Failed to send message',
+} as const

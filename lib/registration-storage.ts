@@ -45,7 +45,7 @@ export const storeRegistrationData = async (
   email: string,
   data: PendingRegistrationData,
   type: typeof REGISTRATION_TYPES.PARENT | typeof REGISTRATION_TYPES.TUTOR
-): Promise<{ success: boolean; error?: string }> => {
+): Promise<{ success: boolean; data?: { id: string }; error?: string }> => {
   try {
     console.log('🔍 Storage debug - supabaseAdmin available:', !!supabaseAdmin)
     console.log('🔍 Storage debug - SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ Set' : '❌ Missing')
@@ -60,13 +60,17 @@ export const storeRegistrationData = async (
     
     const { data: result, error } = await supabaseAdmin
       .from('pending_registrations')
-      .upsert({
-        email,
-        registration_data: data,
-        registration_type: type,
-        expires_at: expiresAt
-      })
-      .select()
+      .upsert(
+        {
+          email,
+          registration_data: data,
+          registration_type: type,
+          expires_at: expiresAt
+        },
+        { onConflict: 'email' }
+      )
+      .select('id')
+      .single()
 
     if (error) {
       console.error('Error storing registration data:', error)
@@ -74,12 +78,12 @@ export const storeRegistrationData = async (
     }
 
     // Check if we actually got data back (upsert succeeded)
-    if (!result || result.length === 0) {
+    if (!result || !result.id) {
       console.error('No data returned from upsert operation')
       return { success: false, error: 'No data returned from database operation' }
     }
 
-    return { success: true }
+    return { success: true, data: { id: result.id } }
   } catch (error) {
     console.error('Error storing registration data:', error)
     return { 

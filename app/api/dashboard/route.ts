@@ -176,11 +176,7 @@ async function fetchSessions(userId: string) {
 
   const { data: sessions, error } = await supabaseAdmin
     .from('home_tutoring_sessions')
-    .select(`
-      *,
-      students:student_id(name, age, grade_level),
-      tutors:tutor_id(email, phone)
-    `)
+    .select('*')
     .in('request_id', requestIds)
     .order('session_date', { ascending: false })
 

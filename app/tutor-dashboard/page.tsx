@@ -2,32 +2,37 @@
 
 import { useAuth } from '@/lib/auth-context'
 import {
-  CertificateData,
-  FILE_UPLOAD_LIMITS,
-  PROFILE_COMPLETION_STEP_DESCRIPTIONS,
-  PROFILE_COMPLETION_STEP_LABELS,
-  ProfileCompletionData,
-  VERIFICATION_STEPS
+    CertificateData,
+    FILE_UPLOAD_LIMITS,
+    PROFILE_COMPLETION_STEP_DESCRIPTIONS,
+    PROFILE_COMPLETION_STEP_LABELS,
+    ProfileCompletionData,
+    VERIFICATION_STEPS
 } from '@/lib/enhanced-tutor-types'
 import { supabase } from '@/lib/supabase'
 import {
-  AcademicCapIcon,
-  AcademicCapIcon as AcademicCapIconSolid,
-  ArrowRightOnRectangleIcon,
-  BellIcon,
-  CalendarIcon,
-  ChevronDownIcon,
-  Cog6ToothIcon,
-  DocumentTextIcon,
-  EnvelopeIcon,
-  PhoneIcon,
-  PhotoIcon,
-  StarIcon,
-  UserIcon,
-  XMarkIcon
+    AcademicCapIcon,
+    AcademicCapIcon as AcademicCapIconSolid,
+    ArrowRightOnRectangleIcon,
+    BellIcon,
+    CalendarIcon,
+    ChatBubbleLeftRightIcon,
+    ChevronDownIcon,
+    ChevronRightIcon,
+    Cog6ToothIcon,
+    DocumentTextIcon,
+    EnvelopeIcon,
+    PaperAirplaneIcon,
+    PhoneIcon,
+    PhotoIcon,
+    StarIcon,
+    UserGroupIcon,
+    UserIcon,
+    XMarkIcon
 } from '@heroicons/react/24/outline'
+import type { ConversationWithDetails, Message } from '@/lib/message-types'
 import { motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface TutorProfile {
   id: string
@@ -99,11 +104,34 @@ interface HomeTutoringSession {
   end_time: string
   duration_hours: number
   amount: number
-  status: string
+  status: 'scheduled' | 'approved' | 'change_requested' | 'rescheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
   notes: string
   student_id: string
   student_name: string
+  parent_id?: string
   created_by?: string  // Add this field to track who created the session
+  // Change request fields
+  change_request_message?: string
+  change_requested_at?: string
+  change_requested_by?: 'tutor' | 'parent'
+  // Recurring session fields
+  is_recurring?: boolean
+  recurrence_rule?: {
+    frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly'
+    interval: number
+    days_of_week?: string[]
+    end_date?: string
+    end_after_occurrences?: number
+  }
+  recurring_parent_id?: string
+  // Location fields
+  location_type?: 'home' | 'online' | 'other'
+  location_address?: string
+  meeting_link?: string
+  // Title and description
+  title?: string
+  description?: string
+  subjects?: string[]
 }
 
 interface Payment {
@@ -148,10 +176,12 @@ interface Session {
   end_time: string
   duration_hours: number
   amount: number
-  status: 'scheduled' | 'approved' | 'completed' | 'cancelled' | 'no_show'  // Added 'approved' status
+  status: 'scheduled' | 'approved' | 'change_requested' | 'rescheduled' | 'confirmed' | 'completed' | 'cancelled' | 'no_show'
   notes: string | null
   created_at: string
   updated_at: string | null
+  change_request_message?: string
+  change_requested_by?: 'tutor' | 'parent'
 }
 
 export default function TutorDashboard() {
@@ -224,10 +254,51 @@ export default function TutorDashboard() {
     session_date: '',
     start_time: '',
     end_time: '',
-    notes: ''
+    notes: '',
+    title: '',
+    description: '',
+    location_type: 'home' as 'home' | 'online' | 'other',
+    location_address: '',
+    meeting_link: '',
+    is_recurring: false,
+    recurrence_frequency: 'weekly' as 'daily' | 'weekly' | 'biweekly' | 'monthly',
+    recurrence_interval: 1,
+    recurrence_days: [] as string[],
+    recurrence_end_type: 'date' as 'date' | 'occurrences',
+    recurrence_end_date: '',
+    recurrence_occurrences: 4
   })
+  
+  // Reschedule modal states
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false)
+  const [sessionToReschedule, setSessionToReschedule] = useState<HomeTutoringSession | null>(null)
+  const [rescheduleForm, setRescheduleForm] = useState({
+    new_date: '',
+    new_start_time: '',
+    new_end_time: '',
+    message: ''
+  })
+  
+  // Cancel session states
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [sessionToCancel, setSessionToCancel] = useState<HomeTutoringSession | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [sessionFilter, setSessionFilter] = useState<string>('all')
+
+  // CSRF token for session state-changing requests (create, reschedule, cancel, complete, no_show)
+  const [csrfToken, setCsrfToken] = useState<string | null>(null)
+
+  // Messages (in-app messaging)
+  const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [messageInput, setMessageInput] = useState('')
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false)
+  const [conversationsError, setConversationsError] = useState<string | null>(null)
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [isSendingMessage, setIsSendingMessage] = useState(false)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   const { user, isLoading: authLoading, logout } = useAuth()
 
@@ -245,6 +316,132 @@ export default function TutorDashboard() {
       console.log('Debug: Conditions not met, not calling loadDashboardData()')
     }
   }, [user, authLoading])
+
+  // Fetch CSRF token when user is loaded (required for session create/reschedule/cancel/complete)
+  useEffect(() => {
+    if (!user || user.role !== 'tutor') return
+    const loadCsrfToken = async () => {
+      try {
+        const res = await fetch('/api/csrf', { credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (data?.token) setCsrfToken(data.token)
+      } catch {
+        // Non-blocking; session APIs will return 400 if token missing
+      }
+    }
+    loadCsrfToken()
+  }, [user])
+
+  const fetchConversations = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
+    try {
+      if (!silent) {
+        setIsLoadingConversations(true)
+        setConversationsError(null)
+      }
+      const res = await fetch('/api/messages/conversations', { credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to load conversations')
+      setConversations(data.conversations || [])
+      setConversationsError(null)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to load conversations'
+      if (!silent) {
+        console.error('Error fetching conversations:', e)
+        setConversationsError(message)
+      }
+      setConversations([])
+    } finally {
+      if (!silent) setIsLoadingConversations(false)
+    }
+  }, [])
+
+  const fetchMessages = useCallback(async (conversationId: string, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
+    try {
+      if (!silent) setIsLoadingMessages(true)
+      const res = await fetch(`/api/messages/conversations/${conversationId}/messages`, { credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to load messages')
+      setMessages(data.messages || [])
+    } catch (e) {
+      if (!silent) console.error('Error fetching messages:', e)
+      setMessages([])
+    } finally {
+      if (!silent) setIsLoadingMessages(false)
+    }
+  }, [])
+
+  const sendMessage = useCallback(async (conversationId: string, content: string) => {
+    const trimmed = content.trim()
+    if (!trimmed || isSendingMessage) return
+    try {
+      setIsSendingMessage(true)
+      const res = await fetch(`/api/messages/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ content: trimmed, csrf_token: csrfToken ?? '' }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to send message')
+      if (data.message) setMessages(prev => [...prev, data.message])
+      setMessageInput('')
+      await fetchConversations()
+    } catch (e) {
+      console.error('Error sending message:', e)
+      alert(e instanceof Error ? e.message : 'Failed to send message')
+    } finally {
+      setIsSendingMessage(false)
+    }
+  }, [csrfToken, isSendingMessage, fetchConversations])
+
+  const markConversationAsRead = useCallback(async (conversationId: string) => {
+    try {
+      await fetch(`/api/messages/conversations/${conversationId}/read`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ csrf_token: csrfToken ?? '' }),
+      })
+      await fetchConversations({ silent: true })
+    } catch {
+      // Non-blocking
+    }
+  }, [csrfToken, fetchConversations])
+
+  useEffect(() => {
+    if (activeSection === 'messages' && userProfile) {
+      fetchConversations()
+    }
+  }, [activeSection, userProfile, fetchConversations])
+
+  useEffect(() => {
+    if (selectedConversationId) {
+      markConversationAsRead(selectedConversationId)
+      fetchMessages(selectedConversationId)
+    } else {
+      setMessages([])
+    }
+  }, [selectedConversationId, fetchMessages, markConversationAsRead])
+
+  // Scroll message list to bottom when opening thread or when messages update
+  useEffect(() => {
+    if (!selectedConversationId || !messages.length) return
+    messagesContainerRef.current?.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' })
+  }, [selectedConversationId, messages])
+
+  // Poll for new messages when a thread is open (5–10 sec); silent = no loading spinner/flicker
+  const MESSAGE_POLL_INTERVAL_MS = 8_000
+  useEffect(() => {
+    if (!selectedConversationId || activeSection !== 'messages') return
+    const interval = setInterval(() => {
+      fetchMessages(selectedConversationId, { silent: true })
+      markConversationAsRead(selectedConversationId)
+      fetchConversations({ silent: true })
+    }, MESSAGE_POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [selectedConversationId, activeSection, fetchMessages, fetchConversations, markConversationAsRead])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -267,6 +464,18 @@ export default function TutorDashboard() {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [showProfileDropdown, showNotificationsDropdown])
+
+  useEffect(() => {
+    if (!tutorData) {
+      return
+    }
+
+    const interval = setInterval(() => {
+      fetchNotifications(tutorData, { silent: true })
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [tutorData])
 
 
 
@@ -430,40 +639,20 @@ export default function TutorDashboard() {
         setInstitutionSessions(instSessions || [])
       }
 
-      // Fetch home tutoring sessions
-      const { data: homeSessions, error: homeError } = await supabase
-        .from('home_tutoring_sessions')
-        .select(`
-          *,
-          home_tutoring_requests!inner(student_name)
-        `)
-        .eq('tutor_id', tutor.id)
-        .order('session_date', { ascending: false })
+      // Fetch home tutoring sessions via API (bypasses RLS; client Supabase may not see rows)
+      const sessionsResponse = await fetch(
+        '/api/tutor/sessions?limit=200',
+        { method: 'GET', credentials: 'include' }
+      )
 
-      if (homeError) {
-        console.error('Error fetching home tutoring sessions:', homeError)
+      if (sessionsResponse.ok) {
+        const sessionsData = await sessionsResponse.json()
+        const homeSessions = sessionsData.sessions || []
+        console.log('Debug: Home tutoring sessions from API:', homeSessions.length)
+        setHomeTutoringSessions(homeSessions)
       } else {
-        console.log('Debug: Home tutoring sessions found:', homeSessions)
-        console.log('Debug: Number of home tutoring sessions:', homeSessions?.length || 0)
-        setHomeTutoringSessions(homeSessions || [])
-      }
-
-      // Debug: Let's also check what sessions exist for any tutor
-      const { data: allSessions, error: allSessionsError } = await supabase
-        .from('home_tutoring_sessions')
-        .select('*')
-        .limit(10)
-
-      if (allSessionsError) {
-        console.error('Error fetching all sessions:', allSessionsError)
-      } else {
-        console.log('Debug: All sessions in database:', allSessions)
-        console.log('Debug: Number of all sessions:', allSessions?.length || 0)
-        
-        // Check if any of these sessions have the right tutor_id
-        const sessionsForThisTutor = allSessions?.filter(s => s.tutor_id === tutor.id) || []
-        console.log('Debug: Sessions for this tutor (from all sessions):', sessionsForThisTutor)
-        console.log('Debug: Number of sessions for this tutor:', sessionsForThisTutor.length)
+        console.error('Error fetching home tutoring sessions:', sessionsResponse.status)
+        setHomeTutoringSessions([])
       }
 
     } catch (error) {
@@ -521,135 +710,74 @@ export default function TutorDashboard() {
     }
   }
 
-  const fetchNotifications = async (tutor: TutorData) => {
+  const fetchNotifications = async (
+    tutor: TutorData,
+    options?: { silent?: boolean }
+  ) => {
     try {
-      setIsLoadingNotifications(true)
+      if (!options?.silent) {
+        setIsLoadingNotifications(true)
+      }
       
       if (!tutor) return
 
-      const { data: notifData, error } = await supabase
-        .from('tutor_notifications')
-        .select('*')
-        .eq('tutor_id', tutor.id)
-        .order('created_at', { ascending: false })
+      // Use API to fetch notifications (bypasses RLS)
+      const response = await fetch('/api/tutor/notifications', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      if (error) {
-        console.error('Error fetching notifications:', error)
-      } else {
-        setNotifications(notifData || [])
+      if (!response.ok) {
+        console.error('Error fetching notifications:', response.status)
+        return
+      }
+
+      const data = await response.json()
+      setNotifications(data.notifications || [])
+
+      // On silent poll (every 30s), refresh sessions so "Change Requested" tab and counts
+      // update when a parent requests a change (initial load already fetches sessions in loadDashboardData)
+      if (options?.silent && tutor) {
+        await fetchSessions(tutor)
       }
     } catch (error) {
       console.error('Error fetching notifications:', error)
     } finally {
-      setIsLoadingNotifications(false)
+      if (!options?.silent) {
+        setIsLoadingNotifications(false)
+      }
     }
   }
 
   const fetchMatchedStudents = async (tutor: TutorData) => {
     try {
       console.log('Debug: fetchMatchedStudents started')
-      console.log('Debug: tutor.id =', tutor.id)
       
       if (!tutor) return
 
-      // Get accepted tutor proposals to find matched students
-      console.log('Debug: Fetching accepted tutor proposals for tutor_id:', tutor.id)
-      const { data: acceptedProposals, error: proposalsError } = await supabase
-        .from('tutor_proposals')
-        .select(`
-          student_id,
-          students!inner(name, parent_id),
-          profiles!inner(full_name)
-        `)
-        .eq('tutor_id', tutor.id)
-        .eq('status', 'accepted')
+      // Use API to fetch matched students (bypasses RLS)
+      const response = await fetch('/api/tutor/matched-students', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      console.log('Debug: Accepted proposals query result:', { acceptedProposals, proposalsError })
-
-      if (proposalsError) {
-        console.error('Error fetching matched students:', proposalsError)
+      if (!response.ok) {
+        console.error('Error fetching matched students:', response.status)
         return
       }
 
-      // Get home tutoring requests for additional context
-      console.log('Debug: Fetching home tutoring requests with matched_tutor_id:', tutor.id)
-      const { data: requests, error: requestsError } = await supabase
-        .from('home_tutoring_requests')
-        .select('student_id, subjects, matched_tutor_id, status')
-        .eq('matched_tutor_id', tutor.id)
+      const data = await response.json()
+      console.log('Debug: Matched students from API:', data.students)
 
-      console.log('Debug: Home tutoring requests query result:', { requests, requestsError })
-
-      if (requestsError) {
-        console.error('Error fetching requests:', requestsError)
-      }
-
-      // Let's also check ALL tutor proposals for this tutor to see what exists
-      console.log('Debug: Fetching ALL tutor proposals for tutor_id:', tutor.id)
-      const { data: allProposals, error: allProposalsError } = await supabase
-        .from('tutor_proposals')
-        .select('student_id, status, created_at')
-        .eq('tutor_id', tutor.id)
-
-      console.log('Debug: All proposals query result:', { allProposals, allProposalsError })
-
-      // Let's also check ALL home tutoring requests to see if any have this tutor as matched
-      console.log('Debug: Fetching ALL home tutoring requests to check for matches')
-      const { data: allRequests, error: allRequestsError } = await supabase
-        .from('home_tutoring_requests')
-        .select('id, student_id, matched_tutor_id, status')
-        .limit(20)
-
-      console.log('Debug: All requests query result:', { allRequests, allRequestsError })
-
-      // Combine data to create matched students list
-      let students = acceptedProposals?.map(proposal => {
-        const request = requests?.find(r => r.student_id === proposal.student_id)
-        return {
-          student_id: proposal.student_id,
-          student_name: (proposal.students as any).name,
-          parent_id: (proposal.students as any).parent_id,
-          parent_name: (proposal.profiles as any).full_name,
-          subjects: request?.subjects || 'General'
-        }
-      }) || []
-
-      // If no students found through proposals, try to find them through home tutoring requests
-      if (students.length === 0 && requests && requests.length > 0) {
-        console.log('Debug: No students found through proposals, trying to find through requests')
-        
-        // Get student details for the requests that have this tutor as matched_tutor_id
-        const studentIds = requests.map(r => r.student_id)
-        console.log('Debug: Student IDs from requests:', studentIds)
-        
-        if (studentIds.length > 0) {
-          const { data: studentDetails, error: studentDetailsError } = await supabase
-            .from('students')
-            .select(`
-              id,
-              name,
-              parent_id,
-              profiles!inner(full_name)
-            `)
-            .in('id', studentIds)
-
-          console.log('Debug: Student details query result:', { studentDetails, studentDetailsError })
-
-          if (studentDetails && !studentDetailsError) {
-            students = studentDetails.map(student => {
-              const request = requests.find(r => r.student_id === student.id)
-              return {
-                student_id: student.id,
-                student_name: student.name,
-                parent_id: student.parent_id,
-                parent_name: (student.profiles as any).full_name,
-                subjects: request?.subjects || 'General'
-              }
-            })
-            console.log('Debug: Students found through requests:', students)
-          }
-        }
-      }
+      const students = data.students?.map((student: any) => ({
+        student_id: student.student_id,
+        student_name: student.student_name,
+        parent_id: student.parent_id,
+        parent_name: student.parent_name,
+        subjects: student.subjects || 'General',
+        grade_level: student.grade_level || null,
+        request_id: student.request_id  // Required for creating sessions
+      })) || []
 
       console.log('Debug: Final matched students list:', students)
       console.log('Debug: Number of matched students:', students.length)
@@ -1201,55 +1329,63 @@ export default function TutorDashboard() {
     try {
       setIsSubmitting(true)
 
-      // Find the request for this student
-      const request = await supabase
-        .from('home_tutoring_requests')
-        .select('id')
-        .eq('student_id', selectedStudent)
-        .eq('matched_tutor_id', tutorData.id)
-        .single()
-
-      if (request.error || !request.data) {
-        throw new Error('No matching request found')
-      }
-
-      // Calculate duration
-      const startTime = new Date(`2000-01-01T${proposeSessionForm.start_time}`)
-      const endTime = new Date(`2000-01-01T${proposeSessionForm.end_time}`)
-      const durationHours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60)
-
-             // Create session proposal - Add created_by field to distinguish tutor-created sessions
-       const { error: sessionError } = await supabase
-         .from('home_tutoring_sessions')
-         .insert({
-           request_id: request.data.id, // Use the actual request ID for tutor-created sessions
-           tutor_id: tutorData.id,
-           student_id: selectedStudent,
-           session_date: proposeSessionForm.session_date,
-           start_time: proposeSessionForm.start_time,
-           end_time: proposeSessionForm.end_time,
-           duration_hours: durationHours,
-           amount: 70000, // Add default amount in Sierra Leone Leones (SLL)
-           status: 'scheduled', // Use 'scheduled' instead of 'proposed' to match database constraint
-           notes: proposeSessionForm.notes,
-           created_by: 'tutor' // Add this field to distinguish tutor-created sessions
-         })
-
-      if (sessionError) {
-        throw sessionError
-      }
-
-      // Create notification for parent
+      // Find the student and request info
       const student = matchedStudents.find(s => s.student_id === selectedStudent)
-      if (student) {
-        await supabase
-          .from('parent_notifications')
-          .insert({
-            parent_id: student.parent_id,
-            title: 'New Session Scheduled',
-            message: `Tutor has scheduled a new session for ${student.student_name} on ${formatDate(proposeSessionForm.session_date)}`,
-            notification_type: 'session'
-          })
+      if (!student) {
+        throw new Error('Student not found')
+      }
+
+      // Build request body for the API
+      const requestBody: Record<string, unknown> = {
+        request_id: student.request_id,
+        student_id: selectedStudent,
+        parent_id: student.parent_id,
+        session_date: proposeSessionForm.session_date,
+        start_time: proposeSessionForm.start_time,
+        end_time: proposeSessionForm.end_time,
+        title: proposeSessionForm.title || `Session with ${student.student_name}`,
+        description: proposeSessionForm.description || undefined,
+        notes: proposeSessionForm.notes || undefined,
+        location_type: proposeSessionForm.location_type,
+        location_address: proposeSessionForm.location_type === 'home' || proposeSessionForm.location_type === 'other' 
+          ? proposeSessionForm.location_address : undefined,
+        meeting_link: proposeSessionForm.location_type === 'online' 
+          ? proposeSessionForm.meeting_link : undefined,
+        subjects: student.subjects ? student.subjects.split(', ') : undefined,
+      }
+
+      // Add recurring session data if enabled
+      if (proposeSessionForm.is_recurring) {
+        requestBody.is_recurring = true
+        requestBody.recurrence_rule = {
+          frequency: proposeSessionForm.recurrence_frequency,
+          interval: proposeSessionForm.recurrence_interval,
+          days_of_week: proposeSessionForm.recurrence_days.length > 0 
+            ? proposeSessionForm.recurrence_days 
+            : undefined,
+          end_date: proposeSessionForm.recurrence_end_type === 'date' 
+            ? proposeSessionForm.recurrence_end_date 
+            : undefined,
+          end_after_occurrences: proposeSessionForm.recurrence_end_type === 'occurrences' 
+            ? proposeSessionForm.recurrence_occurrences 
+            : undefined,
+        }
+      }
+
+      // Call the new API endpoint (include CSRF token for state-changing request)
+      const response = await fetch('/api/tutor/sessions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ ...requestBody, csrf_token: csrfToken ?? '' }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to schedule session')
       }
 
       // Reset form and close modal
@@ -1257,7 +1393,19 @@ export default function TutorDashboard() {
         session_date: '',
         start_time: '',
         end_time: '',
-        notes: ''
+        notes: '',
+        title: '',
+        description: '',
+        location_type: 'home',
+        location_address: '',
+        meeting_link: '',
+        is_recurring: false,
+        recurrence_frequency: 'weekly',
+        recurrence_interval: 1,
+        recurrence_days: [],
+        recurrence_end_type: 'date',
+        recurrence_end_date: '',
+        recurrence_occurrences: 4
       })
       setShowProposeSessionModal(false)
       
@@ -1266,26 +1414,198 @@ export default function TutorDashboard() {
         await fetchSessions(tutorData)
       }
       
-      alert('Session scheduled successfully!')
+      const successMessage = proposeSessionForm.is_recurring 
+        ? `${data.sessions_created || 'Multiple'} recurring sessions scheduled successfully!`
+        : 'Session scheduled successfully!'
+      alert(successMessage)
     } catch (error) {
       console.error('Error scheduling session:', error)
-      alert('Failed to schedule session. Please try again.')
+      alert(error instanceof Error ? error.message : 'Failed to schedule session. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
   }
 
   const handleEditSession = (session: HomeTutoringSession) => {
-    // TODO: Implement session editing functionality
-    console.log('Edit session:', session)
-    alert('Session editing functionality coming soon!')
+    // Open reschedule modal (normalize times to HH:MM for time inputs)
+    setSessionToReschedule(session)
+    setRescheduleForm({
+      new_date: session.session_date,
+      new_start_time: timeToHHMM(session.start_time),
+      new_end_time: timeToHHMM(session.end_time),
+      message: ''
+    })
+    setShowRescheduleModal(true)
   }
 
-  const handleSessionAction = async (sessionId: string, action: 'approve' | 'reject' | 'cancel') => {
+  const handleRescheduleSession = async () => {
+    if (!sessionToReschedule) return
+
+    try {
+      setIsSubmitting(true)
+
+      const response = await fetch(`/api/tutor/sessions/${sessionToReschedule.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          csrf_token: csrfToken ?? '',
+          action: 'reschedule',
+          new_date: rescheduleForm.new_date,
+          new_start_time: rescheduleForm.new_start_time,
+          new_end_time: rescheduleForm.new_end_time,
+          message: rescheduleForm.message || undefined,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to reschedule session')
+      }
+
+      // Close modal and reset
+      setShowRescheduleModal(false)
+      setSessionToReschedule(null)
+      setRescheduleForm({ new_date: '', new_start_time: '', new_end_time: '', message: '' })
+
+      // Refresh sessions
+      await loadDashboardData()
+
+      alert('Session rescheduled successfully!')
+    } catch (error) {
+      console.error('Error rescheduling session:', error)
+      alert(error instanceof Error ? error.message : 'Failed to reschedule session. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleCancelSession = async () => {
+    if (!sessionToCancel || !cancelReason.trim()) {
+      alert('Please provide a reason for cancellation')
+      return
+    }
+
+    try {
+      setIsSubmitting(true)
+
+      const response = await fetch(`/api/tutor/sessions/${sessionToCancel.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          csrf_token: csrfToken ?? '',
+          reason: cancelReason,
+          cancel_series: sessionToCancel.is_recurring || false,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to cancel session')
+      }
+
+      // Close modal and reset
+      setShowCancelModal(false)
+      setSessionToCancel(null)
+      setCancelReason('')
+
+      // Refresh sessions
+      await loadDashboardData()
+
+      alert('Session cancelled successfully!')
+    } catch (error) {
+      console.error('Error cancelling session:', error)
+      alert(error instanceof Error ? error.message : 'Failed to cancel session. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleAcceptChangeRequest = async (session: HomeTutoringSession) => {
+    // Open reschedule modal pre-filled for accepting the change (normalize times to HH:MM)
+    setSessionToReschedule(session)
+    setRescheduleForm({
+      new_date: session.session_date,
+      new_start_time: timeToHHMM(session.start_time),
+      new_end_time: timeToHHMM(session.end_time),
+      message: ''
+    })
+    setShowRescheduleModal(true)
+  }
+
+  const handleCompleteSession = async (sessionId: string) => {
+    try {
+      setIsSubmitting(true)
+
+      const response = await fetch(`/api/tutor/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ csrf_token: csrfToken ?? '', action: 'complete' }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to complete session')
+      }
+
+      await loadDashboardData()
+      alert('Session marked as completed!')
+    } catch (error) {
+      console.error('Error completing session:', error)
+      alert(error instanceof Error ? error.message : 'Failed to complete session.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleSessionAction = async (sessionId: string, action: 'approve' | 'reject' | 'cancel' | 'complete' | 'no_show') => {
     try {
       setIsSubmitting(true)
       
-      // Fix: Use correct status values - 'approved' for approve, 'cancelled' for reject/cancel
+      // For cancel action, show the cancel modal instead
+      if (action === 'cancel') {
+        const session = homeTutoringSessions.find(s => s.id === sessionId)
+        if (session) {
+          setSessionToCancel(session)
+          setShowCancelModal(true)
+          setIsSubmitting(false)
+          return
+        }
+      }
+
+      // For complete action
+      if (action === 'complete') {
+        await handleCompleteSession(sessionId)
+        return
+      }
+
+      // For no_show action
+      if (action === 'no_show') {
+        const response = await fetch(`/api/tutor/sessions/${sessionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ csrf_token: csrfToken ?? '', action: 'no_show' }),
+        })
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Failed to mark as no-show')
+        await loadDashboardData()
+        alert('Session marked as no-show!')
+        return
+      }
+
+      // For approve/reject, use direct Supabase (backwards compatible)
       const newStatus = action === 'approve' ? 'approved' : 'cancelled'
       
       console.log(`Debug: Updating session ${sessionId} to status: ${newStatus}`)
@@ -1307,38 +1627,34 @@ export default function TutorDashboard() {
 
       console.log(`Session ${action}d successfully:`, data)
       
-             // Create notification for parent when tutor approves/rejects their session
-       try {
-         const session = homeTutoringSessions.find(s => s.id === sessionId)
-         if (session && session.created_by !== 'tutor') {
-           // This is a parent-created session, find the parent through the request
-           const { data: requestData } = await supabase
-             .from('home_tutoring_requests')
-             .select('parent_id, student_id')
-             .eq('id', session.request_id)
-             .single()
-           
-           if (requestData) {
-             await supabase
-               .from('parent_notifications')
-               .insert({
-                 parent_id: requestData.parent_id,
-                 title: `Session ${action === 'approve' ? 'Approved' : 'Rejected'}`,
-                 message: `Your session for ${formatDate(session.session_date)} has been ${action === 'approve' ? 'approved' : 'rejected'} by the tutor.`,
-                 notification_type: 'session'
-               })
-           }
-         }
-       } catch (notifError) {
-         console.error('Error creating parent notification:', notifError)
-         // Don't fail the session action if notification fails
-       }
+      // Create notification for parent when tutor approves/rejects their session
+      try {
+        const session = homeTutoringSessions.find(s => s.id === sessionId)
+        if (session && session.created_by !== 'tutor') {
+          const { data: requestData } = await supabase
+            .from('home_tutoring_requests')
+            .select('parent_id, student_id')
+            .eq('id', session.request_id)
+            .single()
+          
+          if (requestData) {
+            await supabase
+              .from('parent_notifications')
+              .insert({
+                parent_id: requestData.parent_id,
+                title: `Session ${action === 'approve' ? 'Approved' : 'Rejected'}`,
+                message: `Your session for ${formatDate(session.session_date)} has been ${action === 'approve' ? 'approved' : 'rejected'} by the tutor.`,
+                notification_type: 'session'
+              })
+          }
+        }
+      } catch (notifError) {
+        console.error('Error creating parent notification:', notifError)
+      }
       
-      // Show success message
       const actionText = action === 'cancel' ? 'cancelled' : action === 'approve' ? 'approved' : 'rejected'
       alert(`Session ${actionText} successfully!`)
       
-      // Refresh the dashboard data to show updated status
       await loadDashboardData()
       
     } catch (error) {
@@ -1373,18 +1689,41 @@ export default function TutorDashboard() {
       // Close dropdown
       setShowNotificationsDropdown(false)
 
-      // Handle different notification types
+      // New message notification → open Messages section
+      if (notification.title === 'New message' || notification.category === 'message') {
+        setActiveSection('messages')
+        fetchConversations()
+        return
+      }
+
+      // Navigate to Sessions tab and switch to the relevant filter based on notification type
+      setActiveSection('sessions')
       switch (notification.notification_type) {
+        case 'session_accepted':
+          setSessionFilter('approved')
+          break
+        case 'session_change_requested':
+          setSessionFilter('change_requested')
+          break
+        case 'session_cancelled':
+          setSessionFilter('cancelled')
+          break
+        case 'session_rescheduled':
+          setSessionFilter('scheduled')
+          break
+        case 'session_confirmed':
+          setSessionFilter('approved')
+          break
+        case 'session_completed':
+          setSessionFilter('completed')
+          break
+        case 'session_reminder':
+          setSessionFilter('scheduled')
+          break
         case 'home_tutoring':
-          // Switch to sessions tab and show relevant session
-          setActiveSection('sessions')
-          break
         case 'session':
-          // Switch to sessions tab
-          setActiveSection('sessions')
-          break
         default:
-          // For other types, just close the dropdown
+          setSessionFilter('all')
           break
       }
     } catch (error) {
@@ -1435,6 +1774,18 @@ export default function TutorDashboard() {
       month: 'short',
       day: 'numeric'
     })
+  }
+
+  // Normalize time to HH:MM for time inputs (API/DB may return HH:MM:SS)
+  const timeToHHMM = (t: string) => {
+    if (!t || typeof t !== 'string') return t
+    const parts = t.trim().split(':')
+    if (parts.length >= 2) {
+      const h = parts[0].padStart(2, '0')
+      const m = parts[1].padStart(2, '0')
+      return `${h}:${m}`
+    }
+    return t
   }
 
   const formatDuration = (durationHours: number) => {
@@ -1517,6 +1868,24 @@ export default function TutorDashboard() {
   const getFilteredSessionsByStatus = () => {
     const baseFilteredSessions = getFilteredSessions()
     if (sessionFilter === 'all') return baseFilteredSessions
+    
+    // Group related statuses
+    if (sessionFilter === 'scheduled') {
+      return baseFilteredSessions.filter(session => 
+        session.status === 'scheduled' || session.status === 'rescheduled'
+      )
+    }
+    if (sessionFilter === 'approved') {
+      return baseFilteredSessions.filter(session => 
+        session.status === 'approved' || session.status === 'confirmed'
+      )
+    }
+    if (sessionFilter === 'cancelled') {
+      return baseFilteredSessions.filter(session => 
+        session.status === 'cancelled' || session.status === 'no_show'
+      )
+    }
+    
     return baseFilteredSessions.filter(session => session.status === sessionFilter)
   }
 
@@ -1734,15 +2103,64 @@ export default function TutorDashboard() {
                 )}
               </motion.div>
 
+              {/* My Matched Students */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.25 }}
+                className="bg-white rounded-2xl shadow-lg p-6"
+              >
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                  <UserGroupIcon className="w-5 h-5 mr-2 text-primary-600" />
+                  My Matched Students
+                </h3>
+                {matchedStudents.length === 0 ? (
+                  <div className="text-center py-6">
+                    <UserGroupIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No students matched yet.</p>
+                    <p className="text-sm text-gray-400 mt-1">You&apos;ll see your assigned students here once matched by admin.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {matchedStudents.map((student) => (
+                      <div 
+                        key={student.student_id} 
+                        className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-primary-300 hover:bg-primary-50/30 transition-all cursor-pointer"
+                        onClick={() => {
+                          setSelectedStudent(student.student_id)
+                          setActiveSection('sessions')
+                        }}
+                      >
+                        <div className="flex items-center space-x-4">
+                          <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+                            <UserIcon className="w-5 h-5 text-primary-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{student.student_name}</p>
+                            <p className="text-sm text-gray-500">{student.subjects}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            Active
+                          </span>
+                          <ChevronRightIcon className="w-5 h-5 text-gray-400" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+
               {/* Recent Notifications */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.3 }}
+                transition={{ duration: 0.6, delay: 0.35 }}
                 className="bg-white rounded-2xl shadow-lg p-6"
               >
                 <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-                  <span className="mr-2">🔔</span>
+                  <BellIcon className="w-5 h-5 mr-2 text-yellow-500" />
                   Recent Notifications
                 </h3>
                 {isLoadingNotifications ? (
@@ -1765,6 +2183,102 @@ export default function TutorDashboard() {
                 )}
               </motion.div>
             </div>
+          </div>
+        )
+
+      case 'students':
+        return (
+          <div className="space-y-6">
+            {/* Header */}
+            <div className="bg-white rounded-2xl shadow-lg p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center">
+                    <UserGroupIcon className="w-6 h-6 mr-2 text-primary-600" />
+                    My Matched Students
+                  </h2>
+                  <p className="text-gray-600 mt-1">
+                    {matchedStudents.length === 0 
+                      ? 'No students have been assigned to you yet.' 
+                      : `You have ${matchedStudents.length} student${matchedStudents.length > 1 ? 's' : ''} assigned to you.`
+                    }
+                  </p>
+                </div>
+                <div className="text-right">
+                  <div className="text-3xl font-bold text-primary-600">{matchedStudents.length}</div>
+                  <div className="text-sm text-gray-500">Active Students</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Students Grid */}
+            {matchedStudents.length === 0 ? (
+              <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
+                <UserGroupIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Students Yet</h3>
+                <p className="text-gray-500 max-w-md mx-auto">
+                  Once an admin matches you with students, they will appear here. 
+                  You&apos;ll be able to manage sessions, track progress, and communicate with parents.
+                </p>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {matchedStudents.map((student) => (
+                  <motion.div
+                    key={student.student_id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow"
+                  >
+                    {/* Card Header */}
+                    <div className="bg-gradient-to-r from-primary-500 to-primary-600 p-4">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center">
+                          <UserIcon className="w-8 h-8 text-white" />
+                        </div>
+                        <div className="text-white">
+                          <h3 className="font-bold text-lg">{student.student_name}</h3>
+                          <p className="text-primary-100 text-sm">{student.subjects}</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Card Body */}
+                    <div className="p-4 space-y-3">
+                      <div className="flex items-center text-sm text-gray-600">
+                        <UserIcon className="w-4 h-4 mr-2 text-gray-400" />
+                        <span>Parent: {student.parent_name || 'N/A'}</span>
+                      </div>
+                      
+                      <div className="flex items-center text-sm text-gray-600">
+                        <CalendarIcon className="w-4 h-4 mr-2 text-gray-400" />
+                        <span>Grade: {student.grade_level || 'Not specified'}</span>
+                      </div>
+
+                      <div className="pt-3 border-t border-gray-100">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                          Active
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Card Actions */}
+                    <div className="px-4 pb-4 flex space-x-2">
+                      <button
+                        onClick={() => {
+                          setSelectedStudent(student.student_id)
+                          setActiveSection('sessions')
+                        }}
+                        className="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
+                      >
+                        Manage Sessions
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
           </div>
         )
 
@@ -1814,14 +2328,18 @@ export default function TutorDashboard() {
                   </div>
 
                                      {/* Session Stats */}
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                      <div className="bg-yellow-50 p-4 rounded-lg">
-                       <p className="text-sm text-gray-600">Pending Approval</p>
-                       <p className="text-2xl font-bold text-yellow-600">{getFilteredSessions().filter(s => s.status === 'scheduled' && s.created_by !== 'tutor').length}</p>
+                       <p className="text-sm text-gray-600">Pending</p>
+                       <p className="text-2xl font-bold text-yellow-600">{getFilteredSessions().filter(s => s.status === 'scheduled' || s.status === 'rescheduled').length}</p>
+                     </div>
+                     <div className="bg-orange-50 p-4 rounded-lg border-2 border-orange-200">
+                       <p className="text-sm text-gray-600">Change Requested</p>
+                       <p className="text-2xl font-bold text-orange-600">{getFilteredSessions().filter(s => s.status === 'change_requested').length}</p>
                      </div>
                      <div className="bg-blue-50 p-4 rounded-lg">
-                       <p className="text-sm text-gray-600">My Sessions</p>
-                       <p className="text-2xl font-bold text-blue-600">{getFilteredSessions().filter(s => s.status === 'scheduled' && s.created_by === 'tutor').length}</p>
+                       <p className="text-sm text-gray-600">Approved</p>
+                       <p className="text-2xl font-bold text-blue-600">{getFilteredSessions().filter(s => s.status === 'approved' || s.status === 'confirmed').length}</p>
                      </div>
                      <div className="bg-green-50 p-4 rounded-lg">
                        <p className="text-sm text-gray-600">Completed</p>
@@ -1830,13 +2348,14 @@ export default function TutorDashboard() {
                    </div>
 
                   {/* Session Filter Tabs */}
-                  <div className="flex space-x-4 border-b border-gray-200 mb-6">
+                  <div className="flex flex-wrap gap-2 border-b border-gray-200 mb-6 pb-2">
                     {[
                       { id: 'all', name: 'All', count: getFilteredSessions().length },
-                      { id: 'scheduled', name: 'Scheduled', count: getFilteredSessions().filter(s => s.status === 'scheduled').length },
-                      { id: 'approved', name: 'Approved', count: getFilteredSessions().filter(s => s.status === 'approved').length },
+                      { id: 'scheduled', name: 'Pending', count: getFilteredSessions().filter(s => s.status === 'scheduled' || s.status === 'rescheduled').length },
+                      { id: 'change_requested', name: 'Change Requested', count: getFilteredSessions().filter(s => s.status === 'change_requested').length, highlight: true },
+                      { id: 'approved', name: 'Approved', count: getFilteredSessions().filter(s => s.status === 'approved' || s.status === 'confirmed').length },
                       { id: 'completed', name: 'Completed', count: getFilteredSessions().filter(s => s.status === 'completed').length },
-                      { id: 'cancelled', name: 'Cancelled', count: getFilteredSessions().filter(s => s.status === 'cancelled').length }
+                      { id: 'cancelled', name: 'Cancelled', count: getFilteredSessions().filter(s => s.status === 'cancelled' || s.status === 'no_show').length }
                     ].map((filter) => (
                       <button
                         key={filter.id}
@@ -1857,7 +2376,8 @@ export default function TutorDashboard() {
                     <div className="mb-6">
                       <h4 className="text-md font-semibold text-gray-900 mb-3">
                         {sessionFilter === 'all' ? 'All Sessions' : 
-                         sessionFilter === 'scheduled' ? 'Scheduled Sessions' :
+                         sessionFilter === 'scheduled' ? 'Pending Sessions' :
+                         sessionFilter === 'change_requested' ? 'Change Requested' :
                          sessionFilter === 'approved' ? 'Approved Sessions' :
                          sessionFilter === 'completed' ? 'Completed Sessions' :
                          sessionFilter === 'cancelled' ? 'Cancelled Sessions' : 'Sessions'} 
@@ -1865,75 +2385,160 @@ export default function TutorDashboard() {
                       </h4>
                       <div className="space-y-3">
                         {getFilteredSessionsByStatus().map((session) => (
-                          <div key={session.id} className="border border-yellow-200 bg-yellow-50 rounded-lg p-4">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="font-medium text-gray-900">
-                                  {formatDate(session.session_date)} at {session.start_time}
-                                </p>
+                          <div 
+                            key={session.id} 
+                            className={`border rounded-lg p-4 ${
+                              session.status === 'change_requested' 
+                                ? 'border-orange-300 bg-orange-50' 
+                                : session.status === 'approved' || session.status === 'confirmed'
+                                ? 'border-blue-200 bg-blue-50'
+                                : session.status === 'completed'
+                                ? 'border-green-200 bg-green-50'
+                                : session.status === 'cancelled' || session.status === 'no_show'
+                                ? 'border-red-200 bg-red-50'
+                                : 'border-yellow-200 bg-yellow-50'
+                            }`}
+                          >
+                            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-medium text-gray-900">
+                                    {formatDate(session.session_date)} at {session.start_time} - {session.end_time}
+                                  </p>
+                                  {session.is_recurring && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                      Recurring
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-sm text-gray-600">
                                   Duration: {formatDuration(session.duration_hours)}
+                                  {session.location_type && ` • ${session.location_type === 'home' ? 'At Home' : session.location_type === 'online' ? 'Online' : 'Other Location'}`}
                                 </p>
+                                {session.title && (
+                                  <p className="text-sm font-medium text-gray-700 mt-1">{session.title}</p>
+                                )}
                                 {session.notes && (
                                   <p className="text-sm text-gray-500 mt-1">Notes: {session.notes}</p>
                                 )}
+                                
+                                {/* Change Request Message */}
+                                {session.status === 'change_requested' && session.change_request_message && (
+                                  <div className="mt-3 p-3 bg-orange-100 rounded-lg border border-orange-200">
+                                    <p className="text-sm font-medium text-orange-800">Change Requested by Parent:</p>
+                                    <p className="text-sm text-orange-700 mt-1">{session.change_request_message}</p>
+                                  </div>
+                                )}
                               </div>
-                                                                                            <div className="flex space-x-2">
-                                 {/* Session Actions - Show different actions based on who created the session */}
-                                 {/* Parent-created sessions (created_by !== 'tutor'): Show Approve/Reject */}
-                                 {session.status === 'scheduled' && session.created_by !== 'tutor' && (
-                                   <div className="flex space-x-2 mt-3">
-                                     <button
-                                       onClick={() => handleSessionAction(session.id, 'approve')}
-                                       disabled={isSubmitting}
-                                       className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50"
-                                     >
-                                       {isSubmitting ? 'Processing...' : 'Approve'}
-                                     </button>
-                                     <button
-                                       onClick={() => handleSessionAction(session.id, 'reject')}
-                                       disabled={isSubmitting}
-                                       className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
-                                     >
-                                       {isSubmitting ? 'Processing...' : 'Reject'}
-                                     </button>
-                                   </div>
-                                 )}
-                                 {/* Tutor-created sessions (created_by === 'tutor'): Show Edit/Cancel */}
-                                 {session.status === 'scheduled' && session.created_by === 'tutor' && (
-                                   <div className="flex space-x-2 mt-3">
-                                     <button
-                                       onClick={() => handleEditSession(session)}
-                                       disabled={isSubmitting}
-                                       className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                                     >
-                                       Edit
-                                     </button>
-                                     <button
-                                       onClick={() => handleSessionAction(session.id, 'cancel')}
-                                       disabled={isSubmitting}
-                                       className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
-                                     >
-                                       {isSubmitting ? 'Processing...' : 'Cancel'}
-                                     </button>
-                                   </div>
-                                 )}
-                                 
-                                 {/* Show status badge for non-scheduled sessions */}
-                                 {session.status !== 'scheduled' && (
-                                   <div className="mt-3">
-                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                       session.status === 'approved' ? 'bg-blue-100 text-blue-800' :
-                                       session.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                       session.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                                       session.status === 'no_show' ? 'bg-orange-100 text-orange-800' :
-                                       'bg-gray-100 text-gray-800'
-                                     }`}>
-                                       {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
-                                     </span>
-                                   </div>
-                                 )}
-                               </div>
+                              
+                              <div className="flex flex-col items-end gap-2">
+                                {/* Status Badge */}
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                  session.status === 'scheduled' ? 'bg-yellow-100 text-yellow-800' :
+                                  session.status === 'rescheduled' ? 'bg-purple-100 text-purple-800' :
+                                  session.status === 'change_requested' ? 'bg-orange-100 text-orange-800' :
+                                  session.status === 'approved' ? 'bg-blue-100 text-blue-800' :
+                                  session.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                                  session.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                  session.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                                  session.status === 'no_show' ? 'bg-gray-100 text-gray-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {session.status === 'change_requested' ? 'Change Requested' : 
+                                   session.status === 'no_show' ? 'No Show' :
+                                   session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+                                </span>
+                                
+                                {/* Session Actions */}
+                                <div className="flex flex-wrap gap-2">
+                                  {/* Change Requested: Show Reschedule button */}
+                                  {session.status === 'change_requested' && (
+                                    <>
+                                      <button
+                                        onClick={() => handleAcceptChangeRequest(session)}
+                                        disabled={isSubmitting}
+                                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                                      >
+                                        Reschedule
+                                      </button>
+                                      <button
+                                        onClick={() => handleSessionAction(session.id, 'cancel')}
+                                        disabled={isSubmitting}
+                                        className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  )}
+                                  
+                                  {/* Scheduled/Rescheduled by Tutor: Show Edit/Cancel */}
+                                  {(session.status === 'scheduled' || session.status === 'rescheduled') && session.created_by === 'tutor' && (
+                                    <>
+                                      <button
+                                        onClick={() => handleEditSession(session)}
+                                        disabled={isSubmitting}
+                                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                                      >
+                                        Reschedule
+                                      </button>
+                                      <button
+                                        onClick={() => handleSessionAction(session.id, 'cancel')}
+                                        disabled={isSubmitting}
+                                        className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  )}
+                                  
+                                  {/* Scheduled by Parent: Show Approve/Reject */}
+                                  {session.status === 'scheduled' && session.created_by !== 'tutor' && (
+                                    <>
+                                      <button
+                                        onClick={() => handleSessionAction(session.id, 'approve')}
+                                        disabled={isSubmitting}
+                                        className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        onClick={() => handleSessionAction(session.id, 'reject')}
+                                        disabled={isSubmitting}
+                                        className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
+                                      >
+                                        Reject
+                                      </button>
+                                    </>
+                                  )}
+                                  
+                                  {/* Approved/Confirmed: Show Complete/No-Show/Cancel */}
+                                  {(session.status === 'approved' || session.status === 'confirmed') && (
+                                    <>
+                                      <button
+                                        onClick={() => handleSessionAction(session.id, 'complete')}
+                                        disabled={isSubmitting}
+                                        className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50"
+                                      >
+                                        Complete
+                                      </button>
+                                      <button
+                                        onClick={() => handleSessionAction(session.id, 'no_show')}
+                                        disabled={isSubmitting}
+                                        className="bg-gray-600 text-white px-3 py-1 rounded text-sm hover:bg-gray-700 disabled:opacity-50"
+                                      >
+                                        No Show
+                                      </button>
+                                      <button
+                                        onClick={() => handleSessionAction(session.id, 'cancel')}
+                                        disabled={isSubmitting}
+                                        className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 disabled:opacity-50"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -1942,9 +2547,10 @@ export default function TutorDashboard() {
                   ) : (
                     <div className="text-center py-8">
                       <CalendarIcon className="w-12 h-12 text-gray-400 mx-auto" />
-                      <p className="mt-2 text-gray-600">No {sessionFilter === 'all' ? '' : sessionFilter} sessions found</p>
+                      <p className="mt-2 text-gray-600">No {sessionFilter === 'all' ? '' : sessionFilter === 'change_requested' ? 'change requested' : sessionFilter} sessions found</p>
                       <p className="text-sm text-gray-500">
                         {sessionFilter === 'scheduled' ? 'No sessions waiting for approval' :
+                         sessionFilter === 'change_requested' ? 'No change requests to review' :
                          sessionFilter === 'approved' ? 'No approved sessions yet' :
                          sessionFilter === 'completed' ? 'No completed sessions yet' :
                          sessionFilter === 'cancelled' ? 'No cancelled sessions yet' :
@@ -2187,6 +2793,163 @@ export default function TutorDashboard() {
                     View Requirements
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'messages':
+        return (
+          <div className="bg-white rounded-2xl shadow-lg">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Messages</h3>
+              <p className="text-sm text-gray-500 mt-1">Chat with parents. Use only in-app messages so we can help if needed.</p>
+            </div>
+            <div className="flex flex-col md:flex-row min-h-[400px]">
+              <div className="md:w-80 border-b md:border-b-0 md:border-r border-gray-200 flex-shrink-0">
+                {isLoadingConversations ? (
+                  <div className="p-4 space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />
+                    ))}
+                  </div>
+                ) : conversationsError ? (
+                  <div className="p-6 text-center text-amber-700 bg-amber-50 border border-amber-200 rounded-lg mx-2 my-2">
+                    <p className="text-sm font-medium">Couldn&apos;t load conversations</p>
+                    <p className="text-xs mt-1">{conversationsError}</p>
+                    <p className="text-xs mt-2">If you&apos;re a tutor, try logging out and back in, then open Messages again.</p>
+                    <button
+                      type="button"
+                      onClick={() => fetchConversations()}
+                      className="mt-3 px-3 py-1.5 text-sm font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-md"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : conversations.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500">
+                    <ChatBubbleLeftRightIcon className="w-10 h-10 mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm">No conversations yet</p>
+                    <p className="text-xs mt-1">When a parent messages you from their dashboard, conversations will appear here.</p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-gray-200">
+                    {conversations.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedConversationId(c.id)}
+                          className={`w-full text-left px-4 py-3 hover:bg-gray-50 focus:outline-none focus:bg-gray-50 ${selectedConversationId === c.id ? 'bg-primary-50 border-l-2 border-primary-500' : ''}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium text-gray-900 truncate">{c.other_party_name ?? 'Parent'}</p>
+                            {(c.unread_count ?? 0) > 0 && (
+                              <span className="shrink-0 bg-red-500 text-white text-xs rounded-full min-w-[1.25rem] h-5 flex items-center justify-center px-1">
+                                {c.unread_count! > 99 ? '99+' : c.unread_count}
+                              </span>
+                            )}
+                          </div>
+                          {(c.request_student_name || c.request_subjects) && (
+                            <p className="text-xs text-gray-500 truncate">
+                              {[c.request_student_name, c.request_subjects].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
+                          {c.last_message_preview && (
+                            <p className="text-sm text-gray-600 truncate mt-0.5">{c.last_message_preview}</p>
+                          )}
+                          {c.last_message_at && (
+                            <p className="text-xs text-gray-400 mt-0.5">{formatDate(c.last_message_at)}</p>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="flex-1 flex flex-col min-h-0">
+                {!selectedConversationId ? (
+                  <div className="flex-1 flex items-center justify-center text-gray-500 p-6">
+                    <div className="text-center">
+                      <ChatBubbleLeftRightIcon className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p>Select a conversation</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      ref={messagesContainerRef}
+                      className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[200px]"
+                    >
+                      {isLoadingMessages ? (
+                        <div className="flex justify-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+                        </div>
+                      ) : messages.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">No messages yet. Say hello!</p>
+                      ) : (
+                        messages.map((m) => (
+                          <div
+                            key={m.id}
+                            className={`flex ${m.sender_role === 'tutor' ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div
+                              className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                                m.sender_role === 'tutor'
+                                  ? 'bg-primary-600 text-white'
+                                  : 'bg-gray-200 text-gray-900'
+                              }`}
+                            >
+                              <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                              <p className={`text-xs mt-1 ${m.sender_role === 'tutor' ? 'text-primary-100' : 'text-gray-500'}`}>
+                                {formatDate(m.created_at)}
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <form
+                      className="p-4 border-t border-gray-200 flex flex-col gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        sendMessage(selectedConversationId, messageInput)
+                      }}
+                    >
+                      <div className="flex gap-2 items-end flex-wrap">
+                        <textarea
+                          value={messageInput}
+                          onChange={(e) => {
+                            setMessageInput(e.target.value.slice(0, 2000))
+                            const el = e.target
+                            el.style.height = 'auto'
+                            el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+                          }}
+                          onFocus={(e) => {
+                            const el = e.target
+                            el.style.height = 'auto'
+                            el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+                          }}
+                          placeholder="Type a message..."
+                          rows={2}
+                          className="flex-1 min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none overflow-y-auto min-h-[2.5rem] max-h-40"
+                          maxLength={2000}
+                          disabled={isSendingMessage}
+                        />
+                        <button
+                          type="submit"
+                          disabled={!messageInput.trim() || isSendingMessage}
+                          className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
+                        >
+                          <PaperAirplaneIcon className="w-4 h-4" />
+                          {isSendingMessage ? 'Sending...' : 'Send'}
+                        </button>
+                      </div>
+                      <p className={`text-xs ${messageInput.length >= 2000 ? 'text-red-600' : 'text-gray-500'}`}>
+                        {messageInput.length} / 2000
+                      </p>
+                    </form>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -2573,10 +3336,43 @@ export default function TutorDashboard() {
                 <p key={`header-name-${lastUpdate}`} className="font-medium text-gray-900">{userProfile?.full_name || 'Loading...'}</p>
               </div>
               
+              {/* Messages - always visible in header */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNotificationsDropdown(false)
+                  setShowProfileDropdown(false)
+                  setActiveSection('messages')
+                }}
+                className={`relative flex items-center gap-2 px-3 py-2 rounded-lg font-medium text-sm transition-colors ${
+                  activeSection === 'messages'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <ChatBubbleLeftRightIcon className="w-5 h-5" />
+                Messages
+                {(() => {
+                  const totalUnread = conversations.reduce((s, c) => s + (c.unread_count ?? 0), 0)
+                  return totalUnread > 0 ? (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full min-w-[1.25rem] h-5 flex items-center justify-center px-1">
+                      {totalUnread > 99 ? '99+' : totalUnread}
+                    </span>
+                  ) : null
+                })()}
+              </button>
+
               {/* Notification Bell */}
               <div className="relative notifications-dropdown">
                 <button 
-                  onClick={() => setShowNotificationsDropdown(!showNotificationsDropdown)}
+                  onClick={() => {
+                    const next = !showNotificationsDropdown
+                    setShowNotificationsDropdown(next)
+                    // When opening dropdown, refresh notifications and sessions so "Change Requested" etc. are up to date
+                    if (next && tutorData) {
+                      fetchNotifications(tutorData, { silent: true })
+                    }
+                  }}
                   className={`p-2 rounded-lg transition-colors ${
                     notifications.length > 0 
                       ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' 
@@ -2697,15 +3493,17 @@ export default function TutorDashboard() {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <nav className="flex space-x-8 mb-8">
+      {/* Navigation Tabs - positioned below fixed header */}
+      <div className="fixed top-[88px] left-0 right-0 z-40 bg-white border-b border-gray-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="flex space-x-8 overflow-x-auto py-3">
           {[
             { id: 'overview', name: 'Overview', icon: '📊' },
+            { id: 'students', name: 'My Students', icon: '👨‍🎓' },
             { id: 'sessions', name: 'Sessions', icon: '📅' },
+            { id: 'messages', name: 'Messages', icon: '💬' },
             { id: 'documents', name: 'Documents', icon: '📄' },
             { id: 'payments', name: 'Payments', icon: '💰' }
-            // { id: 'performance', name: 'Performance', icon: '📈' } // Commented out for MVP
           ].map((tab) => (
             <button
               key={tab.id}
@@ -2720,11 +3518,12 @@ export default function TutorDashboard() {
               <span>{tab.name}</span>
             </button>
           ))}
-        </nav>
+          </nav>
+        </div>
       </div>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-24">
+      {/* Main Content - with top margin for fixed header + tabs */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-36">
         {renderSectionContent()}
       </main>
 
@@ -2891,22 +3690,22 @@ export default function TutorDashboard() {
 
       {/* Session Proposal Modal */}
       {showProposeSessionModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4"
+            className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
           >
-            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
               <h3 className="text-lg font-medium text-gray-900">Schedule Session</h3>
               <button
                 onClick={() => {
                   setShowProposeSessionModal(false)
                   setProposeSessionForm({
-                    session_date: '',
-                    start_time: '',
-                    end_time: '',
-                    notes: ''
+                    session_date: '', start_time: '', end_time: '', notes: '', title: '', description: '',
+                    location_type: 'home', location_address: '', meeting_link: '', is_recurring: false,
+                    recurrence_frequency: 'weekly', recurrence_interval: 1, recurrence_days: [],
+                    recurrence_end_type: 'date', recurrence_end_date: '', recurrence_occurrences: 4
                   })
                 }}
                 className="text-gray-400 hover:text-gray-600"
@@ -2916,21 +3715,31 @@ export default function TutorDashboard() {
             </div>
             <form onSubmit={scheduleSession} className="px-6 py-4">
               <div className="space-y-4">
+                {/* Student Info */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Student
-                  </label>
-                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-lg">
-                    {getSelectedStudentName()}
-                  </p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Student</label>
+                  <p className="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-lg">{getSelectedStudentName()}</p>
                 </div>
+
+                {/* Title */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Session Date
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Session Title (Optional)</label>
+                  <input
+                    type="text"
+                    value={proposeSessionForm.title}
+                    onChange={(e) => setProposeSessionForm({...proposeSessionForm, title: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
+                    placeholder="e.g., Math Review Session"
+                  />
+                </div>
+
+                {/* Date and Time */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Session Date</label>
                   <input
                     type="date"
                     required
+                    min={new Date().toISOString().split('T')[0]}
                     value={proposeSessionForm.session_date}
                     onChange={(e) => setProposeSessionForm({...proposeSessionForm, session_date: e.target.value})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
@@ -2938,9 +3747,7 @@ export default function TutorDashboard() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Start Time
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
                     <input
                       type="time"
                       required
@@ -2950,9 +3757,7 @@ export default function TutorDashboard() {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      End Time
-                    </label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
                     <input
                       type="time"
                       required
@@ -2962,29 +3767,146 @@ export default function TutorDashboard() {
                     />
                   </div>
                 </div>
+
+                {/* Location */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes (Optional)
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                  <select
+                    value={proposeSessionForm.location_type}
+                    onChange={(e) => setProposeSessionForm({...proposeSessionForm, location_type: e.target.value as 'home' | 'online' | 'other'})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
+                  >
+                    <option value="home">At Student's Home</option>
+                    <option value="online">Online (Video Call)</option>
+                    <option value="other">Other Location</option>
+                  </select>
+                </div>
+                {proposeSessionForm.location_type === 'online' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Link</label>
+                    <input
+                      type="url"
+                      value={proposeSessionForm.meeting_link}
+                      onChange={(e) => setProposeSessionForm({...proposeSessionForm, meeting_link: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
+                      placeholder="https://meet.google.com/..."
+                    />
+                  </div>
+                )}
+                {(proposeSessionForm.location_type === 'home' || proposeSessionForm.location_type === 'other') && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Address (Optional)</label>
+                    <input
+                      type="text"
+                      value={proposeSessionForm.location_address}
+                      onChange={(e) => setProposeSessionForm({...proposeSessionForm, location_address: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
+                      placeholder="Session location address"
+                    />
+                  </div>
+                )}
+
+                {/* Recurring Session */}
+                <div className="border-t border-gray-200 pt-4">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="is_recurring"
+                      checked={proposeSessionForm.is_recurring}
+                      onChange={(e) => setProposeSessionForm({...proposeSessionForm, is_recurring: e.target.checked})}
+                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="is_recurring" className="text-sm font-medium text-gray-700">
+                      Make this a recurring session
+                    </label>
+                  </div>
+                  
+                  {proposeSessionForm.is_recurring && (
+                    <div className="mt-4 space-y-4 pl-6 border-l-2 border-primary-200">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Repeat</label>
+                        <select
+                          value={proposeSessionForm.recurrence_frequency}
+                          onChange={(e) => setProposeSessionForm({...proposeSessionForm, recurrence_frequency: e.target.value as 'daily' | 'weekly' | 'biweekly' | 'monthly'})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="biweekly">Every 2 Weeks</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">End</label>
+                        <div className="space-y-2">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="recurrence_end"
+                              checked={proposeSessionForm.recurrence_end_type === 'date'}
+                              onChange={() => setProposeSessionForm({...proposeSessionForm, recurrence_end_type: 'date'})}
+                              className="h-4 w-4 text-primary-600"
+                            />
+                            <span className="text-sm text-gray-700">On date:</span>
+                            <input
+                              type="date"
+                              value={proposeSessionForm.recurrence_end_date}
+                              onChange={(e) => setProposeSessionForm({...proposeSessionForm, recurrence_end_date: e.target.value})}
+                              min={proposeSessionForm.session_date}
+                              disabled={proposeSessionForm.recurrence_end_type !== 'date'}
+                              className="px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 disabled:opacity-50"
+                            />
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              name="recurrence_end"
+                              checked={proposeSessionForm.recurrence_end_type === 'occurrences'}
+                              onChange={() => setProposeSessionForm({...proposeSessionForm, recurrence_end_type: 'occurrences'})}
+                              className="h-4 w-4 text-primary-600"
+                            />
+                            <span className="text-sm text-gray-700">After</span>
+                            <input
+                              type="number"
+                              min="2"
+                              max="52"
+                              value={proposeSessionForm.recurrence_occurrences}
+                              onChange={(e) => setProposeSessionForm({...proposeSessionForm, recurrence_occurrences: parseInt(e.target.value) || 4})}
+                              disabled={proposeSessionForm.recurrence_end_type !== 'occurrences'}
+                              className="w-16 px-2 py-1 border border-gray-300 rounded text-sm text-gray-900 disabled:opacity-50"
+                            />
+                            <span className="text-sm text-gray-700">occurrences</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
                   <textarea
                     value={proposeSessionForm.notes}
                     onChange={(e) => setProposeSessionForm({...proposeSessionForm, notes: e.target.value})}
-                    rows={3}
+                    rows={2}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
-                    placeholder="Any additional notes about the session..."
+                    placeholder="Any additional notes..."
                   />
                 </div>
               </div>
+
+              {/* Buttons */}
               <div className="mt-6 flex space-x-3">
                 <button
                   type="button"
                   onClick={() => {
                     setShowProposeSessionModal(false)
                     setProposeSessionForm({
-                      session_date: '',
-                      start_time: '',
-                      end_time: '',
-                      notes: ''
+                      session_date: '', start_time: '', end_time: '', notes: '', title: '', description: '',
+                      location_type: 'home', location_address: '', meeting_link: '', is_recurring: false,
+                      recurrence_frequency: 'weekly', recurrence_interval: 1, recurrence_days: [],
+                      recurrence_end_type: 'date', recurrence_end_date: '', recurrence_occurrences: 4
                     })
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
@@ -2996,10 +3918,185 @@ export default function TutorDashboard() {
                   disabled={isSubmitting}
                   className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
                 >
-                  {isSubmitting ? 'Scheduling...' : 'Schedule Session'}
+                  {isSubmitting ? 'Scheduling...' : proposeSessionForm.is_recurring ? 'Schedule Recurring' : 'Schedule Session'}
                 </button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Reschedule Session Modal */}
+      {showRescheduleModal && sessionToReschedule && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-lg shadow-xl max-w-md w-full"
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-medium text-gray-900">Reschedule Session</h3>
+              <button
+                onClick={() => {
+                  setShowRescheduleModal(false)
+                  setSessionToReschedule(null)
+                  setRescheduleForm({ new_date: '', new_start_time: '', new_end_time: '', message: '' })
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              {/* Show original session info */}
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-600">Original: {formatDate(sessionToReschedule.session_date)} at {sessionToReschedule.start_time}</p>
+              </div>
+              
+              {/* Show change request message if exists */}
+              {sessionToReschedule.change_request_message && (
+                <div className="mb-4 p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <p className="text-sm font-medium text-orange-800">Parent's Request:</p>
+                  <p className="text-sm text-orange-700 mt-1">{sessionToReschedule.change_request_message}</p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">New Date</label>
+                  <input
+                    type="date"
+                    required
+                    min={new Date().toISOString().split('T')[0]}
+                    value={rescheduleForm.new_date}
+                    onChange={(e) => setRescheduleForm({...rescheduleForm, new_date: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-gray-900"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">New Start Time</label>
+                    <input
+                      type="time"
+                      required
+                      value={rescheduleForm.new_start_time}
+                      onChange={(e) => setRescheduleForm({...rescheduleForm, new_start_time: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">New End Time</label>
+                    <input
+                      type="time"
+                      required
+                      value={rescheduleForm.new_end_time}
+                      onChange={(e) => setRescheduleForm({...rescheduleForm, new_end_time: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-gray-900"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Message to Parent (Optional)</label>
+                  <textarea
+                    value={rescheduleForm.message}
+                    onChange={(e) => setRescheduleForm({...rescheduleForm, message: e.target.value})}
+                    rows={2}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-gray-900"
+                    placeholder="Explain the reschedule..."
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRescheduleModal(false)
+                    setSessionToReschedule(null)
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRescheduleSession}
+                  disabled={isSubmitting || !rescheduleForm.new_date || !rescheduleForm.new_start_time || !rescheduleForm.new_end_time}
+                  className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Rescheduling...' : 'Reschedule'}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Cancel Session Modal */}
+      {showCancelModal && sessionToCancel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-lg shadow-xl max-w-md w-full"
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="text-lg font-medium text-gray-900">Cancel Session</h3>
+              <button
+                onClick={() => {
+                  setShowCancelModal(false)
+                  setSessionToCancel(null)
+                  setCancelReason('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <XMarkIcon className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="px-6 py-4">
+              <div className="mb-4 p-3 bg-red-50 rounded-lg border border-red-200">
+                <p className="text-sm text-red-800">
+                  You are about to cancel the session on <strong>{formatDate(sessionToCancel.session_date)}</strong> at <strong>{sessionToCancel.start_time}</strong>.
+                </p>
+                {sessionToCancel.is_recurring && (
+                  <p className="text-sm text-red-700 mt-2">
+                    This is a recurring session. All future sessions in the series will also be cancelled.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Cancellation *</label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  rows={3}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 text-gray-900"
+                  placeholder="Please provide a reason for cancelling..."
+                />
+              </div>
+
+              <div className="mt-6 flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCancelModal(false)
+                    setSessionToCancel(null)
+                    setCancelReason('')
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Keep Session
+                </button>
+                <button
+                  onClick={handleCancelSession}
+                  disabled={isSubmitting || !cancelReason.trim()}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Cancelling...' : 'Cancel Session'}
+                </button>
+              </div>
+            </div>
           </motion.div>
         </div>
       )}

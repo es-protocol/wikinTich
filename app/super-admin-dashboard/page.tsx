@@ -1,24 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import {
-  UserGroupIcon,
-  AcademicCapIcon,
-  ClockIcon,
-  CurrencyDollarIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ExclamationTriangleIcon,
-  ChartBarIcon,
-  CogIcon,
-  BellIcon,
-  ChevronDownIcon,
-  MagnifyingGlassIcon,
-  FunnelIcon,
-  ArrowRightOnRectangleIcon
-} from '@heroicons/react/24/outline'
+// Super Admin Dashboard - Manages tutors, students, requests, and system notifications
 import { supabase } from '@/lib/supabase'
+import {
+  AcademicCapIcon,
+  ArrowRightOnRectangleIcon,
+  BellIcon,
+  ChartBarIcon,
+  ClockIcon,
+  CogIcon,
+  CurrencyDollarIcon,
+  ExclamationTriangleIcon,
+  UserGroupIcon,
+  XCircleIcon
+} from '@heroicons/react/24/outline'
+import { motion } from 'framer-motion'
+import { useEffect, useMemo, useState } from 'react'
 
 interface SuperAdminProfile {
   id: string
@@ -42,6 +39,7 @@ interface Tutor {
   profile_id: string
   bio: string
   subjects: string[]
+  availability?: Record<string, { available?: boolean; hours?: string }> | null
   is_verified: boolean
   verification_date: string | null
   created_at: string
@@ -85,12 +83,269 @@ interface Student {
   }
 }
 
+interface AdminNotification {
+  id: string
+  admin_id: string
+  title: string
+  message: string
+  notification_type: 'new_request' | 'tutor_assigned' | 'request_updated' | 'request_cancelled' | 'system' | 'whatsapp_request'
+  related_entity_type: 'home_tutoring_request' | 'pending_registration' | 'tutor' | 'parent' | 'system' | null
+  related_entity_id: string | null
+  priority: 'low' | 'medium' | 'high' | 'critical'
+  is_read: boolean
+  read_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+interface PendingRegistration {
+  id: string
+  parent_name: string
+  parent_email: string
+  student_name: string
+  grade_level: string
+  subjects: string
+  created_at: string
+  expires_at: string
+}
+
+function getTimeAgo(timestamp: string): string {
+  const now = new Date()
+  const date = new Date(timestamp)
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+  if (seconds < 60) return 'Just now'
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60)
+    return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`
+  }
+  if (seconds < 86400) {
+    const hours = Math.floor(seconds / 3600)
+    return `${hours} hour${hours !== 1 ? 's' : ''} ago`
+  }
+  if (seconds < 604800) {
+    const days = Math.floor(seconds / 86400)
+    return `${days} day${days !== 1 ? 's' : ''} ago`
+  }
+
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+  })
+}
+
+function NotificationItem({
+  notification,
+  onMarkAsRead,
+  onNavigate,
+  onClose,
+}: {
+  notification: AdminNotification
+  onMarkAsRead: (id: string) => void
+  onNavigate: (notification: AdminNotification) => void
+  onClose: () => void
+}) {
+  const timeAgo = getTimeAgo(notification.created_at)
+
+  const handleClick = () => {
+    if (!notification.is_read) {
+      onMarkAsRead(notification.id)
+    }
+    onNavigate(notification)
+    onClose()
+  }
+
+  return (
+    <li
+      onClick={handleClick}
+      className={`
+        px-4 py-3 cursor-pointer transition-colors
+        ${!notification.is_read ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-gray-50'}
+      `}
+    >
+      <div className="flex items-start gap-3">
+        {!notification.is_read && (
+          <div className="flex-shrink-0 w-2 h-2 mt-2 bg-blue-500 rounded-full" />
+        )}
+
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-medium truncate ${
+            !notification.is_read ? 'text-gray-900' : 'text-gray-700'
+          }`}>
+            {notification.title}
+          </p>
+          {notification.message && (
+            <p className="mt-1 text-sm text-gray-600 line-clamp-2">
+              {notification.message}
+            </p>
+          )}
+          <p className="mt-1 text-xs text-gray-500">{timeAgo}</p>
+        </div>
+
+        {notification.priority === 'critical' && (
+          <span className="flex-shrink-0 inline-flex items-center px-2 py-0.5 text-xs font-medium text-red-700 bg-red-100 rounded-full">
+            Urgent
+          </span>
+        )}
+      </div>
+    </li>
+  )
+}
+
+function NotificationsDropdown({
+  isOpen,
+  notifications,
+  isLoading,
+  unreadCount,
+  onClose,
+  onMarkAsRead,
+  onNavigate,
+}: {
+  isOpen: boolean
+  notifications: AdminNotification[]
+  isLoading: boolean
+  unreadCount: number
+  onClose: () => void
+  onMarkAsRead: (id: string) => void
+  onNavigate: (notification: AdminNotification) => void
+}) {
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement
+      if (!target.closest('.notifications-dropdown-container')) {
+        onClose()
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [isOpen, onClose])
+
+  if (!isOpen) return null
+
+  return (
+    <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-[100] max-h-[500px] flex flex-col">
+      <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Notifications</h3>
+          {unreadCount > 0 && (
+            <span className="text-sm text-gray-500">
+              {unreadCount} unread
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="overflow-y-auto flex-1">
+        {isLoading ? (
+          <div className="p-8 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto" />
+            <p className="mt-2 text-sm text-gray-500">Loading notifications...</p>
+          </div>
+        ) : notifications.length === 0 ? (
+          <div className="p-8 text-center">
+            <BellIcon className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+            <p className="text-gray-500">No notifications yet</p>
+            <p className="text-sm text-gray-400 mt-1">You'll see new requests here</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {notifications.map((notification) => (
+              <NotificationItem
+                key={notification.id}
+                notification={notification}
+                onMarkAsRead={onMarkAsRead}
+                onNavigate={onNavigate}
+                onClose={onClose}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {notifications.length > 0 && (
+        <div className="px-4 py-3 border-t border-gray-200 text-center flex-shrink-0">
+          <button
+            onClick={() => {
+              onClose()
+            }}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
+          >
+            View All Notifications →
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NotificationBadge({
+  count,
+  isLoading,
+  onClick,
+}: {
+  count: number
+  isLoading: boolean
+  onClick: () => void
+}) {
+  if (isLoading) {
+    return (
+      <div className="relative flex items-center">
+        <button
+          className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors"
+          aria-label="Loading notifications"
+          disabled
+        >
+          <BellIcon className="w-6 h-6" />
+          <div className="absolute top-1 right-1 h-2 w-2 bg-gray-400 rounded-full animate-pulse" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative flex items-center">
+      <button
+        className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors"
+        aria-label={`${count} unread notification${count !== 1 ? 's' : ''}`}
+        onClick={onClick}
+      >
+        <BellIcon className={`w-6 h-6 ${count > 0 ? 'text-blue-600' : 'text-gray-600'}`} />
+        {count > 0 && (
+          <span className="absolute top-0 right-0 flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold text-white bg-red-500 rounded-full border-2 border-white">
+            {count > 99 ? '99+' : count}
+          </span>
+        )}
+      </button>
+    </div>
+  )
+}
+
 export default function SuperAdminDashboard() {
   const [userProfile, setUserProfile] = useState<SuperAdminProfile | null>(null)
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null)
   const [activeSection, setActiveSection] = useState('overview')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false)
+  const [notifications, setNotifications] = useState<AdminNotification[]>([])
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [isFetchingNotifications, setIsFetchingNotifications] = useState(false)
 
   // Data states
   const [tutors, setTutors] = useState<Tutor[]>([])
@@ -99,6 +354,8 @@ export default function SuperAdminDashboard() {
   const [isLoadingTutors, setIsLoadingTutors] = useState(false)
   const [isLoadingRequests, setIsLoadingRequests] = useState(false)
   const [isLoadingStudents, setIsLoadingStudents] = useState(false)
+  const [pendingRegistrations, setPendingRegistrations] = useState<PendingRegistration[]>([])
+  const [isLoadingPendingRegistrations, setIsLoadingPendingRegistrations] = useState(false)
 
   // Matching states
   const [showMatchModal, setShowMatchModal] = useState(false)
@@ -106,6 +363,10 @@ export default function SuperAdminDashboard() {
   const [availableTutors, setAvailableTutors] = useState<Tutor[]>([])
   const [selectedTutorId, setSelectedTutorId] = useState('')
   const [isMatching, setIsMatching] = useState(false)
+  const [tutorSearchTerm, setTutorSearchTerm] = useState('')
+  const [tutorSubjectFilter, setTutorSubjectFilter] = useState('all')
+  const [tutorAvailabilityFilter, setTutorAvailabilityFilter] = useState('all')
+  const [confirmMatch, setConfirmMatch] = useState(false)
   
   // Filter states
   const [tutorFilter, setTutorFilter] = useState('all') // all, verified, pending
@@ -122,6 +383,7 @@ export default function SuperAdminDashboard() {
       fetchTutors()
       fetchRequests()
       fetchStudents()
+      fetchPendingRegistrations()
     }
   }, [userProfile])
 
@@ -131,44 +393,57 @@ export default function SuperAdminDashboard() {
     }
   }, [tutorFilter, searchTerm])
 
+  useEffect(() => {
+    if (userProfile) {
+      fetchRequests()
+    }
+  }, [requestFilter, userProfile])
+
+  useEffect(() => {
+    if (!userProfile) {
+      return
+    }
+
+    fetchUnreadCount()
+
+    const interval = setInterval(() => {
+      fetchUnreadCount()
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [userProfile])
+
   const checkSuperAdminStatus = async () => {
     try {
-      // Check if super admin is logged in
-      const isLoggedIn = localStorage.getItem('superAdminLoggedIn')
-      const superAdminEmail = localStorage.getItem('superAdminEmail')
-      
-      if (!isLoggedIn || !superAdminEmail) {
+      // Verify session via secure API endpoint
+      const response = await fetch('/api/session', {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        // Session invalid or expired - redirect to login
         window.location.href = '/super-admin-login'
         return
       }
 
-      // Get user profile from database
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('email', superAdminEmail)
-        .single()
+      const sessionData = await response.json()
+      const user = sessionData.user
 
-      if (profileError || !profile) {
-        console.error('Profile error:', profileError)
-        // If profile doesn't exist in database, create a temporary one
-        const tempProfile = {
-          id: 'temp-super-admin',
-          full_name: 'Super Admin',
-          email: superAdminEmail,
-          role: 'super_admin'
-        }
-        setUserProfile(tempProfile)
-      } else {
-        // Use existing profile or create super admin profile
-        const superAdminProfile = {
-          id: profile.id,
-          full_name: profile.full_name || 'Super Admin',
-          email: profile.email,
-          role: 'super_admin'
-        }
-        setUserProfile(superAdminProfile)
+      // Verify user has super_admin role
+      if (!user || user.role !== 'super_admin') {
+        setError('Access denied. Super admin privileges required.')
+        return
       }
+
+      // Set user profile from session data
+      const superAdminProfile = {
+        id: user.id,
+        full_name: user.full_name || 'Super Admin',
+        email: user.email,
+        role: 'super_admin'
+      }
+      setUserProfile(superAdminProfile)
     } catch (error) {
       console.error('Error checking super admin status:', error)
       setError('Failed to verify super admin status')
@@ -177,63 +452,161 @@ export default function SuperAdminDashboard() {
     }
   }
 
+  const fetchUnreadCount = async () => {
+    if (!userProfile) {
+      return
+    }
+
+    try {
+      setIsLoadingNotifications(true)
+
+      const response = await fetch('/api/admin/notifications?unread_only=true&limit=1', {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch notifications')
+          return
+        }
+        throw new Error(`Failed to fetch notifications: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setUnreadCount(data.unread_count || 0)
+    } catch (err) {
+      console.error('Error fetching unread count:', err)
+    } finally {
+      setIsLoadingNotifications(false)
+    }
+  }
+
+  const fetchNotifications = async () => {
+    if (!userProfile) {
+      return
+    }
+
+    try {
+      setIsFetchingNotifications(true)
+
+      const response = await fetch('/api/admin/notifications?limit=10', {
+        method: 'GET',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch notifications')
+          return
+        }
+        throw new Error(`Failed to fetch notifications: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setNotifications(data.notifications || [])
+
+      if (data.unread_count !== undefined) {
+        setUnreadCount(data.unread_count)
+      }
+    } catch (err) {
+      console.error('Error fetching notifications:', err)
+    } finally {
+      setIsFetchingNotifications(false)
+    }
+  }
+
+  const handleBadgeClick = () => {
+    if (!isDropdownOpen) {
+      fetchNotifications()
+    }
+    setIsDropdownOpen((prev) => !prev)
+  }
+
+  const handleNotificationNavigate = (notification: AdminNotification) => {
+    switch (notification.notification_type) {
+      case 'new_request':
+      case 'tutor_assigned':
+      case 'request_updated':
+      case 'request_cancelled':
+        // All request-related notifications navigate to the Requests tab
+        setActiveSection('requests')
+        break
+      case 'whatsapp_request':
+        setActiveSection('pending-registrations')
+        break
+      default:
+        setActiveSection('overview')
+        break
+    }
+  }
+
+  const markAsRead = async (notificationId: string) => {
+    if (!userProfile) {
+      return
+    }
+
+    const notification = notifications.find((item) => item.id === notificationId)
+    if (notification?.is_read) {
+      return
+    }
+
+    const optimisticReadAt = new Date().toISOString()
+    setNotifications((prev) =>
+      prev.map((item) =>
+        item.id === notificationId
+          ? { ...item, is_read: true, read_at: optimisticReadAt }
+          : item
+      )
+    )
+    setUnreadCount((prev) => Math.max(0, prev - 1))
+
+    try {
+      const response = await fetch(`/api/admin/notifications/${notificationId}/read`, {
+        method: 'PATCH',
+        credentials: 'include'
+      })
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to mark notification as read')
+          await Promise.all([fetchNotifications(), fetchUnreadCount()])
+          return
+        }
+        throw new Error(`Failed to mark as read: ${response.status}`)
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error)
+      await Promise.all([fetchNotifications(), fetchUnreadCount()])
+    }
+  }
+
   const fetchSystemStats = async () => {
     try {
-      // Fetch total tutors
-      const { count: totalTutors } = await supabase
-        .from('tutors')
-        .select('*', { count: 'exact', head: true })
+      // Use server-side API to fetch stats (bypasses RLS restrictions)
+      const response = await fetch('/api/admin/stats', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      // Fetch pending tutors (unverified)
-      const { count: pendingTutors } = await supabase
-        .from('tutors')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_verified', false)
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch admin stats')
+          return
+        }
+        throw new Error(`Failed to fetch stats: ${response.status}`)
+      }
 
-      // Fetch total students
-      const { count: totalStudents } = await supabase
-        .from('students')
-        .select('*', { count: 'exact', head: true })
-
-      // Fetch total requests
-      const { count: totalRequests } = await supabase
-        .from('home_tutoring_requests')
-        .select('*', { count: 'exact', head: true })
-
-      // Fetch pending requests
-      const { count: pendingRequests } = await supabase
-        .from('home_tutoring_requests')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending')
-
-
-      // Calculate average rating
-      const { data: ratings } = await supabase
-        .from('tutor_reviews')
-        .select('rating')
-
-      const averageRating = ratings && ratings.length > 0 
-        ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length 
-        : 0
-
-      // Calculate total revenue (simplified)
-      const { data: payments } = await supabase
-        .from('home_tutoring_payments')
-        .select('amount')
-        .eq('payment_status', 'paid')
-
-      const totalRevenue = payments && payments.length > 0
-        ? payments.reduce((sum, p) => sum + Number(p.amount), 0)
-        : 0
+      const stats = await response.json()
 
       setSystemStats({
-        totalTutors: totalTutors || 0,
-        totalStudents: totalStudents || 0,
-        totalRequests: totalRequests || 0,
-        pendingTutors: pendingTutors || 0,
-        pendingRequests: pendingRequests || 0,
-        totalRevenue: totalRevenue,
-        averageRating: averageRating
+        totalTutors: stats.totalTutors || 0,
+        totalStudents: stats.totalStudents || 0,
+        totalRequests: stats.totalRequests || 0,
+        pendingTutors: stats.pendingTutors || 0,
+        pendingRequests: stats.pendingRequests || 0,
+        totalRevenue: stats.totalRevenue || 0,
+        averageRating: stats.averageRating || 0,
       })
     } catch (error) {
       console.error('Error fetching system stats:', error)
@@ -244,38 +617,31 @@ export default function SuperAdminDashboard() {
     try {
       setIsLoadingTutors(true)
       
-      let query = supabase
-        .from('tutors')
-        .select(`
-          *,
-          profiles (
-            full_name,
-            email,
-            phone
-          )
-        `)
-        .order('created_at', { ascending: false })
-
-      // Apply filters
-      if (tutorFilter === 'verified') {
-        query = query.eq('is_verified', true)
-      } else if (tutorFilter === 'pending') {
-        query = query.eq('is_verified', false)
+      // Build query params
+      const params = new URLSearchParams()
+      if (tutorFilter !== 'all') {
+        params.set('filter', tutorFilter)
       }
-
-      // Apply search
       if (searchTerm) {
-        query = query.or(`profiles.full_name.ilike.%${searchTerm}%,profiles.email.ilike.%${searchTerm}%`)
+        params.set('search', searchTerm)
       }
 
-      const { data, error } = await query
+      const url = `/api/admin/tutors${params.toString() ? `?${params.toString()}` : ''}`
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      if (error) {
-        console.error('Error fetching tutors:', error)
-        return
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch tutors')
+          return
+        }
+        throw new Error(`Failed to fetch tutors: ${response.status}`)
       }
 
-      setTutors(data || [])
+      const data = await response.json()
+      setTutors(data.tutors || [])
     } catch (error) {
       console.error('Error fetching tutors:', error)
     } finally {
@@ -287,33 +653,28 @@ export default function SuperAdminDashboard() {
     try {
       setIsLoadingRequests(true)
       
-      let query = supabase
-        .from('home_tutoring_requests')
-        .select(`
-          *,
-          profiles (
-            full_name,
-            email,
-            phone
-          )
-        `)
-        .order('created_at', { ascending: false })
-
-      // Apply filters
-      if (requestFilter === 'pending') {
-        query = query.eq('status', 'pending')
-      } else if (requestFilter === 'matched') {
-        query = query.eq('status', 'matched')
+      // Build query params
+      const params = new URLSearchParams()
+      if (requestFilter !== 'all') {
+        params.set('status', requestFilter)
       }
 
-      const { data, error } = await query
+      const url = `/api/admin/requests${params.toString() ? `?${params.toString()}` : ''}`
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      if (error) {
-        console.error('Error fetching requests:', error)
-        return
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch requests')
+          return
+        }
+        throw new Error(`Failed to fetch requests: ${response.status}`)
       }
 
-      setRequests(data || [])
+      const data = await response.json()
+      setRequests(data.requests || [])
     } catch (error) {
       console.error('Error fetching requests:', error)
     } finally {
@@ -325,27 +686,48 @@ export default function SuperAdminDashboard() {
     try {
       setIsLoadingStudents(true)
       
-      const { data, error } = await supabase
-        .from('students')
-        .select(`
-          *,
-          profiles (
-            full_name,
-            email
-          )
-        `)
-        .order('created_at', { ascending: false })
+      const response = await fetch('/api/admin/students', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-      if (error) {
-        console.error('Error fetching students:', error)
-        return
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.warn('Not authorized to fetch students')
+          return
+        }
+        throw new Error(`Failed to fetch students: ${response.status}`)
       }
 
-      setStudents(data || [])
+      const data = await response.json()
+      setStudents(data.students || [])
     } catch (error) {
       console.error('Error fetching students:', error)
     } finally {
       setIsLoadingStudents(false)
+    }
+  }
+
+  const fetchPendingRegistrations = async () => {
+    try {
+      setIsLoadingPendingRegistrations(true)
+
+      const response = await fetch('/api/admin/pending-registrations', {
+        method: 'GET',
+        credentials: 'include',
+      })
+
+      if (!response.ok) {
+        console.error('Error fetching pending registrations:', response.status)
+        return
+      }
+
+      const data = await response.json()
+      setPendingRegistrations(data.pending_registrations || [])
+    } catch (error) {
+      console.error('Error fetching pending registrations:', error)
+    } finally {
+      setIsLoadingPendingRegistrations(false)
     }
   }
 
@@ -426,28 +808,31 @@ export default function SuperAdminDashboard() {
   const openMatchModal = async (request: HomeTutoringRequest) => {
     setSelectedRequest(request)
     setSelectedTutorId('')
+    setTutorSearchTerm('')
+    setTutorSubjectFilter('all')
+    setTutorAvailabilityFilter('all')
+    setConfirmMatch(false)
     
-    // Fetch available tutors (verified tutors)
-    const { data: tutors, error } = await supabase
-      .from('tutors')
-      .select(`
-        *,
-        profiles (
-          full_name,
-          email,
-          phone
-        )
-      `)
-      .eq('is_verified', true)
-      .order('created_at', { ascending: false })
+    try {
+      // Fetch available tutors (verified tutors) via API
+      const response = await fetch('/api/admin/tutors/available', {
+        method: 'GET',
+        credentials: 'include',
+      })
 
-    if (error) {
+      if (!response.ok) {
+        console.error('Error fetching available tutors:', response.status)
+        alert('Failed to load available tutors. Please try again.')
+        return
+      }
+
+      const data = await response.json()
+      setAvailableTutors(data.tutors || [])
+      setShowMatchModal(true)
+    } catch (error) {
       console.error('Error fetching available tutors:', error)
-      return
+      alert('Failed to load available tutors. Please try again.')
     }
-
-    setAvailableTutors(tutors || [])
-    setShowMatchModal(true)
   }
 
   const matchTutorToRequest = async () => {
@@ -459,57 +844,28 @@ export default function SuperAdminDashboard() {
     try {
       setIsMatching(true)
 
-      // Update request status to matched
-      const { error: requestError } = await supabase
-        .from('home_tutoring_requests')
-        .update({
-          status: 'matched',
-          matched_tutor_id: selectedTutorId
-        })
-        .eq('id', selectedRequest.id)
+      // Use API to perform the match
+      const response = await fetch('/api/admin/match', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId: selectedRequest.id,
+          tutorId: selectedTutorId,
+          studentName: selectedRequest.student_name,
+          subjects: selectedRequest.subjects,
+          parentId: selectedRequest.parent_id,
+        }),
+      })
 
-      if (requestError) {
-        console.error('Error updating request:', requestError)
-        alert('Failed to match tutor to request')
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Error matching tutor:', errorData)
+        alert(errorData.error || 'Failed to match tutor to request')
         return
       }
-
-      // Create a match record
-      const { error: matchError } = await supabase
-        .from('tutor_student_matches')
-        .insert({
-          tutor_id: selectedTutorId,
-          student_id: selectedRequest.parent_id, // Using parent_id as student_id for now
-          request_id: selectedRequest.id,
-          status: 'active',
-          created_at: new Date().toISOString()
-        })
-
-      if (matchError) {
-        console.error('Error creating match:', matchError)
-      }
-
-      // Send notification to tutor
-      await supabase
-        .from('tutor_notifications')
-        .insert({
-          tutor_id: selectedTutorId,
-          title: 'New Student Match',
-          message: `You have been matched with ${selectedRequest.student_name} for ${selectedRequest.subjects} tutoring.`,
-          notification_type: 'match',
-          category: 'general'
-        })
-
-      // Send notification to parent
-      await supabase
-        .from('parent_notifications')
-        .insert({
-          parent_id: selectedRequest.parent_id,
-          title: 'Tutor Matched',
-          message: `A tutor has been matched with ${selectedRequest.student_name} for ${selectedRequest.subjects} tutoring.`,
-          notification_type: 'match',
-          category: 'general'
-        })
 
       // Refresh data
       await fetchRequests()
@@ -528,6 +884,47 @@ export default function SuperAdminDashboard() {
     }
   }
 
+  const requestSubjects = useMemo(() => {
+    if (!selectedRequest?.subjects) {
+      return []
+    }
+    return selectedRequest.subjects
+      .split(',')
+      .map((subject) => subject.trim())
+      .filter((subject) => subject.length > 0)
+  }, [selectedRequest])
+
+  const filteredTutors = useMemo(() => {
+    const searchLower = tutorSearchTerm.trim().toLowerCase()
+
+    return availableTutors.filter((tutor) => {
+      const subjects = Array.isArray(tutor.subjects) ? tutor.subjects : []
+      const subjectMatch =
+        tutorSubjectFilter === 'all' ||
+        subjects.some((subject) => subject.toLowerCase() === tutorSubjectFilter.toLowerCase())
+
+      const availabilityMatch =
+        tutorAvailabilityFilter === 'all' ||
+        Boolean(tutor.availability && Object.values(tutor.availability).some((slot) => slot?.available))
+
+      const nameMatch =
+        searchLower.length === 0 ||
+        tutor.profiles.full_name.toLowerCase().includes(searchLower) ||
+        tutor.profiles.email.toLowerCase().includes(searchLower)
+
+      return subjectMatch && availabilityMatch && nameMatch
+    })
+  }, [
+    availableTutors,
+    tutorSearchTerm,
+    tutorSubjectFilter,
+    tutorAvailabilityFilter,
+  ])
+
+  const selectedTutor = useMemo(() => {
+    return availableTutors.find((tutor) => tutor.id === selectedTutorId) || null
+  }, [availableTutors, selectedTutorId])
+
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -544,13 +941,19 @@ export default function SuperAdminDashboard() {
     }).format(amount)
   }
 
-  const handleLogout = () => {
-    // Clear login state
-    localStorage.removeItem('superAdminLoggedIn')
-    localStorage.removeItem('superAdminEmail')
-    
-    // Redirect to login page
-    window.location.href = '/super-admin-login'
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/logout', { method: 'POST', credentials: 'include' })
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      // Clear login state
+      localStorage.removeItem('superAdminLoggedIn')
+      localStorage.removeItem('superAdminEmail')
+      
+      // Redirect to login page
+      window.location.href = '/super-admin-login'
+    }
   }
 
   const renderSectionContent = () => {
@@ -660,7 +1063,11 @@ export default function SuperAdminDashboard() {
                 </button>
 
                 <button
-                  onClick={() => setActiveSection('requests')}
+                  onClick={() =>
+                    setActiveSection(
+                      pendingRegistrations.length > 0 ? 'pending-registrations' : 'requests'
+                    )
+                  }
                   className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   <ClockIcon className="w-5 h-5 text-purple-600 mr-3" />
@@ -992,6 +1399,97 @@ export default function SuperAdminDashboard() {
           </div>
         )
 
+      case 'pending-registrations':
+        return (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold text-gray-900">Pending Registrations</h2>
+              <button
+                onClick={fetchPendingRegistrations}
+                className="text-sm font-medium text-blue-600 hover:text-blue-800"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+              {isLoadingPendingRegistrations ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="mt-2 text-gray-600">Loading pending registrations...</p>
+                </div>
+              ) : pendingRegistrations.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-gray-500">No pending registrations right now.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Parent
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Student
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Subjects
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Submitted
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {pendingRegistrations.map((registration) => (
+                        <tr key={registration.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {registration.parent_name || 'Parent'}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {registration.parent_email}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {registration.student_name || 'Student'}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                Grade {registration.grade_level || 'N/A'}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">
+                              {registration.subjects || '—'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              Awaiting Verification
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {formatDate(registration.created_at)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
 
       default:
         return (
@@ -1042,6 +1540,22 @@ export default function SuperAdminDashboard() {
               <h1 className="text-2xl font-bold text-gray-900">Super Admin Dashboard</h1>
             </div>
             <div className="flex items-center space-x-4">
+              <div className="notifications-dropdown-container relative">
+                <NotificationBadge
+                  count={unreadCount}
+                  isLoading={isLoadingNotifications}
+                  onClick={handleBadgeClick}
+                />
+                <NotificationsDropdown
+                  isOpen={isDropdownOpen}
+                  notifications={notifications}
+                  isLoading={isFetchingNotifications}
+                  unreadCount={unreadCount}
+                  onClose={() => setIsDropdownOpen(false)}
+                  onMarkAsRead={markAsRead}
+                  onNavigate={handleNotificationNavigate}
+                />
+              </div>
               <div className="text-right">
                 <p className="text-sm text-gray-500">Super Admin</p>
                 <p className="font-medium text-gray-900">{userProfile?.full_name}</p>
@@ -1061,20 +1575,21 @@ export default function SuperAdminDashboard() {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
+      {/* Navigation Tabs - positioned below fixed header */}
+      <div className="pt-20 bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <nav className="-mb-px flex space-x-8 overflow-x-auto">
             {[
               { id: 'overview', name: 'Overview', icon: ChartBarIcon },
               { id: 'tutors', name: 'Tutors', icon: AcademicCapIcon },
               { id: 'requests', name: 'Requests', icon: ClockIcon },
+              { id: 'pending-registrations', name: 'Pending Registrations', icon: ExclamationTriangleIcon },
               { id: 'students', name: 'Students', icon: UserGroupIcon }
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveSection(tab.id)}
-                className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm ${
+                className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap ${
                   activeSection === tab.id
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1088,8 +1603,8 @@ export default function SuperAdminDashboard() {
         </div>
       </div>
 
-             {/* Main Content */}
-       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pt-24">
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
          {renderSectionContent()}
        </main>
 
@@ -1109,35 +1624,113 @@ export default function SuperAdminDashboard() {
                </button>
              </div>
 
-             <div className="mb-6">
-               <h4 className="font-medium text-gray-900 mb-2">Request Details:</h4>
-               <div className="bg-gray-50 rounded-lg p-4">
-                 <p><strong>Student:</strong> {selectedRequest.student_name}</p>
-                 <p><strong>Subjects:</strong> {selectedRequest.subjects}</p>
-                 <p><strong>Grade Level:</strong> {selectedRequest.grade_level}</p>
-                 <p><strong>Location:</strong> {selectedRequest.location}</p>
-               </div>
-             </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Request Details</h4>
+                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                  <p><strong>Student:</strong> {selectedRequest.student_name}</p>
+                  <p><strong>Subjects:</strong> {selectedRequest.subjects}</p>
+                  <p><strong>Grade Level:</strong> {selectedRequest.grade_level}</p>
+                  <p><strong>Schedule:</strong> {selectedRequest.preferred_schedule}</p>
+                  <p><strong>Location:</strong> {selectedRequest.location}</p>
+                </div>
+                <div className="mt-4 text-sm text-gray-600">
+                  <p><strong>Parent:</strong> {selectedRequest.profiles.full_name}</p>
+                  <p>{selectedRequest.profiles.email}</p>
+                  <p>{selectedRequest.profiles.phone}</p>
+                </div>
+              </div>
 
-             <div className="mb-6">
-               <label className="block text-sm font-medium text-gray-700 mb-2">
-                 Select a Tutor:
-               </label>
-               <select
-                 value={selectedTutorId}
-                 onChange={(e) => setSelectedTutorId(e.target.value)}
-                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
-               >
-                 <option value="">Choose a tutor...</option>
-                 {availableTutors.map((tutor) => (
-                   <option key={tutor.id} value={tutor.id}>
-                     {tutor.profiles.full_name} - {Array.isArray(tutor.subjects) ? tutor.subjects.join(', ') : tutor.subjects}
-                   </option>
-                 ))}
-               </select>
-             </div>
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Available Tutors</h4>
+                <div className="grid grid-cols-1 gap-3 mb-4">
+                  <input
+                    type="text"
+                    value={tutorSearchTerm}
+                    onChange={(event) => setTutorSearchTerm(event.target.value)}
+                    placeholder="Search by name or email"
+                    className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <select
+                      value={tutorSubjectFilter}
+                      onChange={(event) => setTutorSubjectFilter(event.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                    >
+                      <option value="all">All subjects</option>
+                      {requestSubjects.map((subject) => (
+                        <option key={subject} value={subject}>
+                          {subject}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={tutorAvailabilityFilter}
+                      onChange={(event) => setTutorAvailabilityFilter(event.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                    >
+                      <option value="all">Any availability</option>
+                      <option value="available">Has availability</option>
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-500">Showing verified tutors only.</p>
+                </div>
 
-             <div className="flex justify-end space-x-3">
+                <div className="max-h-[320px] overflow-y-auto space-y-3 pr-1">
+                  {filteredTutors.length === 0 ? (
+                    <div className="text-center text-sm text-gray-500 py-6">
+                      No tutors match the current filters.
+                    </div>
+                  ) : (
+                    filteredTutors.map((tutor) => {
+                      const subjects = Array.isArray(tutor.subjects) ? tutor.subjects.join(', ') : tutor.subjects
+                      const isSelected = tutor.id === selectedTutorId
+                      return (
+                        <button
+                          key={tutor.id}
+                          type="button"
+                          onClick={() => setSelectedTutorId(tutor.id)}
+                          className={`w-full text-left border rounded-lg p-3 transition-colors ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900">{tutor.profiles.full_name}</p>
+                              <p className="text-xs text-gray-500">{tutor.profiles.email}</p>
+                              <p className="text-xs text-gray-600 mt-1">{subjects}</p>
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              {tutor.availability ? 'Availability set' : 'No availability'}
+                            </span>
+                          </div>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 pt-4 space-y-3">
+              <div className="text-sm text-gray-600">
+                <strong>Selected tutor:</strong>{' '}
+                {selectedTutor ? selectedTutor.profiles.full_name : 'None selected'}
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={confirmMatch}
+                  onChange={(event) => setConfirmMatch(event.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                I confirm this tutor match is correct.
+              </label>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
                <button
                  onClick={() => setShowMatchModal(false)}
                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
@@ -1146,7 +1739,7 @@ export default function SuperAdminDashboard() {
                </button>
                <button
                  onClick={matchTutorToRequest}
-                 disabled={!selectedTutorId || isMatching}
+                disabled={!selectedTutorId || !confirmMatch || isMatching}
                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                >
                  {isMatching ? 'Matching...' : 'Match Tutor'}

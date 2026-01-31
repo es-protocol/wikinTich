@@ -16,11 +16,13 @@ import {
     ArrowRightOnRectangleIcon,
     BellIcon,
     CalendarIcon,
+    ChatBubbleLeftRightIcon,
     ChevronDownIcon,
     ChevronRightIcon,
     Cog6ToothIcon,
     DocumentTextIcon,
     EnvelopeIcon,
+    PaperAirplaneIcon,
     PhoneIcon,
     PhotoIcon,
     StarIcon,
@@ -28,8 +30,9 @@ import {
     UserIcon,
     XMarkIcon
 } from '@heroicons/react/24/outline'
+import type { ConversationWithDetails, Message } from '@/lib/message-types'
 import { motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface TutorProfile {
   id: string
@@ -286,6 +289,17 @@ export default function TutorDashboard() {
   // CSRF token for session state-changing requests (create, reschedule, cancel, complete, no_show)
   const [csrfToken, setCsrfToken] = useState<string | null>(null)
 
+  // Messages (in-app messaging)
+  const [conversations, setConversations] = useState<ConversationWithDetails[]>([])
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [messageInput, setMessageInput] = useState('')
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false)
+  const [conversationsError, setConversationsError] = useState<string | null>(null)
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [isSendingMessage, setIsSendingMessage] = useState(false)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+
   const { user, isLoading: authLoading, logout } = useAuth()
 
   useEffect(() => {
@@ -317,6 +331,117 @@ export default function TutorDashboard() {
     }
     loadCsrfToken()
   }, [user])
+
+  const fetchConversations = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
+    try {
+      if (!silent) {
+        setIsLoadingConversations(true)
+        setConversationsError(null)
+      }
+      const res = await fetch('/api/messages/conversations', { credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to load conversations')
+      setConversations(data.conversations || [])
+      setConversationsError(null)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to load conversations'
+      if (!silent) {
+        console.error('Error fetching conversations:', e)
+        setConversationsError(message)
+      }
+      setConversations([])
+    } finally {
+      if (!silent) setIsLoadingConversations(false)
+    }
+  }, [])
+
+  const fetchMessages = useCallback(async (conversationId: string, options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
+    try {
+      if (!silent) setIsLoadingMessages(true)
+      const res = await fetch(`/api/messages/conversations/${conversationId}/messages`, { credentials: 'include' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to load messages')
+      setMessages(data.messages || [])
+    } catch (e) {
+      if (!silent) console.error('Error fetching messages:', e)
+      setMessages([])
+    } finally {
+      if (!silent) setIsLoadingMessages(false)
+    }
+  }, [])
+
+  const sendMessage = useCallback(async (conversationId: string, content: string) => {
+    const trimmed = content.trim()
+    if (!trimmed || isSendingMessage) return
+    try {
+      setIsSendingMessage(true)
+      const res = await fetch(`/api/messages/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ content: trimmed, csrf_token: csrfToken ?? '' }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to send message')
+      if (data.message) setMessages(prev => [...prev, data.message])
+      setMessageInput('')
+      await fetchConversations()
+    } catch (e) {
+      console.error('Error sending message:', e)
+      alert(e instanceof Error ? e.message : 'Failed to send message')
+    } finally {
+      setIsSendingMessage(false)
+    }
+  }, [csrfToken, isSendingMessage, fetchConversations])
+
+  const markConversationAsRead = useCallback(async (conversationId: string) => {
+    try {
+      await fetch(`/api/messages/conversations/${conversationId}/read`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ csrf_token: csrfToken ?? '' }),
+      })
+      await fetchConversations({ silent: true })
+    } catch {
+      // Non-blocking
+    }
+  }, [csrfToken, fetchConversations])
+
+  useEffect(() => {
+    if (activeSection === 'messages' && userProfile) {
+      fetchConversations()
+    }
+  }, [activeSection, userProfile, fetchConversations])
+
+  useEffect(() => {
+    if (selectedConversationId) {
+      markConversationAsRead(selectedConversationId)
+      fetchMessages(selectedConversationId)
+    } else {
+      setMessages([])
+    }
+  }, [selectedConversationId, fetchMessages, markConversationAsRead])
+
+  // Scroll message list to bottom when opening thread or when messages update
+  useEffect(() => {
+    if (!selectedConversationId || !messages.length) return
+    messagesContainerRef.current?.scrollTo({ top: messagesContainerRef.current.scrollHeight, behavior: 'smooth' })
+  }, [selectedConversationId, messages])
+
+  // Poll for new messages when a thread is open (5–10 sec); silent = no loading spinner/flicker
+  const MESSAGE_POLL_INTERVAL_MS = 8_000
+  useEffect(() => {
+    if (!selectedConversationId || activeSection !== 'messages') return
+    const interval = setInterval(() => {
+      fetchMessages(selectedConversationId, { silent: true })
+      markConversationAsRead(selectedConversationId)
+      fetchConversations({ silent: true })
+    }, MESSAGE_POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [selectedConversationId, activeSection, fetchMessages, fetchConversations, markConversationAsRead])
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -1564,6 +1689,13 @@ export default function TutorDashboard() {
       // Close dropdown
       setShowNotificationsDropdown(false)
 
+      // New message notification → open Messages section
+      if (notification.title === 'New message' || notification.category === 'message') {
+        setActiveSection('messages')
+        fetchConversations()
+        return
+      }
+
       // Navigate to Sessions tab and switch to the relevant filter based on notification type
       setActiveSection('sessions')
       switch (notification.notification_type) {
@@ -2666,6 +2798,163 @@ export default function TutorDashboard() {
           </div>
         )
 
+      case 'messages':
+        return (
+          <div className="bg-white rounded-2xl shadow-lg">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Messages</h3>
+              <p className="text-sm text-gray-500 mt-1">Chat with parents. Use only in-app messages so we can help if needed.</p>
+            </div>
+            <div className="flex flex-col md:flex-row min-h-[400px]">
+              <div className="md:w-80 border-b md:border-b-0 md:border-r border-gray-200 flex-shrink-0">
+                {isLoadingConversations ? (
+                  <div className="p-4 space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-16 bg-gray-100 rounded-lg animate-pulse" />
+                    ))}
+                  </div>
+                ) : conversationsError ? (
+                  <div className="p-6 text-center text-amber-700 bg-amber-50 border border-amber-200 rounded-lg mx-2 my-2">
+                    <p className="text-sm font-medium">Couldn&apos;t load conversations</p>
+                    <p className="text-xs mt-1">{conversationsError}</p>
+                    <p className="text-xs mt-2">If you&apos;re a tutor, try logging out and back in, then open Messages again.</p>
+                    <button
+                      type="button"
+                      onClick={() => fetchConversations()}
+                      className="mt-3 px-3 py-1.5 text-sm font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-md"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : conversations.length === 0 ? (
+                  <div className="p-6 text-center text-gray-500">
+                    <ChatBubbleLeftRightIcon className="w-10 h-10 mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm">No conversations yet</p>
+                    <p className="text-xs mt-1">When a parent messages you from their dashboard, conversations will appear here.</p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-gray-200">
+                    {conversations.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedConversationId(c.id)}
+                          className={`w-full text-left px-4 py-3 hover:bg-gray-50 focus:outline-none focus:bg-gray-50 ${selectedConversationId === c.id ? 'bg-primary-50 border-l-2 border-primary-500' : ''}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium text-gray-900 truncate">{c.other_party_name ?? 'Parent'}</p>
+                            {(c.unread_count ?? 0) > 0 && (
+                              <span className="shrink-0 bg-red-500 text-white text-xs rounded-full min-w-[1.25rem] h-5 flex items-center justify-center px-1">
+                                {c.unread_count! > 99 ? '99+' : c.unread_count}
+                              </span>
+                            )}
+                          </div>
+                          {(c.request_student_name || c.request_subjects) && (
+                            <p className="text-xs text-gray-500 truncate">
+                              {[c.request_student_name, c.request_subjects].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
+                          {c.last_message_preview && (
+                            <p className="text-sm text-gray-600 truncate mt-0.5">{c.last_message_preview}</p>
+                          )}
+                          {c.last_message_at && (
+                            <p className="text-xs text-gray-400 mt-0.5">{formatDate(c.last_message_at)}</p>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="flex-1 flex flex-col min-h-0">
+                {!selectedConversationId ? (
+                  <div className="flex-1 flex items-center justify-center text-gray-500 p-6">
+                    <div className="text-center">
+                      <ChatBubbleLeftRightIcon className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                      <p>Select a conversation</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      ref={messagesContainerRef}
+                      className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[200px]"
+                    >
+                      {isLoadingMessages ? (
+                        <div className="flex justify-center py-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+                        </div>
+                      ) : messages.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">No messages yet. Say hello!</p>
+                      ) : (
+                        messages.map((m) => (
+                          <div
+                            key={m.id}
+                            className={`flex ${m.sender_role === 'tutor' ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div
+                              className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                                m.sender_role === 'tutor'
+                                  ? 'bg-primary-600 text-white'
+                                  : 'bg-gray-200 text-gray-900'
+                              }`}
+                            >
+                              <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                              <p className={`text-xs mt-1 ${m.sender_role === 'tutor' ? 'text-primary-100' : 'text-gray-500'}`}>
+                                {formatDate(m.created_at)}
+                              </p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <form
+                      className="p-4 border-t border-gray-200 flex flex-col gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        sendMessage(selectedConversationId, messageInput)
+                      }}
+                    >
+                      <div className="flex gap-2 items-end flex-wrap">
+                        <textarea
+                          value={messageInput}
+                          onChange={(e) => {
+                            setMessageInput(e.target.value.slice(0, 2000))
+                            const el = e.target
+                            el.style.height = 'auto'
+                            el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+                          }}
+                          onFocus={(e) => {
+                            const el = e.target
+                            el.style.height = 'auto'
+                            el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+                          }}
+                          placeholder="Type a message..."
+                          rows={2}
+                          className="flex-1 min-w-0 rounded-lg border border-gray-300 px-3 py-2 text-gray-900 focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none overflow-y-auto min-h-[2.5rem] max-h-40"
+                          maxLength={2000}
+                          disabled={isSendingMessage}
+                        />
+                        <button
+                          type="submit"
+                          disabled={!messageInput.trim() || isSendingMessage}
+                          className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
+                        >
+                          <PaperAirplaneIcon className="w-4 h-4" />
+                          {isSendingMessage ? 'Sending...' : 'Send'}
+                        </button>
+                      </div>
+                      <p className={`text-xs ${messageInput.length >= 2000 ? 'text-red-600' : 'text-gray-500'}`}>
+                        {messageInput.length} / 2000
+                      </p>
+                    </form>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+
       case 'payments':
         return (
           <div className="space-y-6">
@@ -3047,6 +3336,32 @@ export default function TutorDashboard() {
                 <p key={`header-name-${lastUpdate}`} className="font-medium text-gray-900">{userProfile?.full_name || 'Loading...'}</p>
               </div>
               
+              {/* Messages - always visible in header */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNotificationsDropdown(false)
+                  setShowProfileDropdown(false)
+                  setActiveSection('messages')
+                }}
+                className={`relative flex items-center gap-2 px-3 py-2 rounded-lg font-medium text-sm transition-colors ${
+                  activeSection === 'messages'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <ChatBubbleLeftRightIcon className="w-5 h-5" />
+                Messages
+                {(() => {
+                  const totalUnread = conversations.reduce((s, c) => s + (c.unread_count ?? 0), 0)
+                  return totalUnread > 0 ? (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full min-w-[1.25rem] h-5 flex items-center justify-center px-1">
+                      {totalUnread > 99 ? '99+' : totalUnread}
+                    </span>
+                  ) : null
+                })()}
+              </button>
+
               {/* Notification Bell */}
               <div className="relative notifications-dropdown">
                 <button 
@@ -3186,6 +3501,7 @@ export default function TutorDashboard() {
             { id: 'overview', name: 'Overview', icon: '📊' },
             { id: 'students', name: 'My Students', icon: '👨‍🎓' },
             { id: 'sessions', name: 'Sessions', icon: '📅' },
+            { id: 'messages', name: 'Messages', icon: '💬' },
             { id: 'documents', name: 'Documents', icon: '📄' },
             { id: 'payments', name: 'Payments', icon: '💰' }
           ].map((tab) => (

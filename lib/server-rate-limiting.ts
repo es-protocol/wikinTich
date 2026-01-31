@@ -14,6 +14,7 @@ const RATE_LIMITS = {
   otp_resend: 3, // 3 OTP resend requests per 15 minutes
   password_reset: 3, // 3 password reset requests per hour (more restrictive)
   session_action: 30, // 30 session mutations per 15 minutes (accept, cancel, request-change, create, etc.)
+  message_action: 60, // 60 message/conversation actions per 15 minutes (send message, create conversation)
 } as const
 
 // Legacy constant for backward compatibility
@@ -54,7 +55,7 @@ function getClientIP(request: NextRequest): string {
 export async function checkServerSideRateLimit(
   request: NextRequest, //incoming client request. Why needed? To get client IP Address
   email: string, //Parent email from the form. Why, I want to track rate limits per email + IP Address
-  action: 'registration' | 'login' | 'dashboard' | 'otp_resend' | 'password_reset' | 'session_action' = 'registration'//What are action is this email trying to perform
+  action: 'registration' | 'login' | 'dashboard' | 'otp_resend' | 'password_reset' | 'session_action' | 'message_action' = 'registration'//What are action is this email trying to perform
 ): Promise<{ //Function does slow operations, so it's a good idea to return a promise
   allowed: boolean; 
   resetTime?: number; 

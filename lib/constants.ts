@@ -204,6 +204,9 @@ export const DB_TABLES = {
   PARENT_NOTIFICATIONS: 'parent_notifications',
   TUTOR_NOTIFICATIONS: 'tutor_notifications',
   SESSION_AUDIT_LOG: 'session_audit_log',
+  CONVERSATIONS: 'conversations',
+  MESSAGES: 'messages',
+  MESSAGE_AUDIT_LOG: 'message_audit_log',
 } as const
 
 // Route paths
@@ -380,4 +383,23 @@ export const SESSION_SUCCESS_MESSAGES = {
   SESSION_COMPLETED: 'Session marked as completed',
   SESSION_CONFIRMED: 'Session confirmed successfully',
   RECURRING_SESSIONS_CREATED: 'Recurring sessions created successfully',
+} as const
+
+// ============================================
+// In-app Messaging Constants
+// ============================================
+
+export const MESSAGE_CONSTANTS = {
+  MAX_BODY_LENGTH: 2000,
+  DEFAULT_PAGE_LIMIT: 50,
+  MAX_PAGE_LIMIT: 100,
+} as const
+
+export const MESSAGE_ERROR_MESSAGES = {
+  CONVERSATION_NOT_FOUND: 'Conversation not found',
+  UNAUTHORIZED_CONVERSATION_ACCESS: 'You do not have permission to access this conversation',
+  REQUEST_NOT_MATCHED: 'This request is not matched to you',
+  MESSAGE_BODY_REQUIRED: 'Message content is required',
+  MESSAGE_BODY_TOO_LONG: 'Message is too long',
+  MESSAGE_SEND_FAILED: 'Failed to send message',
 } as const

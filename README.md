@@ -1,24 +1,33 @@
 # Tutor-Link
 
-## Who this project is for
+Tutor-Link is a full-stack web platform that connects parents with vetted tutors for in-home tutoring, focusing on secure onboarding, structured data collection, and production-style authentication workflows.
 
-Tutor-Link is intended for:
+🔗 Live demo: https://wikin-tich.vercel.app/
 
-- **Parents and guardians** who want to book qualified tutors to teach their children at home in a structured, repeatable way.
-- **Tutors** who want to offer home tutoring services, receive vetted requests, and eventually manage their availability and bookings.
-- **Instructors, assessors, and future contributors** who need to understand how the platform is built, especially the parent signup and home-tutoring request workflow.
+This project was built to demonstrate how a real-world tutoring marketplace could handle:
+- Multi-step user onboarding
+- Email-based OTP verification
+- Secure session management
+- Backend validation and persistence
+- Role-based user flows (parents and tutors)
 
-## Project description
+## What this project demonstrates
 
-Tutor-Link is a web platform that connects parents and guardians with a marketplace of vetted tutors for in-home tutoring. Parents can submit a detailed home-tutoring request, verify their email via a one-time passcode (OTP), and then sign in to a dashboard where future features like booking management and tutor matching can live.
+- Full-stack ownership
+- Production-style authentication flows
+- Secure handling of partially registered users
+- API design and backend validation
+- Clear architectural documentation
 
-The current implementation focuses on the **parent signup and home-tutoring request workflow**. This workflow:
+## Why this project exists
 
-- Collects parent, student, and tutoring requirement details through a multi-step form.
-- Validates and sanitizes input and temporarily stores the data server side while the Supabase OTP verification completes.
-- On successful verification, persists the data into Supabase tables (for parents, students, and home-tutoring requests) and creates an account the parent can use to sign in.
+Many tutoring platforms focus on matching algorithms but gloss over the complexity of onboarding, data integrity, and security.
 
-Other flows, such as tutor applications, dashboards for different roles, and messaging(planned), are part of the platform design and are reflected in the architecture, but the deepest documentation and testing effort is centered on the parent signup and home-tutoring request flow.
+Tutor-Link focuses on the *hard but unglamorous* parts of real systems:
+- Collecting complex, multi-entity data safely
+- Handling authentication without leaking partial registrations
+- Protecting critical workflows with CSRF, rate limiting, and server-side validation
+
 
 ## Screenshots and demo
 

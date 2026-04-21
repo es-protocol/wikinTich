@@ -17,6 +17,10 @@ dist/
 .env.test.local
 .env.production.local
 
+# SSH / instance keys (never commit)
+*.pem
+*.ppk
+
 # Vercel
 .vercel
 
@@ -101,5 +105,9 @@ jspm_packages/
 # Test documentation notes
 __tests__/**/*.md
 
-# Local docs (personal notes)
-docs/*.md
+# Markdown: all .md ignored by default (stay on disk, not in Git until you choose).
+# Stage only what you want for submission:  git add -f README.md docs/ADR/0002-....md
+*.md
+
+# Put personal scratch notes under docs/private/ if you want them gitignored:
+# docs/private/

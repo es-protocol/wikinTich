@@ -1,0 +1,43 @@
+# Local / portable stack: app + Redis (Redis reserved for rate limits & cache per ADRs).
+# Supabase remains the hosted auth + Postgres backend; configure credentials via .env
+#
+# Variable substitution for `build.args` uses the project `.env` file by default.
+# If you only keep secrets in `.env.local`, run:
+#   docker compose --env-file .env.local up --build
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - tutor-link-redis:/data
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-local}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+        CSRF_SECRET: ${CSRF_SECRET}
+        SESSION_SECRET: ${SESSION_SECRET}
+    ports:
+      - '3000:3000'
+    # Loads like Next.js: `.env` then `.env.local` (later wins on duplicate keys).
+    # Use either file — you do not need both if you already use `.env.local` for dev.
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
+    environment:
+      NODE_ENV: production
+      # Ready for Phase 4+ when the app reads REDIS_URL
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - redis
+
+volumes:
+  tutor-link-redis:

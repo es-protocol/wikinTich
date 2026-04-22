@@ -1,14 +1,12 @@
-# Local / portable stack: app + Redis (Redis reserved for rate limits & cache per ADRs).
-# Supabase remains the hosted auth + Postgres backend; configure credentials via .env
-#
+# Local / portable stack: Caddy (:80) → app; Redis; Supabase (hosted).
+# Browsers hit http://<host>/ only — not :3000. TLS on :443 when you have a domain (see Caddyfile).
 # Variable substitution for `build.args` uses the project `.env` file by default.
 # If you only keep secrets in `.env.local`, run:
 #   docker compose --env-file .env.local up --build
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - '6379:6379'
+    # Not published to the host; only `app` reaches Redis on the Docker network.
     volumes:
       - tutor-link-redis:/data
 
@@ -23,8 +21,7 @@ services:
         SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
         CSRF_SECRET: ${CSRF_SECRET}
         SESSION_SECRET: ${SESSION_SECRET}
-    ports:
-      - '3000:3000'
+    # Not published to the host; Caddy reverse-proxies to app:3000.
     # Loads like Next.js: `.env` then `.env.local` (later wins on duplicate keys).
     # Use either file — you do not need both if you already use `.env.local` for dev.
     env_file:
@@ -38,6 +35,16 @@ services:
       REDIS_URL: redis://redis:6379
     depends_on:
       - redis
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - app
 
 volumes:
   tutor-link-redis:

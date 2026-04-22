@@ -133,10 +133,11 @@ describe('Tutor Form Data Transformation - Unit Tests', () => {
 
       // Assert
       expect(validation.isValid).toBe(true)
-      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-      days.forEach(day => {
-        expect(expectedData.availability[day]).toHaveProperty('available')
-        expect(expectedData.availability[day]).toHaveProperty('hours')
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
+      days.forEach((day) => {
+        const slot = expectedData.availability[day]
+        expect(slot).toHaveProperty('available')
+        expect(slot).toHaveProperty('hours')
       })
     })
 

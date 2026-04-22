@@ -59,7 +59,7 @@ import { getPasswordResetRedirectUrl } from '@/lib/utils/redirect-url'
 
 // Type the mocks
 const mockResetPasswordForEmail = supabase.auth.resetPasswordForEmail as jest.MockedFunction<any>
-const mockFrom = supabaseAdmin.from as jest.MockedFunction<any>
+const mockFrom = supabaseAdmin!.from as jest.MockedFunction<any>
 const mockCheckRateLimit = checkServerSideRateLimit as jest.MockedFunction<typeof checkServerSideRateLimit>
 const mockIsOriginAllowed = isOriginAllowed as jest.MockedFunction<typeof isOriginAllowed>
 const mockValidateEmail = validateEmailDetailed as jest.MockedFunction<typeof validateEmailDetailed>

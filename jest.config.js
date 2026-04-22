@@ -27,6 +27,7 @@ const customJestConfig = {
     '/node_modules/',
     '/__mocks__/',
     '/utils/',
+    '/.next/',
   ],
 }
 

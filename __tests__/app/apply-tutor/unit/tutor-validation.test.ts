@@ -14,9 +14,6 @@
  * - Test Isolation: Each test is independent
  */
 
-// NOTE: This import will fail until validation service is created (Commit 3) - EXPECTED
-// TypeScript error here is intentional - it documents what needs to be created
-// @ts-expect-error - Module doesn't exist yet, will be created in Commit 3
 import {
   validateTutorFormData,
   validateSubjects,
@@ -26,9 +23,8 @@ import {
   validateBio,
   validateQualificationType,
   type TutorFormData,
-  type ValidationResult,
 } from '@/lib/services/tutor-validation'
-import { validateEmailDetailed, validatePhoneDetailed } from '@/lib/security'
+import { validateEmailDetailed, validatePhoneDetailed, type ValidationResult } from '@/lib/security'
 
 // Mock the security validation functions
 jest.mock('@/lib/security', () => ({

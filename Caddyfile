@@ -1,0 +1,18 @@
+# Reverse proxy: public :80 (and :443 when you have a domain) → Next.js `app:3000`.
+# App is not published on host port 3000; only Caddy is exposed to the host.
+
+{
+	# No automatic HTTPS while serving only on IP :80. When you add a `yourdomain.com { ... }`
+	# block with TLS, you can remove this or rely on Caddy’s defaults.
+	auto_https off
+}
+
+:80 {
+	reverse_proxy app:3000
+}
+
+# When you have a domain and DNS A-record → this server:
+# yourdomain.com {
+# 	reverse_proxy app:3000
+# }
+# Then add `ports: - "443:443"` to the `caddy` service in docker-compose and open 443 in the security group.

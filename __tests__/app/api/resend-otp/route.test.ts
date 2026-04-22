@@ -13,7 +13,8 @@
  */
 
 import { POST } from '@/app/api/resend-otp/route'
-import { ERROR_MESSAGES } from '@/lib/constants'
+import { ERROR_MESSAGES, REGISTRATION_TYPES } from '@/lib/constants'
+import type { PendingRegistration } from '@/lib/registration-storage'
 import { NextRequest } from 'next/server'
 
 // Mock dependencies
@@ -37,6 +38,17 @@ import { checkServerSideRateLimit } from '@/lib/server-rate-limiting'
 import { applySecurityHeaders } from '@/lib/services/security-headers-service'
 import { supabase } from '@/lib/supabase'
 
+const iso = '2026-01-01T00:00:00.000Z'
+const mockPendingRegistration: PendingRegistration = {
+  id: 'test-id',
+  email: 'test@example.com',
+  registration_data: {},
+  registration_type: REGISTRATION_TYPES.PARENT,
+  expires_at: iso,
+  created_at: iso,
+  updated_at: iso,
+}
+
 const mockIsOriginAllowed = isOriginAllowed as jest.MockedFunction<typeof isOriginAllowed>
 const mockGetRegistrationData = getRegistrationData as jest.MockedFunction<typeof getRegistrationData>
 const mockValidateEmail = validateEmailDetailed as jest.MockedFunction<typeof validateEmailDetailed>
@@ -55,8 +67,8 @@ describe('POST /api/resend-otp - Error Messages', () => {
     mockApplySecurityHeaders.mockImplementation((response) => response as any)
     mockSignInWithOtp.mockResolvedValue({ data: {}, error: null })
     mockGetRegistrationData.mockResolvedValue({
-      registration_data: {},
-      registration_type: 'parent'
+      success: true,
+      data: mockPendingRegistration,
     })
   })
 
@@ -159,7 +171,7 @@ describe('POST /api/resend-otp - Error Messages', () => {
 
   describe('Registration Data Not Found', () => {
     it('should return REGISTRATION_DATA_NOT_FOUND when no pending registration exists', async () => {
-      mockGetRegistrationData.mockResolvedValue(null)
+      mockGetRegistrationData.mockResolvedValue({ success: false, error: 'not found' })
 
       const req = new NextRequest('http://localhost:3000/api/resend-otp', {
         method: 'POST',
@@ -239,8 +251,8 @@ describe('POST /api/resend-otp - Error Messages', () => {
         mockCheckRateLimit.mockResolvedValue({ allowed: true })
         mockValidateEmail.mockReturnValue({ isValid: true, message: '' })
         mockGetRegistrationData.mockResolvedValue({
-          registration_data: {},
-          registration_type: 'parent'
+          success: true,
+          data: mockPendingRegistration,
         })
         
         testCase.setup()

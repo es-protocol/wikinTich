@@ -14,7 +14,7 @@ After each phase or deploy: update **Changelog**, **Open gaps**, and **AWS** (wh
 |-------|--------|--------|
 | 1 | Docker, health, ADR-0002 | **Done** |
 | 2 | Errors, OpenAPI, API versioning | **Done** |
-| 3 | `typecheck` in CI, service tests | Not started |
+| 3 | `typecheck` in CI, service tests | **Done** |
 | 4 | Redis in app, load test, security scans | Not started |
 | AWS | Second deploy (full admin) | Planned |
 
@@ -40,9 +40,16 @@ After each phase or deploy: update **Changelog**, **Open gaps**, and **AWS** (wh
 
 ---
 
-## Phase 3–4 (planned)
+## Phase 3 (done)
 
-- **3:** `npm run typecheck`, CI, more `lib/services` tests → **QO3**, **QO6**
+**Shipped:** `npm run typecheck` (`tsc --noEmit`) in [`package.json`](../package.json); **Typecheck** step in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) (after `npm ci`, before lint); Jest: [`lib/services/health-service.test.ts`](../lib/services/health-service.test.ts) (Supabase client mocked), [`lib/services/api-error-response-service.test.ts`](../lib/services/api-error-response-service.test.ts); `jest.config.js` ignores `/.next/` to avoid haste map collisions. TypeScript: minimal fixes in existing `__tests__` so `tsc` passes on the full tree.
+
+**QOs:** **QO3** (TypeScript + CI typecheck), **QO6** (service-layer unit tests, extendable to more `lib/services`).
+
+---
+
+## Phase 4 (planned)
+
 - **4:** Redis usage or ADR, load report, audit/SAST → **QO5**, **QO7**, **QO8**
 
 ---
@@ -66,10 +73,10 @@ After each phase or deploy: update **Changelog**, **Open gaps**, and **AWS** (wh
 |----|----------------|------|
 | 1 | Docker + Compose + health; EC2 URL + health row above | Optional: short AWS runbook |
 | 2 | ADR-0001, ADR-0002 | More ADRs if needed |
-| 3 | Jest, CI | typecheck in CI |
+| 3 | Jest, CI, `npm run typecheck`, CI typecheck step | Deeper `lib/services` coverage (optional) |
 | 4 | Health + [`openapi.yaml`](openapi.yaml), [`API_errors.md`](API_errors.md), [`API_versioning.md`](API_versioning.md) | Expand OpenAPI as routes migrate |
 | 5 | Supabase, health DB check | Indexes / EXPLAIN, cache rules |
-| 6 | Services, docs, tests | Coverage, logging |
+| 6 | Services, docs, tests, [`health-service` / `api-error-response` tests](../lib/services/health-service.test.ts) | Coverage, logging |
 | 7 | CSRF, headers, rate limits, threat docs | Audit/SAST, Redis ADR |
 | 8 | Image + Redis in compose | App ↔ Redis, load test |
 
@@ -79,7 +86,7 @@ After each phase or deploy: update **Changelog**, **Open gaps**, and **AWS** (wh
 
 - [ ] AWS (or other) second deploy + URL
 - [ ] Redis used by app or ADR
-- [ ] Phase 3–4 items above
+- [ ] Phase 4 items above
 - [ ] 5‑min presentation rehearsed
 
 ---
@@ -91,3 +98,4 @@ After each phase or deploy: update **Changelog**, **Open gaps**, and **AWS** (wh
 | 2026-04-21 | Created; Phase 1 logged. |
 | 2026-04-21 | Phase 1: document CSP/HTTP self-host behaviour; fill AWS (EC2) table. |
 | 2026-04-21 | Phase 2: API error envelope (`api-error-response-service`), codes, client parser, `docs/openapi.yaml`, `API_errors.md`, `API_versioning.md`. |
+| 2026-04-22 | Phase 3: `typecheck` + CI, `lib/services` unit tests (health, API error), `jest` ignore `.next/`, test typings fixed for `tsc`. |

@@ -31,6 +31,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Lint
         run: npm run lint
 
@@ -42,4 +45,27 @@ jobs:
       - name: Build
         run: npm run build
 
+  # --- Deploy: only on push to `master` (e.g. after merge from dev), and only if CI job above passed.
+  # Configure GitHub repo → Settings → Secrets: EC2_HOST, EC2_USER, EC2_SSH_KEY, EC2_APP_DIR
+  # (see docs/DEPLOY_EC2_GITHUB.md). EC2 must have the repo cloned and `.env` (or .env.local) for compose build args.
+  deploy-ec2:
+    name: Deploy to EC2
+    needs: build-and-test
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH — pull and Docker Compose
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            export GIT_SHA="${{ github.sha }}"
+            cd "${{ secrets.EC2_APP_DIR }}"
+            git fetch origin
+            git checkout master
+            git reset --hard origin/master
+            docker compose up -d --build
 

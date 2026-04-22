@@ -89,6 +89,18 @@ function buildScriptSrcDirective(nonce?: string): string {
  * 
  * @param nonce - Optional nonce for production CSP (recommended for security)
  */
+/**
+ * CSP upgrade-insecure-requests forces subresources to HTTPS. On raw HTTP (e.g. EC2 IP:3000
+ * without TLS), browsers then request /_next/static over HTTPS and CSS/JS fail → unstyled UI.
+ * Enable for real HTTPS fronts (Vercel) or set CSP_HTTPS_UPGRADE=true behind your own TLS.
+ */
+function shouldUseHttpsUpgradeCsp(): boolean {
+  const explicit = process.env.CSP_HTTPS_UPGRADE
+  if (explicit === 'false' || explicit === '0') return false
+  if (explicit === 'true' || explicit === '1') return true
+  return process.env.VERCEL === '1'
+}
+
 //combines all CSP rules into one string. The string becomes the content-security-policy header
 export function getCSPHeader(nonce?: string): string {
   const cspDirectives = [
@@ -123,14 +135,16 @@ export function getCSPHeader(nonce?: string): string {
     `base-uri ${CSP_SOURCES.SELF}`,
     
     // Form actions - only same origin - does not send form data to origin different from mine
-    `form-action ${CSP_SOURCES.SELF}`,
-    
-    // Upgrade insecure requests (HTTP → HTTPS), stops MITM attacks
-    'upgrade-insecure-requests',
-    
-    // Block mixed content
-    'block-all-mixed-content'
+    `form-action ${CSP_SOURCES.SELF}`
   ]
+
+  if (shouldUseHttpsUpgradeCsp()) {
+    cspDirectives.push(
+      // Upgrade insecure requests (HTTP → HTTPS) — only when the app is served over HTTPS
+      'upgrade-insecure-requests',
+      'block-all-mixed-content'
+    )
+  }
 
   return cspDirectives.join('; ')
 }

@@ -2,35 +2,35 @@
 
 import { useAuth } from '@/lib/auth-context'
 import {
-    CertificateData,
-    FILE_UPLOAD_LIMITS,
-    PROFILE_COMPLETION_STEP_DESCRIPTIONS,
-    PROFILE_COMPLETION_STEP_LABELS,
-    ProfileCompletionData,
-    VERIFICATION_STEPS
+  CertificateData,
+  FILE_UPLOAD_LIMITS,
+  PROFILE_COMPLETION_STEP_DESCRIPTIONS,
+  PROFILE_COMPLETION_STEP_LABELS,
+  ProfileCompletionData,
+  VERIFICATION_STEPS
 } from '@/lib/enhanced-tutor-types'
+import type { ConversationWithDetails, Message } from '@/lib/message-types'
 import { supabase } from '@/lib/supabase'
 import {
-    AcademicCapIcon,
-    AcademicCapIcon as AcademicCapIconSolid,
-    ArrowRightOnRectangleIcon,
-    BellIcon,
-    CalendarIcon,
-    ChatBubbleLeftRightIcon,
-    ChevronDownIcon,
-    ChevronRightIcon,
-    Cog6ToothIcon,
-    DocumentTextIcon,
-    EnvelopeIcon,
-    PaperAirplaneIcon,
-    PhoneIcon,
-    PhotoIcon,
-    StarIcon,
-    UserGroupIcon,
-    UserIcon,
-    XMarkIcon
+  AcademicCapIcon,
+  AcademicCapIcon as AcademicCapIconSolid,
+  ArrowRightOnRectangleIcon,
+  BellIcon,
+  CalendarIcon,
+  ChatBubbleLeftRightIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  Cog6ToothIcon,
+  DocumentTextIcon,
+  EnvelopeIcon,
+  PaperAirplaneIcon,
+  PhoneIcon,
+  PhotoIcon,
+  StarIcon,
+  UserGroupIcon,
+  UserIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline'
-import type { ConversationWithDetails, Message } from '@/lib/message-types'
 import { motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
 

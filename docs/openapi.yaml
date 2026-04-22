@@ -1,0 +1,96 @@
+openapi: 3.0.3
+info:
+  title: Tutor-Link HTTP API
+  description: |
+    Public HTTP surface of the Tutor-Link modular monolith (`app/api/*`).
+    This spec is expanded incrementally; undocumented routes may exist.
+    Spec version follows documented contract changes (not necessarily every app release).
+  version: "0.1.0"
+
+servers:
+  - url: /
+    description: Same origin as the Next.js app
+
+paths:
+  /api/health:
+    get:
+      summary: Liveness and readiness
+      description: |
+        Used by load balancers and Docker health checks. Does not require Origin, CSRF, or rate limiting.
+        See [API_health.md](./API_health.md).
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        "200":
+          description: App is healthy; database is up or skipped (secrets not configured).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthSnapshot"
+        "503":
+          description: Database check ran and failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthSnapshot"
+
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code (e.g. from `lib/api-error-codes.ts`).
+            message:
+              type: string
+              description: Human-readable message for display or logging.
+            details:
+              description: Optional structured context (validation fields, rate-limit metadata, etc.).
+    HealthSnapshot:
+      type: object
+      required:
+        - ok
+        - app
+        - version
+        - database
+      properties:
+        ok:
+          type: boolean
+        app:
+          type: string
+          enum:
+            - tutor-link
+        version:
+          type: string
+          description: Application version (from `package.json`).
+        gitSha:
+          type: string
+          description: Present when `GIT_SHA` is set at build/runtime (e.g. Docker build arg).
+        database:
+          type: object
+          required:
+            - status
+          properties:
+            status:
+              type: string
+              enum:
+                - up
+                - down
+                - skipped
+            message:
+              type: string
+              description: Error text when status is `down`, or reason when `skipped`.
+
+tags:
+  - name: Health
+    description: Operations and dependency probes

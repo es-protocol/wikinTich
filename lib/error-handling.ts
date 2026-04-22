@@ -1,5 +1,11 @@
 import { ERROR_MESSAGES } from './constants'
 
+/**
+ * In-process / UI error shape (includes `timestamp`).
+ * For HTTP responses from route handlers, use `apiErrorResponse` and
+ * `ApiErrorEnvelope` in `lib/services/api-error-response-service.ts`.
+ * See `docs/API_errors.md`.
+ */
 // Error types
 export interface AppError {
   code: string

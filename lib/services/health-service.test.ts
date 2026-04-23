@@ -3,10 +3,17 @@
  */
 import { createClient } from '@supabase/supabase-js'
 import { getHealthSnapshot } from '@/lib/services/health-service'
+import { getRedisReadiness } from '@/lib/services/redis-client'
 
 jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(),
 }))
+
+jest.mock('@/lib/services/redis-client', () => ({
+  getRedisReadiness: jest.fn().mockResolvedValue(undefined),
+}))
+
+const mockGetRedisReadiness = getRedisReadiness as jest.MockedFunction<typeof getRedisReadiness>
 
 const mockCreateClient = createClient as jest.MockedFunction<typeof createClient>
 
@@ -18,6 +25,7 @@ describe('getHealthSnapshot', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     process.env = { ...saved }
+    mockGetRedisReadiness.mockResolvedValue(undefined)
   })
 
   afterAll(() => {
@@ -39,6 +47,7 @@ describe('getHealthSnapshot', () => {
       },
     })
     expect(mockCreateClient).not.toHaveBeenCalled()
+    expect(mockGetRedisReadiness).toHaveBeenCalled()
   })
 
   it('returns skipped when service role is missing', async () => {
@@ -93,5 +102,41 @@ describe('getHealthSnapshot', () => {
       version: VERSION,
       database: { status: 'up' },
     })
+  })
+
+  it('includes redis up when configured and ping succeeds', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.supabase.co'
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service'
+    mockGetRedisReadiness.mockResolvedValue({ status: 'up' })
+
+    mockCreateClient.mockReturnValue({
+      from: () => ({
+        select: () => ({
+          limit: () => Promise.resolve({ data: [], error: null }),
+        }),
+      }),
+    } as never)
+
+    const snap = await getHealthSnapshot(VERSION)
+    expect(snap.database.status).toBe('up')
+    expect(snap.redis).toEqual({ status: 'up' })
+  })
+
+  it('includes redis down when ping fails (HTTP 200 if DB is up)', async () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://x.supabase.co'
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'service'
+    mockGetRedisReadiness.mockResolvedValue({ status: 'down', message: 'ECONNREFUSED' })
+
+    mockCreateClient.mockReturnValue({
+      from: () => ({
+        select: () => ({
+          limit: () => Promise.resolve({ data: [], error: null }),
+        }),
+      }),
+    } as never)
+
+    const snap = await getHealthSnapshot(VERSION)
+    expect(snap.ok).toBe(true)
+    expect(snap.redis).toEqual({ status: 'down', message: 'ECONNREFUSED' })
   })
 })

@@ -15,7 +15,7 @@ After each phase or deploy: update **Changelog**, **Open gaps**, and **AWS** (wh
 | 1 | Docker, health, ADR-0002 | **Done** |
 | 2 | Errors, OpenAPI, API versioning | **Done** |
 | 3 | `typecheck` in CI, service tests | **Done** |
-| 4 | Redis in app, load test, security scans | Not started |
+| 4 | Redis in app, load test, security scans | In progress (Redis rate limits + health; see ADR-0003) |
 | AWS | Second deploy (full admin) | Planned |
 
 ---
@@ -48,9 +48,10 @@ After each phase or deploy: update **Changelog**, **Open gaps**, and **AWS** (wh
 
 ---
 
-## Phase 4 (planned)
+## Phase 4 (in progress)
 
-- **4:** Redis usage or ADR, load report, audit/SAST → **QO5**, **QO7**, **QO8**
+- **Redis:** Server-side rate limits use Redis when `REDIS_URL` is set (`lib/services/redis-rate-limit-service.ts`, `lib/server-rate-limiting.ts`); health reports optional `redis` (`lib/services/health-service.ts`). **ADR:** [`ADR/0003-redis-server-rate-limits.md`](ADR/0003-redis-server-rate-limits.md).
+- **Still to do:** load test report, dependency / SAST evidence, mark phase done when complete.
 
 ---
 
@@ -78,14 +79,14 @@ After each phase or deploy: update **Changelog**, **Open gaps**, and **AWS** (wh
 | 5 | Supabase, health DB check | Indexes / EXPLAIN, cache rules |
 | 6 | Services, docs, tests, [`health-service` / `api-error-response` tests](../lib/services/health-service.test.ts) | Coverage, logging |
 | 7 | CSRF, headers, rate limits, threat docs | Audit/SAST, Redis ADR |
-| 8 | Image + Redis in compose | App ↔ Redis, load test |
+| 8 | Image + Redis in compose; app uses `REDIS_URL` for rate limits | Load test report |
 
 ---
 
 ## Open gaps
 
 - [ ] AWS (or other) second deploy + URL
-- [ ] Redis used by app or ADR
+- [x] Redis used by app (rate limits) + ADR-0003
 - [ ] Phase 4 items above
 - [ ] 5‑min presentation rehearsed
 
@@ -99,3 +100,4 @@ After each phase or deploy: update **Changelog**, **Open gaps**, and **AWS** (wh
 | 2026-04-21 | Phase 1: document CSP/HTTP self-host behaviour; fill AWS (EC2) table. |
 | 2026-04-21 | Phase 2: API error envelope (`api-error-response-service`), codes, client parser, `docs/openapi.yaml`, `API_errors.md`, `API_versioning.md`. |
 | 2026-04-22 | Phase 3: `typecheck` + CI, `lib/services` unit tests (health, API error), `jest` ignore `.next/`, test typings fixed for `tsc`. |
+| 2026-04-23 | Phase 4 (partial): Redis-backed server rate limits (`ioredis`), optional `redis` on `/api/health`, ADR-0003; OpenAPI + `API_health.md` updated. |

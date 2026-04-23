@@ -90,6 +90,21 @@ components:
             message:
               type: string
               description: Error text when status is `down`, or reason when `skipped`.
+        redis:
+          type: object
+          description: Present when `REDIS_URL` is configured (e.g. Docker). Rate limiting uses this store when up.
+          required:
+            - status
+          properties:
+            status:
+              type: string
+              enum:
+                - up
+                - down
+                - skipped
+            message:
+              type: string
+              description: Error text when `down`.
 
 tags:
   - name: Health

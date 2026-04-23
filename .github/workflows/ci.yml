@@ -45,27 +45,74 @@ jobs:
       - name: Build
         run: npm run build
 
-  # --- Deploy: only on push to `master` (e.g. after merge from dev), and only if CI job above passed.
-  # Configure GitHub repo → Settings → Secrets: EC2_HOST, EC2_USER, EC2_SSH_KEY, EC2_APP_DIR
-  # (see docs/DEPLOY_EC2_GITHUB.md). EC2 must have the repo cloned and `.env` (or .env.local) for compose build args.
+  # --- Deploy: only on push to `master` (e.g. after merge from dev), and only if CI above passed.
+  # Uses AWS Systems Manager (SSM) via OIDC — no SSH, no inbound port 22 needed.
   deploy-ec2:
     name: Deploy to EC2
     needs: build-and-test
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-master
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: eu-north-1
+      INSTANCE_ID: i-0da3ad506b2efbe36
     steps:
-      - name: SSH — pull and Docker Compose
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            set -e
-            export GIT_SHA="${{ github.sha }}"
-            cd "${{ secrets.EC2_APP_DIR }}"
-            git fetch origin
-            git checkout master
-            git reset --hard origin/master
-            docker compose up -d --build
+          role-to-assume: arn:aws:iam::795176248345:role/GitHubActions-TutorLink-Deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy via SSM
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          cat > params.json <<EOF
+          {
+            "commands": [
+              "sudo -u ubuntu bash -lc 'export GIT_SHA=${SHA} && cd /home/ubuntu/tutor-link && git fetch origin && git checkout master && git reset --hard origin/master && docker compose up -d --build'"
+            ]
+          }
+          EOF
+
+          COMMAND_ID=$(aws ssm send-command \
+            --region "$AWS_REGION" \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "GitHub Actions deploy: $SHA" \
+            --parameters file://params.json \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "Command ID: $COMMAND_ID"
+
+          aws ssm wait command-executed \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" || true
+
+          INVOCATION=$(aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID")
+
+          STATUS=$(echo "$INVOCATION" | jq -r '.Status')
+
+          echo "=== Status: $STATUS ==="
+          echo "=== Stdout ==="
+          echo "$INVOCATION" | jq -r '.StandardOutputContent'
+          echo "=== Stderr ==="
+          echo "$INVOCATION" | jq -r '.StandardErrorContent'
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "Deploy failed with status: $STATUS"
+            exit 1
+          fi
 

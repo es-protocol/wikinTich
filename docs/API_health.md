@@ -27,6 +27,9 @@ JSON body:
 | `gitSha` | string | Optional; set when `GIT_SHA` env is present (e.g. Docker build arg) |
 | `database.status` | `"up"` \| `"down"` \| `"skipped"` | Result of Supabase/Postgres check |
 | `database.message` | string | Optional; error text when `down`, or reason when `skipped` |
+| `redis` | object (optional) | Omitted if `REDIS_URL` is not set. If set, `status` is result of a Redis `PING` (used for rate limiting when `up`) |
+| `redis.status` | `"up"` \| `"down"` | `down` if ping fails; HTTP may still be `200` if the database is up (app falls back to DB/in-memory rate limits) |
+| `redis.message` | string | Error when `redis.status === "down"` |
 
 ### Status codes
 

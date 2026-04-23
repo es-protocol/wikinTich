@@ -1,5 +1,6 @@
 import { DB_ERROR_CODES } from '@/lib/constants'
 import { checkInMemoryRateLimit } from '@/lib/services/fallback-rate-limiting-service'
+import { checkRedisRateLimit } from '@/lib/services/redis-rate-limit-service'
 import { supabaseAdmin } from '@/lib/supabase'
 import { NextRequest } from 'next/server'
 
@@ -72,8 +73,17 @@ export async function checkServerSideRateLimit(
   
   // Get action-specific limit- if not specified use the fallback
   const maxRequests = RATE_LIMITS[action] || MAX_REQUESTS_PER_WINDOW
-  
+
   try {
+    const redisResult = await checkRedisRateLimit(
+      rateLimitKey,
+      maxRequests,
+      RATE_LIMIT_WINDOW_MS
+    )
+    if (redisResult !== null) {
+      return redisResult
+    }
+
     // If supabaseAdmin is not available, use fallback in-memory rate limiting
     if (!supabaseAdmin) {
       console.warn('⚠️ Supabase admin client not available, using in-memory rate limiting')

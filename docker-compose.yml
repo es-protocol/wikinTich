@@ -31,7 +31,7 @@ services:
         required: false
     environment:
       NODE_ENV: production
-      # Ready for Phase 4+ when the app reads REDIS_URL
+      # Server-side rate limits use Redis when available; otherwise Postgres / in-memory.
       REDIS_URL: redis://redis:6379
     depends_on:
       - redis

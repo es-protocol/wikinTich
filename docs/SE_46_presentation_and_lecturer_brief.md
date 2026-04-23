@@ -64,7 +64,7 @@ Adjust wording to match **what is actually in the repo** at submission time.
 Use this as a backlog sanity check before submission:
 
 - [ ] **Non-Vercel path you can demo:** same image/process as in repo, env you set, **`/api/health`** usable.
-- [ ] **Redis:** used for at least **one** documented cache **or** a clear **ADR** + slide on exactly what will live in Redis and why (counters vs cache vs sessions).
+- [x] **Redis:** server-side **rate limits** when `REDIS_URL` is set; **ADR-0003** — [`ADR/0003-redis-server-rate-limits.md`](ADR/0003-redis-server-rate-limits.md).
 - [ ] **Rejected alternatives** captured in **ADRs** (not only in this file): monolith vs microservices (0001), Docker vs Vercel-only (0002), plus rate-limit/store and framework choices as you add them.
 - [x] **QO4 evidence:** error shape + OpenAPI (partial) + versioning **strategy** — [`API_errors.md`](API_errors.md), [`openapi.yaml`](openapi.yaml), [`API_versioning.md`](API_versioning.md).
 - [ ] **QO8 evidence:** load test or documented plan + results file when run.
